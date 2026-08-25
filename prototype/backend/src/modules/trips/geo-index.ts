@@ -12,13 +12,23 @@ export type Availability = 'OFFLINE' | 'ONLINE' | 'ON_TRIP'
 export async function setAvailability(
   userId: string,
   availability: Availability,
+  at?: LatLng,
 ): Promise<void> {
   await ensureDriverProfile(userId)
   await pool.query(
     `UPDATE driver_profiles SET availability = $2, updated_at = now() WHERE user_id = $1`,
     [userId, availability],
   )
-  if (availability !== 'ONLINE') await removeDriverFromIndex(userId)
+
+  if (availability !== 'ONLINE') {
+    await removeDriverFromIndex(userId)
+    return
+  }
+
+  // Dispatch searches the Redis geo index, so a driver who goes ONLINE without
+  // a position is invisible to it until their first telemetry frame arrives.
+  // Seeding it here closes that window.
+  if (at) await upsertDriverLocation(userId, at, { force: true })
 }
 
 /**

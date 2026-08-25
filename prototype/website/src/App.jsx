@@ -13,10 +13,22 @@ import Track from './pages/dashboard/Track.jsx'
 import Vault from './pages/dashboard/Vault.jsx'
 import Profile from './pages/dashboard/Profile.jsx'
 
+/** Shown while the stored session is being validated against the server. */
+function SessionLoading() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-white">
+      <span className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-brand-500" />
+    </div>
+  )
+}
+
 /** Sends signed-out visitors to login, remembering where they were headed. */
 function RequireAuth({ children }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, loading } = useAuth()
   const location = useLocation()
+  // Without this gate a stored-but-unverified session flashes the login screen
+  // on every page load before /v1/me answers.
+  if (loading) return <SessionLoading />
   if (!isAuthenticated) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }
@@ -25,7 +37,8 @@ function RequireAuth({ children }) {
 
 /** Keeps signed-in users out of the auth screens. */
 function RedirectIfAuthed({ children }) {
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, loading } = useAuth()
+  if (loading) return <SessionLoading />
   if (isAuthenticated) return <Navigate to="/app" replace />
   return children
 }

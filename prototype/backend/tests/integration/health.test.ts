@@ -45,3 +45,57 @@ describe('health and readiness', () => {
     })
   })
 })
+
+describe('CORS and public catalogue', () => {
+  let app: FastifyInstance
+
+  beforeAll(async () => {
+    app = await buildApp()
+    await app.ready()
+    const { resetDb } = await import('../helpers/db.js')
+    const { seed } = await import('../../src/db/seed.js')
+    const { resetRedis } = await import('../helpers/redis.js')
+    await resetDb()
+    await resetRedis()
+    await seed()
+  })
+  afterAll(async () => { await app.close() })
+
+  it('allows a cross-origin request from the website dev server', async () => {
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/v1/auth/otp/request',
+      headers: {
+        origin: 'http://localhost:5173',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'content-type',
+      },
+    })
+    expect(res.statusCode).toBeLessThan(300)
+    expect(res.headers['access-control-allow-origin']).toBeTruthy()
+  })
+
+  it('permits the idempotency-key request header', async () => {
+    const res = await app.inject({
+      method: 'OPTIONS',
+      url: '/v1/trips/book',
+      headers: {
+        origin: 'http://localhost:5173',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'idempotency-key',
+      },
+    })
+    expect(String(res.headers['access-control-allow-headers'])).toContain('idempotency-key')
+  })
+
+  it('serves the rate card catalogue without authentication', async () => {
+    const res = await app.inject({ method: 'GET', url: '/v1/rate-cards' })
+    expect(res.statusCode).toBe(200)
+
+    const cards = res.json()
+    expect(cards).toHaveLength(5)
+    const standard = cards.find((c: { skill_id: string }) => c.skill_id === 'MD-Standard')
+    expect(standard.per_km_rate).toBe(16)
+    expect(standard.hourly_rate).toBe(240)
+  })
+})

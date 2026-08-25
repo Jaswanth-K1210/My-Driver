@@ -46,17 +46,17 @@ export default function Overview() {
   const { user } = useAuth()
   const { vaultTrips, hasActiveTrip, trip } = useTrip()
 
-  const totalSpend = vaultTrips.reduce((sum, t) => sum + t.fare, 0)
-  const breaches = vaultTrips.reduce((sum, t) => sum + t.breaches, 0)
-  const cleanRate = vaultTrips.length
-    ? Math.round((vaultTrips.filter((t) => t.breaches === 0).length / vaultTrips.length) * 100)
-    : 100
+  const totalSpend = vaultTrips.reduce((sum, t) => sum + (t.fare ?? 0), 0)
+  const totalKm = vaultTrips.reduce((sum, t) => sum + (Number(t.distanceKm) || 0), 0)
+  const avgCeiling = vaultTrips.length
+    ? Math.round(vaultTrips.reduce((sum, t) => sum + (t.ceiling ?? 0), 0) / vaultTrips.length)
+    : 60
 
   const summaryStats = [
     { icon: Archive, label: 'Sealed trips', value: String(vaultTrips.length) },
     { icon: TrendingUp, label: 'Total spend', value: formatINR(totalSpend) },
-    { icon: ShieldCheck, label: 'Clean trips', value: `${cleanRate}%` },
-    { icon: Gauge, label: 'Ceiling breaches', value: String(breaches), danger: breaches > 0 },
+    { icon: ShieldCheck, label: 'Distance', value: `${totalKm.toFixed(0)} km` },
+    { icon: Gauge, label: 'Avg ceiling', value: `${avgCeiling} km/h` },
   ]
 
   return (
@@ -77,7 +77,8 @@ export default function Overview() {
           <span className="min-w-0 flex-1">
             <span className="block font-bold text-slate-900">Trip {trip.id} is live</span>
             <span className="mt-0.5 block truncate text-sm text-slate-600">
-              {trip.from} → {trip.to} · {trip.driver.name}
+              {trip.from} → {trip.to}
+              {trip.driver ? ` · ${trip.driver.name}` : ''}
             </span>
           </span>
           <ArrowRight className="h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
@@ -112,6 +113,11 @@ export default function Overview() {
           </Link>
         }
       >
+        {vaultTrips.length === 0 && (
+          <p className="py-6 text-center text-sm text-slate-500">
+            No trips yet — book your first ride to start your archive.
+          </p>
+        )}
         <ul className="divide-y divide-slate-200">
           {vaultTrips.slice(0, 4).map((t) => (
             <li key={t.id} className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0">
@@ -126,8 +132,8 @@ export default function Overview() {
               </span>
               <span className="shrink-0 text-right">
                 <span className="block text-sm font-black text-slate-900">{formatINR(t.fare)}</span>
-                <span className={`block text-[10px] font-bold ${t.breaches > 0 ? 'text-brand-600' : 'text-slate-400'}`}>
-                  {t.breaches > 0 ? `${t.breaches} breach` : 'Clean'}
+                <span className="block text-[10px] font-bold text-slate-400">
+                  {Number(t.distanceKm).toFixed(1)} km
                 </span>
               </span>
             </li>

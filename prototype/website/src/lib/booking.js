@@ -1,4 +1,4 @@
-import { DROPS, HOUR_PACKAGES, NIGHT_FEE, PLATFORM_FEE, SKILLS } from '../data/mock.js'
+import { DROPS, HOUR_PACKAGES, NIGHT_FEE, PICKUP, PLATFORM_FEE, SKILLS } from '../data/mock.js'
 
 export const DEFAULT_CONFIG = {
   mode: 'location', // 'location' | 'hour'
@@ -6,12 +6,12 @@ export const DEFAULT_CONFIG = {
   packageId: 'h4',
   skillId: 'MD-Standard',
   ceiling: 60,
-  visionMode: 'R',
+  visionMode: 'R', // Demo only — never sent to the API. See bookingPayloadFor.
   pickupTime: 'Now',
 }
 
-export function skillFor(skillId) {
-  return SKILLS.find((s) => s.id === skillId) ?? SKILLS[0]
+export function skillFor(skillId, skills = SKILLS) {
+  return skills.find((s) => s.id === skillId) ?? skills[0]
 }
 
 export function dropFor(dropId) {
@@ -22,13 +22,17 @@ export function packageFor(packageId) {
   return HOUR_PACKAGES.find((p) => p.id === packageId) ?? HOUR_PACKAGES[0]
 }
 
+const HOURS_BY_PACKAGE = { h2: 2, h4: 4, h8: 8, h12: 12 }
+
 /**
- * Single source of truth for fare maths, shared by the landing hero widget and
- * the dashboard booking screen so the two can never drift apart.
- * Returns `null` for `base` when the trip is not yet configured enough to price.
+ * Local fare estimate, shown instantly while typing. The authoritative number
+ * comes from the server (POST /v1/trips/quote) and is what the trip is booked
+ * at; this exists so the UI is not blank waiting on a round trip.
+ *
+ * `skills` carries live rates from GET /v1/rate-cards when available.
  */
-export function quoteFor(config) {
-  const skill = skillFor(config.skillId)
+export function quoteFor(config, skills = SKILLS) {
+  const skill = skillFor(config.skillId, skills)
   const nightFee = config.skillId === 'MD-Night' ? NIGHT_FEE : 0
 
   if (config.mode === 'hour') {
@@ -68,23 +72,48 @@ export function quoteFor(config) {
   }
 }
 
-/** Builds the live-trip object handed to the tracking screen. */
-export function buildTrip(config) {
-  const quote = quoteFor(config)
-  const index = Math.max(SKILLS.findIndex((s) => s.id === config.skillId), 0)
+/**
+ * Turns the UI config into the exact body POST /v1/trips/book accepts.
+ *
+ * `visionMode` and `pickupTime` are deliberately NOT included. The backend has
+ * zero dashcam awareness and rejects an unknown field outright, so sending
+ * `mode` would fail the whole booking rather than being ignored.
+ */
+export function bookingPayloadFor(config, skills = SKILLS) {
+  const skill = skillFor(config.skillId, skills)
+  const pickup = { lat: PICKUP.lat, lng: PICKUP.lng }
+
+  if (config.mode === 'hour') {
+    return {
+      booking_type: 'HOURLY',
+      hours: HOURS_BY_PACKAGE[config.packageId] ?? 4,
+      pickup,
+      pickup_address: PICKUP.address,
+      required_certification: skill.id,
+      speed_ceiling_kmh: config.ceiling,
+    }
+  }
+
   const drop = dropFor(config.dropId)
-  const pkg = packageFor(config.packageId)
+  if (!drop) throw new Error('Choose a destination before booking')
 
   return {
-    id: 'TRP-8493',
-    mode: config.mode,
-    from: 'Cyber Towers, HITEC City',
-    to: config.mode === 'hour' ? `${pkg.hours}-hour hire` : (drop?.name ?? 'Destination'),
-    distanceKm: quote.distanceKm,
-    skill: config.skillId,
-    ceiling: config.ceiling,
-    visionMode: config.visionMode,
-    fare: Math.round(quote.total),
-    driverIndex: index,
+    booking_type: 'POINT_TO_POINT',
+    pickup,
+    pickup_address: PICKUP.address,
+    drop: { lat: drop.lat, lng: drop.lng },
+    drop_address: drop.address,
+    required_certification: skill.id,
+    speed_ceiling_kmh: config.ceiling,
   }
+}
+
+/** Server quote for the current config. Falls back to the local estimate. */
+export async function serverQuote(api, config, skills = SKILLS) {
+  const payload = bookingPayloadFor(config, skills)
+  // The quote endpoint takes the same shape minus the speed ceiling.
+  // The quote endpoint takes the booking shape minus the speed ceiling.
+  const quoteBody = { ...payload }
+  delete quoteBody.speed_ceiling_kmh
+  return api.trips.quote(quoteBody)
 }

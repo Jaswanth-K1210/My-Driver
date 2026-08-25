@@ -13,47 +13,64 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { colors, radius, spacing, font } from '../../theme/tokens'
+import { useAuth } from '../../context/AuthContext'
+import { GOOGLE_ENABLED } from '../../lib/config'
+import { toE164, isValidLocal } from '../../lib/phone'
 
 export default function SignupScreen({ navigation }) {
+  const { requestOtp, verifyOtp } = useAuth()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
-  const [method, setMethod] = useState('google')
+  const [method, setMethod] = useState(GOOGLE_ENABLED ? 'google' : 'phone')
   const [otp, setOtp] = useState(['', '', '', '', '', ''])
   const [otpSent, setOtpSent] = useState(false)
   const [loading, setLoading] = useState(false)
 
   const handleGoogleSignUp = useCallback(() => {
-    Alert.alert('Sign Up', 'Google Sign Up would open here', [
-      { text: 'OK', onPress: () => navigation.replace('Main') },
-    ])
-  }, [navigation])
+    Alert.alert(
+      'Google sign-up not configured',
+      "Set EXPO_PUBLIC_GOOGLE_CLIENT_ID (and add the same ID to the backend's GOOGLE_CLIENT_IDS) to enable this. Use your mobile number in the meantime.",
+    )
+  }, [])
 
-  const handleSendOtp = useCallback(() => {
-    if (!phone || phone.length < 6) {
-      Alert.alert('Error', 'Please enter a valid phone number')
+  const handleSendOtp = useCallback(async () => {
+    if (!name.trim()) {
+      Alert.alert('Error', 'Please enter your full name')
+      return
+    }
+    if (!isValidLocal(phone)) {
+      Alert.alert('Error', 'Please enter a valid 10-digit mobile number')
       return
     }
     setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
+    try {
+      await requestOtp(toE164(phone))
       setOtpSent(true)
-      Alert.alert('OTP Sent', 'A verification code has been sent to your phone')
-    }, 1000)
-  }, [phone])
+      Alert.alert('Code sent', 'A verification code has been sent to your phone')
+    } catch (err) {
+      Alert.alert('Could not send code', err?.message ?? 'Please try again')
+    } finally {
+      setLoading(false)
+    }
+  }, [name, phone, requestOtp])
 
-  const handleVerifyOtp = useCallback(() => {
+  const handleVerifyOtp = useCallback(async () => {
     const code = otp.join('')
     if (code.length !== 6) {
       Alert.alert('Error', 'Please enter the full 6-digit code')
       return
     }
     setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
+    try {
+      await verifyOtp(toE164(phone), code, { name: name.trim(), email: email.trim() })
       navigation.replace('Main')
-    }, 800)
-  }, [otp, navigation])
+    } catch (err) {
+      Alert.alert('Verification failed', err?.message ?? 'That code is not valid')
+    } finally {
+      setLoading(false)
+    }
+  }, [otp, phone, name, email, verifyOtp, navigation])
 
   const handleOtpChange = useCallback((text, index) => {
     if (text.length > 1) text = text.slice(-1)
@@ -108,11 +125,11 @@ export default function SignupScreen({ navigation }) {
             <Text style={styles.inputLabel}>Phone Number</Text>
             <View style={styles.phoneRow}>
               <View style={styles.countryCode}>
-                <Text style={styles.countryCodeText}>+1</Text>
+                <Text style={styles.countryCodeText}>+91</Text>
               </View>
               <TextInput
                 style={[styles.input, styles.phoneInput]}
-                placeholder="(555) 123-4567"
+                placeholder="98765 43210"
                 placeholderTextColor={colors.textFaint}
                 value={phone}
                 onChangeText={setPhone}
@@ -173,7 +190,7 @@ export default function SignupScreen({ navigation }) {
                 ) : (
                   <View>
                     <Text style={styles.otpLabel}>
-                      Enter the 6-digit code sent to +1 {phone}
+                      Enter the 6-digit code sent to {toE164(phone)}
                     </Text>
                     <View style={styles.otpRow}>
                       {otp.map((digit, index) => (

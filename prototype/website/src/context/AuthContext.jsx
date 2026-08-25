@@ -1,57 +1,114 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AuthContext } from './authStore.js'
+import { api } from '../lib/apiClient.js'
 import { initialsOf } from '../lib/utils.js'
 
-const STORAGE_KEY = 'mydriver.session'
-
 /**
- * Frontend-only auth. Sessions are held in localStorage so a refresh keeps you
- * signed in; there is no server and no password is ever stored or checked.
- * Swap `signIn` / `signUp` for real API calls when the backend lands.
+ * Real session state backed by the MyDriver API.
+ *
+ * Tokens live in localStorage (written by the API client), so a refresh keeps
+ * you signed in. On mount we ask the server who we are rather than trusting a
+ * cached user object — that way a revoked or expired session is caught
+ * immediately instead of showing a stale identity.
  */
-function readStoredUser() {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
+
+/** Shapes the API user into what the dashboard screens already render. */
+function toViewUser(me) {
+  if (!me) return null
+  const name = me.full_name || me.phone_number || 'MyDriver rider'
+  return {
+    id: me.id,
+    name,
+    email: me.email ?? '',
+    phone: me.phone_number ?? '',
+    role: me.role,
+    roles: me.roles ?? [],
+    initials: initialsOf(name),
+    memberSince: new Date().getFullYear().toString(),
+    rating: 5.0,
   }
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(readStoredUser)
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  const refreshMe = useCallback(async () => {
+    try {
+      const me = await api.me.get()
+      setUser(toViewUser(me))
+      return me
+    } catch {
+      setUser(null)
+      return null
+    }
+  }, [])
 
   useEffect(() => {
-    try {
-      if (user) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
-      else window.localStorage.removeItem(STORAGE_KEY)
-    } catch {
-      // Private-mode browsers can reject writes; the session just won't persist.
+    let cancelled = false
+    ;(async () => {
+      if (!(await api.hasSession())) {
+        if (!cancelled) setLoading(false)
+        return
+      }
+      await refreshMe()
+      if (!cancelled) setLoading(false)
+    })()
+    return () => {
+      cancelled = true
     }
-  }, [user])
+  }, [refreshMe])
 
-  const signIn = useCallback(({ email }) => {
-    const handle = email.split('@')[0].replace(/[._-]+/g, ' ')
-    const name = handle.replace(/\b\w/g, (c) => c.toUpperCase())
-    const next = { name, email, initials: initialsOf(name), memberSince: '2024', rating: 4.9 }
-    setUser(next)
-    return next
+  /** Step 1 of login: ask the server to text a 6-digit code. */
+  const requestOtp = useCallback((phone) => api.auth.requestOtp(phone, 'CUSTOMER'), [])
+
+  /** Step 2: exchange the code for a session. */
+  const verifyOtp = useCallback(
+    async (phone, code, profile) => {
+      const res = await api.auth.verifyOtp(phone, code, 'CUSTOMER')
+      // A new signup carries a name/email the server does not have yet.
+      if (profile && (profile.name || profile.email)) {
+        try {
+          await api.me.update({
+            ...(profile.name ? { full_name: profile.name } : {}),
+            ...(profile.email ? { email: profile.email } : {}),
+          })
+        } catch {
+          // A duplicate email must not block an otherwise valid login.
+        }
+      }
+      const me = await refreshMe()
+      return me ?? res.user
+    },
+    [refreshMe],
+  )
+
+  const signInWithGoogle = useCallback(
+    async (idToken) => {
+      await api.auth.google(idToken, 'CUSTOMER')
+      return refreshMe()
+    },
+    [refreshMe],
+  )
+
+  const signOut = useCallback(async () => {
+    await api.auth.logout()
+    setUser(null)
   }, [])
-
-  const signUp = useCallback(({ name, email, phone }) => {
-    const next = { name, email, phone, initials: initialsOf(name), memberSince: '2026', rating: 5.0 }
-    setUser(next)
-    return next
-  }, [])
-
-  const signOut = useCallback(() => setUser(null), [])
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: Boolean(user), signIn, signUp, signOut }),
-    [user, signIn, signUp, signOut],
+    () => ({
+      user,
+      loading,
+      isAuthenticated: Boolean(user),
+      requestOtp,
+      verifyOtp,
+      signInWithGoogle,
+      signOut,
+      refreshMe,
+    }),
+    [user, loading, requestOtp, verifyOtp, signInWithGoogle, signOut, refreshMe],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
-

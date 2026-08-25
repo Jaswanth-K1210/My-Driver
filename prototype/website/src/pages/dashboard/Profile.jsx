@@ -1,33 +1,69 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { SectionCard, Toggle } from '../../components/app/Primitives.jsx'
+import DemoBadge from '../../components/app/DemoBadge.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { useToast } from '../../context/toastStore.js'
-import { DEFAULT_GUARDIANS, MAX_GUARDIANS } from '../../data/mock.js'
+import { MAX_GUARDIANS } from '../../data/mock.js'
+import { api } from '../../lib/apiClient.js'
+import { toE164 } from '../../lib/phone.js'
 import { maskPhone } from '../../lib/utils.js'
 
 export default function Profile() {
   const { user } = useAuth()
   const { toast } = useToast()
-  const [guardians, setGuardians] = useState(DEFAULT_GUARDIANS)
+  const [guardians, setGuardians] = useState([])
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
+  const [busy, setBusy] = useState(false)
   const [autoSos, setAutoSos] = useState(true)
   const [biometric, setBiometric] = useState(true)
   const [nightWatch, setNightWatch] = useState(true)
 
-  const addGuardian = () => {
+  const reload = useCallback(async () => {
+    try {
+      setGuardians(await api.me.guardians.list())
+    } catch {
+      setGuardians([])
+    }
+  }, [])
+
+  useEffect(() => {
+    void reload()
+  }, [reload])
+
+  const addGuardian = async () => {
     const trimmed = name.trim()
     const digits = phone.replace(/\D/g, '')
     if (!trimmed) return toast('Enter guardian name', 'warning')
     if (digits.length !== 10) return toast('Enter a valid 10-digit mobile number', 'warning')
-    if (guardians.length >= MAX_GUARDIANS) return toast(`Up to ${MAX_GUARDIANS} guardians allowed`, 'warning')
+    if (guardians.length >= MAX_GUARDIANS) {
+      return toast(`Up to ${MAX_GUARDIANS} guardians allowed`, 'warning')
+    }
 
-    setGuardians((prev) => [...prev, { id: `g-${Date.now()}`, name: trimmed, relation: 'Guardian', phone: digits }])
-    setName('')
-    setPhone('')
-    toast('Guardian added', 'success')
+    setBusy(true)
+    try {
+      await api.me.guardians.add({ name: trimmed, relation: 'Guardian', phone: toE164(digits) })
+      await reload()
+      setName('')
+      setPhone('')
+      toast('Guardian added', 'success')
+    } catch (err) {
+      toast(err?.message ?? 'Could not add that guardian', 'warning')
+    } finally {
+      setBusy(false)
+    }
     return undefined
+  }
+
+  const removeGuardian = async (id) => {
+    try {
+      await api.me.guardians.remove(id)
+      await reload()
+      toast('Guardian removed', 'info')
+    } catch (err) {
+      toast(err?.message ?? 'Could not remove that guardian', 'warning')
+    }
   }
 
   return (
@@ -46,7 +82,7 @@ export default function Profile() {
             <p className="truncate text-lg font-bold text-slate-900">{user.name}</p>
             <p className="truncate text-sm text-slate-500">{user.email}</p>
             <p className="mt-0.5 text-xs text-slate-500">
-              Member since {user.memberSince} · {user.rating} rating
+              {user.phone ? `${user.phone} · ` : ''}Member since {user.memberSince}
             </p>
           </div>
           <span className="flex shrink-0 items-center gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-xs font-black text-brand-600">
@@ -57,6 +93,11 @@ export default function Profile() {
       </SectionCard>
 
       <SectionCard title={`Guardians · ${guardians.length}/${MAX_GUARDIANS}`}>
+        {guardians.length === 0 && (
+          <p className="py-4 text-sm text-slate-500">
+            No guardians yet. Add up to {MAX_GUARDIANS} people who can follow your trips.
+          </p>
+        )}
         <ul className="divide-y divide-slate-200">
           {guardians.map((g) => (
             <li key={g.id} className="flex items-center gap-3 py-3 first:pt-0">
@@ -72,10 +113,7 @@ export default function Profile() {
               <button
                 type="button"
                 aria-label={`Remove ${g.name}`}
-                onClick={() => {
-                  setGuardians((prev) => prev.filter((x) => x.id !== g.id))
-                  toast('Guardian removed', 'info')
-                }}
+                onClick={() => removeGuardian(g.id)}
                 className="rounded-xl p-2.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-brand-600"
               >
                 <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -108,6 +146,7 @@ export default function Profile() {
             <button
               type="button"
               onClick={addGuardian}
+              disabled={busy}
               className="flex items-center justify-center gap-2 rounded-2xl bg-brand-500 px-5 py-3 text-sm font-black text-white transition-colors hover:bg-brand-600"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
@@ -117,7 +156,14 @@ export default function Profile() {
         )}
       </SectionCard>
 
-      <SectionCard title="Safety defaults">
+      <SectionCard
+        title={
+          <span className="flex items-center gap-2">
+            Safety defaults
+            <DemoBadge title="These switches are local only until the escalation engine ships (Phase 2)" />
+          </span>
+        }
+      >
         <div className="divide-y divide-slate-200">
           <Toggle checked={autoSos} onChange={setAutoSos} label="Volume-button Silent SOS" description="Triple-press the volume button to alert the Safety Desk." />
           <Toggle checked={biometric} onChange={setBiometric} label="Biometric trip unlock" description="Require Face ID or fingerprint before a trip starts." />

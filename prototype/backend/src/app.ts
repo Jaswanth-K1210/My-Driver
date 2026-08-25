@@ -1,3 +1,4 @@
+import fastifyCors from '@fastify/cors'
 import fastifyJwt from '@fastify/jwt'
 import Fastify, { type FastifyInstance } from 'fastify'
 import {
@@ -5,7 +6,7 @@ import {
   validatorCompiler,
   type ZodTypeProvider,
 } from 'fastify-type-provider-zod'
-import { env } from './config/env.js'
+import { corsOrigins, env } from './config/env.js'
 import { pool } from './db/client.js'
 import { registerErrorHandler } from './lib/errors.js'
 import { gauge, renderMetrics } from './lib/metrics.js'
@@ -40,6 +41,15 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.setValidatorCompiler(validatorCompiler)
   app.setSerializerCompiler(serializerCompiler)
   registerErrorHandler(app)
+
+  // The website runs on a different origin from the API. Native apps are
+  // unaffected — CORS is a browser policy.
+  await app.register(fastifyCors, {
+    origin: env.NODE_ENV === 'production' ? corsOrigins() : true,
+    credentials: false,
+    allowedHeaders: ['content-type', 'authorization', 'idempotency-key'],
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  })
 
   await app.register(fastifyJwt, { secret: env.JWT_SECRET })
   await registerRealtimeGateway(app)

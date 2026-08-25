@@ -4,6 +4,7 @@ import { Modal } from '../../components/app/Primitives.jsx'
 import { useTrip } from '../../context/tripStore.js'
 import { useToast } from '../../context/toastStore.js'
 import { VISION_MODES } from '../../data/mock.js'
+import DemoBadge from '../../components/app/DemoBadge.jsx'
 import { cn, formatINR } from '../../lib/utils.js'
 
 const ZONES = ['Front', 'Rear', 'Left', 'Right', 'Dash', 'Seats', 'Fuel', 'Boot']
@@ -23,15 +24,15 @@ function TripDetail({ trip }) {
           {trip.from} <span className="text-slate-400">→</span> {trip.to}
         </p>
         <p className="mt-0.5 text-sm text-slate-500">
-          Driver {trip.driver} · {formatINR(trip.fare)}
+          Driver {trip.driverName} · {formatINR(trip.fare)}
         </p>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'Max speed', value: `${trip.maxSpeed} km/h`, danger: trip.maxSpeed > trip.ceiling },
+          { label: 'Distance', value: `${Number(trip.distanceKm).toFixed(1)} km`, danger: false },
           { label: 'Ceiling', value: `${trip.ceiling} km/h`, danger: false },
-          { label: 'Breaches', value: String(trip.breaches), danger: trip.breaches > 0 },
+          { label: 'Duration', value: trip.durationMin ? `${trip.durationMin} min` : '—', danger: false },
         ].map((stat) => (
           <div key={stat.label} className="rounded-2xl border border-slate-200 bg-white p-4 text-center">
             <p className={cn('text-base font-black', stat.danger ? 'text-brand-600' : 'text-slate-900')}>{stat.value}</p>
@@ -41,7 +42,10 @@ function TripDetail({ trip }) {
       </div>
 
       <section>
-        <h3 className="mb-2.5 text-xs font-bold uppercase tracking-wide text-slate-500">8-point inspection</h3>
+        <h3 className="mb-2.5 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+          8-point inspection
+          <DemoBadge title="Inspection capture arrives with the Trip Vault (Phase 3)" />
+        </h3>
         <div className="grid grid-cols-4 gap-2">
           {ZONES.map((zone) => (
             <div key={zone} className="flex flex-col items-center gap-1.5 rounded-xl border border-slate-200 bg-white p-2.5">
@@ -53,7 +57,7 @@ function TripDetail({ trip }) {
           ))}
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          Pre {trip.preInspection} · Post {trip.postInspection} · watermarked &amp; immutable
+          Inspection photo capture is not part of this backend yet — these tiles are placeholders.
         </p>
       </section>
 
@@ -61,7 +65,10 @@ function TripDetail({ trip }) {
         <div className="flex items-start gap-3">
           <BadgeCheck className="mt-0.5 h-5 w-5 shrink-0 text-brand-500" aria-hidden="true" />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-black text-slate-900">Trip certificate</p>
+            <p className="flex items-center gap-2 text-sm font-black text-slate-900">
+              Trip certificate
+              <DemoBadge title="Certificate export arrives with the Trip Vault (Phase 3)" />
+            </p>
             <p className="truncate text-xs text-slate-600">
               Cert {trip.certId} · Mode {mode ? `${mode.id} (${mode.name})` : trip.visionMode}
             </p>
@@ -96,9 +103,18 @@ export default function Vault() {
         </p>
       </header>
 
+      {vaultTrips.length === 0 && (
+        <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-20 text-center">
+          <Archive className="mx-auto h-8 w-8 text-slate-300" aria-hidden="true" />
+          <p className="mt-4 text-base font-bold text-slate-900">No sealed trips yet</p>
+          <p className="mt-1 text-sm text-slate-600">
+            Complete a ride and its route, telematics and fare are archived here.
+          </p>
+        </div>
+      )}
+
       <ul className="grid gap-4 sm:grid-cols-2">
         {vaultTrips.map((trip) => {
-          const breached = trip.breaches > 0
           return (
             <li key={trip.id}>
               <button
@@ -110,19 +126,16 @@ export default function Vault() {
                   <p className="min-w-0 flex-1 truncate text-base font-bold text-slate-900">
                     {trip.from} → {trip.to}
                   </p>
-                  <span
-                    className={cn(
-                      'shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-black',
-                      breached ? 'bg-brand-100 text-brand-700' : 'bg-slate-100 text-slate-600',
-                    )}
-                  >
-                    {breached ? `${trip.breaches} breach` : 'Clean'}
+                  <span className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-600">
+                    Sealed
                   </span>
                 </div>
                 <p className="mt-1.5 truncate text-sm text-slate-500">{trip.date}</p>
                 <div className="mt-4 flex items-center gap-2 text-[11px] font-semibold text-slate-500">
                   <span className="rounded-md bg-slate-100 px-2 py-1">{trip.skill}</span>
-                  <span className="rounded-md bg-slate-100 px-2 py-1">Mode {trip.visionMode}</span>
+                  <span className="rounded-md bg-slate-100 px-2 py-1">
+                    {Number(trip.distanceKm).toFixed(1)} km
+                  </span>
                   <span className="ml-auto text-sm font-black text-slate-900">{formatINR(trip.fare)}</span>
                 </div>
               </button>

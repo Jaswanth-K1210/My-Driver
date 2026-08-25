@@ -1,22 +1,19 @@
-import React, { useState, useCallback } from 'react';
+import React from 'react';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ToastProvider } from './src/components/Toast';
+import { AuthProvider } from './src/context/AuthContext';
 import AuthNavigator from './src/navigation/AuthNavigator';
 
 export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  const handleLogin = useCallback(() => {
-    setIsLoggedIn(true);
-  }, []);
-
-  const handleLogout = useCallback(() => {
-    setIsLoggedIn(false);
-  }, []);
-
   return (
-    <>
+    <SafeAreaProvider>
       <StatusBar style="dark" />
-      <AuthNavigator isLoggedIn={isLoggedIn} onLogout={handleLogout} />
-    </>
+      <AuthProvider>
+        <ToastProvider>
+          <AuthNavigator />
+        </ToastProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

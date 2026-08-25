@@ -106,6 +106,37 @@ describe('trip lifecycle', () => {
       expect(await tripStatus(tripId)).toBe('NO_DRIVERS_FOUND')
     })
 
+    it('embeds the driver name, vehicle and rating once one is assigned', async () => {
+      await pool.query(
+        `UPDATE users SET full_name = 'Ramesh Kumar' WHERE id = $1`, [driver.userId],
+      )
+      await pool.query(
+        `UPDATE driver_profiles SET vehicle_model = 'Toyota Innova',
+                vehicle_plate = 'TS09 EZ 4412', rating = 4.90
+          WHERE user_id = $1`,
+        [driver.userId],
+      )
+
+      const tripId = await bookAndDispatch()
+      const before = await app.inject({
+        method: 'GET', url: `/v1/trips/${tripId}`, headers: bearer(customer.accessToken),
+      })
+      expect(before.json().driver).toBeNull()
+
+      await respond(tripId, true)
+      const after = await app.inject({
+        method: 'GET', url: `/v1/trips/${tripId}`, headers: bearer(customer.accessToken),
+      })
+      expect(after.json().driver).toMatchObject({
+        id: driver.userId,
+        name: 'Ramesh Kumar',
+        initials: 'RK',
+        vehicle_model: 'Toyota Innova',
+        vehicle_plate: 'TS09 EZ 4412',
+        rating: 4.9,
+      })
+    })
+
     it('accepting moves the trip to HANDSHAKE_PENDING and marks the driver ON_TRIP', async () => {
       const tripId = await bookAndDispatch()
 

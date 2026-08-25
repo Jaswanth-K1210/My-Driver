@@ -17,6 +17,16 @@ export const HANDSHAKE_MAX_ATTEMPTS = 5
 
 export type BookingType = 'POINT_TO_POINT' | 'HOURLY'
 
+export type TripDriver = {
+  id: string
+  name: string | null
+  initials: string | null
+  vehicle_model: string | null
+  vehicle_plate: string | null
+  rating: number | null
+  mydriver_score: number | null
+}
+
 export type TripView = {
   id: string
   customer_id: string
@@ -36,29 +46,68 @@ export type TripView = {
   driver_earnings: number | null
   requested_at: string
   completed_at: string | null
+  driver: TripDriver | null
 }
 
-const TRIP_COLUMNS = `
-  id, customer_id, driver_id, status, booking_type, hourly_package_hours,
-  pickup_lat, pickup_lng, drop_lat, drop_lng,
-  required_certification, speed_ceiling_kmh,
-  estimated_distance_km::float8 AS estimated_distance_km,
-  estimated_fare::float8        AS estimated_fare,
-  distance_km::float8           AS distance_km,
-  duration_min,
-  fare_amount::float8           AS fare_amount,
-  driver_earnings::float8       AS driver_earnings,
-  requested_at, completed_at
+/**
+ * Joined once rather than fetched per trip: a list endpoint doing a lookup per
+ * row would be an N+1 on the hottest read in the customer app.
+ */
+const TRIP_SELECT = `
+  SELECT
+    t.id, t.customer_id, t.driver_id, t.status, t.booking_type, t.hourly_package_hours,
+    t.pickup_lat, t.pickup_lng, t.drop_lat, t.drop_lng,
+    t.required_certification, t.speed_ceiling_kmh,
+    t.estimated_distance_km::float8 AS estimated_distance_km,
+    t.estimated_fare::float8        AS estimated_fare,
+    t.distance_km::float8           AS distance_km,
+    t.duration_min,
+    t.fare_amount::float8           AS fare_amount,
+    t.driver_earnings::float8       AS driver_earnings,
+    t.requested_at, t.completed_at,
+    du.full_name          AS driver_name,
+    dp.vehicle_model      AS driver_vehicle_model,
+    dp.vehicle_plate      AS driver_vehicle_plate,
+    dp.rating::float8     AS driver_rating,
+    dp.mydriver_score::float8 AS driver_score
+  FROM trips t
+  LEFT JOIN users du           ON du.id = t.driver_id
+  LEFT JOIN driver_profiles dp ON dp.user_id = t.driver_id
 `
 
 type RawTrip = Record<string, unknown>
 
+const initialsOf = (name: string | null): string | null => {
+  if (!name) return null
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return null
+  return (parts[0]![0]! + (parts[1]?.[0] ?? '')).toUpperCase()
+}
+
 function toView(row: RawTrip): TripView {
-  const { pickup_lat, pickup_lng, drop_lat, drop_lng, ...rest } = row
+  const {
+    pickup_lat, pickup_lng, drop_lat, drop_lng,
+    driver_name, driver_vehicle_model, driver_vehicle_plate, driver_rating, driver_score,
+    ...rest
+  } = row
+
+  const base = rest as Omit<TripView, 'pickup' | 'drop' | 'driver'>
+
   return {
-    ...(rest as Omit<TripView, 'pickup' | 'drop'>),
+    ...base,
     pickup: { lat: pickup_lat as number, lng: pickup_lng as number },
     drop: drop_lat === null ? null : { lat: drop_lat as number, lng: drop_lng as number },
+    driver: base.driver_id
+      ? {
+          id: base.driver_id,
+          name: (driver_name as string | null) ?? null,
+          initials: initialsOf((driver_name as string | null) ?? null),
+          vehicle_model: (driver_vehicle_model as string | null) ?? null,
+          vehicle_plate: (driver_vehicle_plate as string | null) ?? null,
+          rating: (driver_rating as number | null) ?? null,
+          mydriver_score: (driver_score as number | null) ?? null,
+        }
+      : null,
   }
 }
 
@@ -131,7 +180,7 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
 
   if (input.idempotencyKey) {
     const existing = await pool.query(
-      `SELECT ${TRIP_COLUMNS} FROM trips WHERE customer_id = $1 AND idempotency_key = $2`,
+      `${TRIP_SELECT} WHERE t.customer_id = $1 AND t.idempotency_key = $2`,
       [input.customerId, input.idempotencyKey],
     )
     if (existing.rows[0]) return toView(existing.rows[0])
@@ -162,7 +211,7 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
          pickup_handshake_otp_hash, estimated_distance_km, estimated_fare,
          idempotency_key
        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-       RETURNING ${TRIP_COLUMNS}`,
+       RETURNING id`,
       [
         input.customerId,
         input.bookingType,
@@ -181,14 +230,14 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
         input.idempotencyKey ?? null,
       ],
     )
-    const trip = rows[0]!
-    await recordEvent(client, trip.id as string, 'TRIP_REQUESTED', input.customerId, 'CUSTOMER', {
+    const tripId = rows[0]!.id as string
+    await recordEvent(client, tripId, 'TRIP_REQUESTED', input.customerId, 'CUSTOMER', {
       required_certification: card.skill_id,
       speed_ceiling_kmh: input.speedCeilingKmh,
       estimated_fare: fare.total,
     })
     await client.query('COMMIT')
-    return toView(trip)
+    return getTripById(tripId)
   } catch (err) {
     await client.query('ROLLBACK')
     throw err
@@ -203,7 +252,7 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
  * sent). Everything user-facing must use getTripForParticipant.
  */
 export async function getTripById(tripId: string): Promise<TripView> {
-  const { rows } = await pool.query(`SELECT ${TRIP_COLUMNS} FROM trips WHERE id = $1`, [tripId])
+  const { rows } = await pool.query(`${TRIP_SELECT} WHERE t.id = $1`, [tripId])
   if (!rows[0]) throw notFound('TRIP_NOT_FOUND', 'No such trip')
   return toView(rows[0])
 }
@@ -213,8 +262,7 @@ export async function getTripForParticipant(
   userId: string,
 ): Promise<TripView> {
   const { rows } = await pool.query(
-    `SELECT ${TRIP_COLUMNS} FROM trips
-      WHERE id = $1 AND (customer_id = $2 OR driver_id = $2)`,
+    `${TRIP_SELECT} WHERE t.id = $1 AND (t.customer_id = $2 OR t.driver_id = $2)`,
     [tripId, userId],
   )
   if (!rows[0]) throw notFound('TRIP_NOT_FOUND', 'No such trip')
@@ -388,14 +436,13 @@ export async function listTrips(
   let keyset = ''
   if (cursor) {
     const { at, id } = decodeCursor(cursor)
-    keyset = `AND (requested_at, id) < ($3::timestamptz, $4::uuid)`
+    keyset = `AND (t.requested_at, t.id) < ($3::timestamptz, $4::uuid)`
     params.push(at, id)
   }
 
   const { rows } = await pool.query(
-    `SELECT ${TRIP_COLUMNS} FROM trips
-      WHERE ${column} = $1 ${keyset}
-      ORDER BY requested_at DESC, id DESC
+    `${TRIP_SELECT} WHERE t.${column} = $1 ${keyset}
+      ORDER BY t.requested_at DESC, t.id DESC
       LIMIT $2`,
     params,
   )
@@ -495,7 +542,12 @@ export async function getDriverSummary(driverId: string): Promise<DriverSummary>
          FROM trips
         WHERE driver_id = p.user_id
           AND status = 'COMPLETED'
-          AND completed_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata')
+          -- The trailing AT TIME ZONE converts IST midnight back to a
+          -- timestamptz. Without it Postgres compares a naive timestamp as UTC,
+          -- so between 18:30 and 24:00 UTC today's earnings read as zero.
+          AND completed_at >= (
+            date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'
+          )
      ) t ON true
      WHERE p.user_id = $1`,
     [driverId],

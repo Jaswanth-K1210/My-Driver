@@ -1,4 +1,10 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import {
+  CreateBucketCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { env } from '../../config/env.js'
 import type { StorageProvider } from './index.js'
@@ -15,7 +21,44 @@ export class S3StorageProvider implements StorageProvider {
     },
   })
 
+  private ensured: Promise<void> | undefined
+
+  /**
+   * MinIO starts with no buckets, so the first upload would fail with
+   * NoSuchBucket. Create it once, lazily, and remember that we did.
+   *
+   * Against real S3 a missing bucket means misconfiguration; the create will
+   * fail loudly on IAM rather than silently papering over it.
+   */
+  private ensureBucket(): Promise<void> {
+    if (this.ensured) return this.ensured
+
+    this.ensured = (async () => {
+      try {
+        await this.client.send(new HeadBucketCommand({ Bucket: env.STORAGE_BUCKET }))
+        return
+      } catch {
+        // Falls through to create.
+      }
+      try {
+        await this.client.send(new CreateBucketCommand({ Bucket: env.STORAGE_BUCKET }))
+      } catch (err) {
+        const name = (err as { name?: string }).name
+        // Another instance won the race — that is success, not failure.
+        if (name !== 'BucketAlreadyOwnedByYou' && name !== 'BucketAlreadyExists') throw err
+      }
+    })()
+
+    // A failed attempt must not be cached, or the process never recovers.
+    this.ensured.catch(() => {
+      this.ensured = undefined
+    })
+
+    return this.ensured
+  }
+
   async put(key: string, body: Buffer, contentType: string): Promise<string> {
+    await this.ensureBucket()
     await this.client.send(
       new PutObjectCommand({
         Bucket: env.STORAGE_BUCKET,

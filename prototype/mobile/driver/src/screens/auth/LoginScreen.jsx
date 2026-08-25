@@ -99,7 +99,7 @@ export default function LoginScreen({ navigation }) {
                 <Text style={styles.label}>Phone Number</Text>
                 <View style={styles.phoneRow}>
                   <View style={styles.countryCode}>
-                    <Text style={styles.countryCodeText}>+1</Text>
+                    <Text style={styles.countryCodeText}>+91</Text>
                   </View>
                   <TextInput
                     style={styles.phoneInput}
@@ -122,7 +122,7 @@ export default function LoginScreen({ navigation }) {
             ) : (
               <>
                 <Text style={styles.label}>Verification Code</Text>
-                <Text style={styles.hint}>Enter the 6-digit code sent to +1 {phone}</Text>
+                <Text style={styles.hint}>Enter the 6-digit code sent to {toE164(phone)}</Text>
                 <TextInput
                   style={styles.otpInput}
                   placeholder="000000"

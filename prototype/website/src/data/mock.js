@@ -29,13 +29,18 @@ export const PICKUP = {
   id: 'current',
   name: 'Current location',
   address: 'Cyber Towers, HITEC City',
+  lat: 17.4399,
+  lng: 78.3813,
 }
 
+// Coordinates are real Hyderabad locations: the backend prices and dispatches
+// on lat/lng, so these must be genuine. distanceKm stays only as the offline
+// fallback estimate shown before the server quote returns.
 export const DROPS = [
-  { id: 'gachibowli', name: 'Gachibowli', address: 'Financial District Road, Gachibowli', distanceKm: 7.2 },
-  { id: 'airport', name: 'RGIA Airport', address: 'Terminal 1 Departures, Shamshabad', distanceKm: 31.8 },
-  { id: 'banjara', name: 'Banjara Hills', address: 'Road No. 12, Banjara Hills', distanceKm: 5.4 },
-  { id: 'kukatpally', name: 'Kukatpally', address: 'KPHB Phase 3 Main Road', distanceKm: 9.6 },
+  { id: 'gachibowli', name: 'Gachibowli', address: 'Financial District Road, Gachibowli', distanceKm: 7.2, lat: 17.4256, lng: 78.3320 },
+  { id: 'airport', name: 'RGIA Airport', address: 'Terminal 1 Departures, Shamshabad', distanceKm: 31.8, lat: 17.2403, lng: 78.4294 },
+  { id: 'banjara', name: 'Banjara Hills', address: 'Road No. 12, Banjara Hills', distanceKm: 5.4, lat: 17.4126, lng: 78.4392 },
+  { id: 'kukatpally', name: 'Kukatpally', address: 'KPHB Phase 3 Main Road', distanceKm: 9.6, lat: 17.4849, lng: 78.4138 },
 ]
 
 /** Hourly hire packages — the "by hour" half of the booking widget. */

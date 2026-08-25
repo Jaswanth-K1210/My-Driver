@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Clock3, MapPin, Search, ShieldCheck } from 'lucide-react'
 import {
@@ -13,8 +14,11 @@ import { SectionCard, Segmented } from '../../components/app/Primitives.jsx'
 import PhoneFrame from '../../components/app/PhoneFrame.jsx'
 import MobileBookScreen from '../../components/app/mobile/MobileBookScreen.jsx'
 import { useTrip } from '../../context/tripStore.js'
+import { useToast } from '../../context/toastStore.js'
 import { PLATFORM_FEE, VISION_MODES } from '../../data/mock.js'
-import { quoteFor } from '../../lib/booking.js'
+import { quoteFor, serverQuote } from '../../lib/booking.js'
+import { api } from '../../lib/apiClient.js'
+import DemoBadge from '../../components/app/DemoBadge.jsx'
 import { formatINR } from '../../lib/utils.js'
 
 const MODES = [
@@ -25,16 +29,55 @@ const MODES = [
 export default function Book() {
   const navigate = useNavigate()
   // Config already carries anything the landing hero configured.
-  const { config, setConfig, startMatching } = useTrip()
+  const { config, setConfig, skills, startMatching } = useTrip()
+  const { toast } = useToast()
 
-  const quote = quoteFor(config)
+  const local = quoteFor(config, skills)
+  const [server, setServer] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  // The server owns pricing. The local estimate is shown until it answers so
+  // the panel is never blank, then replaced by the authoritative figure.
+  useEffect(() => {
+    if (!local.ready) {
+      setServer(null)
+      return undefined
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      serverQuote(api, config, skills)
+        .then((q) => {
+          if (!cancelled) setServer(q)
+        })
+        .catch(() => {
+          if (!cancelled) setServer(null)
+        })
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [config, skills, local.ready])
+
+  const quote = local
+  const total = server ? server.fare.total : local.total
+  const distanceKm = server ? server.distance_km : local.distanceKm
+  const nightFee = server ? server.fare.night_fee : local.nightFee
+
   const set = (patch) => setConfig((prev) => ({ ...prev, ...patch }))
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault()
-    if (!quote.ready) return
-    startMatching(config)
-    navigate('/app/track')
+    if (!quote.ready || busy) return
+    setBusy(true)
+    try {
+      await startMatching(config)
+      navigate('/app/track')
+    } catch (err) {
+      toast(err?.message ?? 'Could not book that trip', 'warning')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const visionMode = VISION_MODES.find((m) => m.id === config.visionMode)
@@ -76,7 +119,10 @@ export default function Book() {
           <SectionCard title="Safety configuration">
             <CeilingSlider value={config.ceiling} onChange={(ceiling) => set({ ceiling })} />
             <div className="mt-6">
-              <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">VisionCam mode</p>
+              <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+                VisionCam mode
+                <DemoBadge title="VisionCam is not part of this backend — see the app website" />
+              </p>
               <VisionPicker value={config.visionMode} onChange={(mode) => set({ visionMode: mode })} />
             </div>
           </SectionCard>
@@ -89,31 +135,39 @@ export default function Book() {
                   <dd className="font-semibold text-slate-700">{line.value}</dd>
                 </div>
               ))}
+              {quote.ready && server && (
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Routed distance</dt>
+                  <dd className="font-semibold text-slate-700">{distanceKm.toFixed(1)} km</dd>
+                </div>
+              )}
               <div className="flex justify-between">
                 <dt className="text-slate-500">Platform fee</dt>
                 <dd className="font-semibold text-slate-700">{formatINR(PLATFORM_FEE)}</dd>
               </div>
-              {quote.nightFee > 0 && (
+              {nightFee > 0 && (
                 <div className="flex justify-between">
                   <dt className="text-slate-500">Night monitoring</dt>
-                  <dd className="font-semibold text-slate-700">{formatINR(quote.nightFee)}</dd>
+                  <dd className="font-semibold text-slate-700">{formatINR(nightFee)}</dd>
                 </div>
               )}
               <div className="flex items-baseline justify-between border-t border-slate-200 pt-3">
-                <dt className="font-bold text-slate-900">Estimated fare</dt>
+                <dt className="font-bold text-slate-900">
+                  {server ? 'Fare' : 'Estimated fare'}
+                </dt>
                 <dd className="text-2xl font-black tracking-tight text-brand-600">
-                  {quote.ready ? formatINR(quote.total) : '—'}
+                  {quote.ready ? formatINR(total) : '—'}
                 </dd>
               </div>
             </dl>
 
             <button
               type="submit"
-              disabled={!quote.ready}
+              disabled={!quote.ready || busy}
               className="mt-6 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-500 px-5 py-4 text-sm font-black text-white shadow-lg shadow-brand-500/25 transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
             >
               <Search className="h-4 w-4" aria-hidden="true" />
-              Find my {quote.skill.label} driver
+              {busy ? 'Booking…' : `Find my ${quote.skill.label} driver`}
             </button>
             {!quote.ready && (
               <p className="mt-2 text-center text-xs text-slate-500">Choose a destination to continue</p>

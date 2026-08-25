@@ -1,13 +1,19 @@
 import React from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer } from '@react-navigation/native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ToastProvider } from './src/components/Toast';
+import { AuthProvider } from './src/context/AuthContext';
 import AuthNavigator from './src/navigation/AuthNavigator';
 
 export default function App() {
   return (
-    <NavigationContainer>
+    <SafeAreaProvider>
       <StatusBar style="dark" />
-      <AuthNavigator />
-    </NavigationContainer>
+      <AuthProvider>
+        <ToastProvider>
+          <AuthNavigator />
+        </ToastProvider>
+      </AuthProvider>
+    </SafeAreaProvider>
   );
 }

@@ -20,8 +20,9 @@ import MobileTrackScreen from '../../components/app/mobile/MobileTrackScreen.jsx
 import { Modal, SectionCard, StatCard } from '../../components/app/Primitives.jsx'
 import { useTrip } from '../../context/tripStore.js'
 import { useToast } from '../../context/toastStore.js'
-import { DEFAULT_GUARDIANS } from '../../data/mock.js'
 import { useTripTelemetry } from '../../lib/useTripTelemetry.js'
+import DemoBadge from '../../components/app/DemoBadge.jsx'
+import { api } from '../../lib/apiClient.js'
 import { cn, formatINR, maskPhone } from '../../lib/utils.js'
 
 const SOS_HOLD_MS = 1200
@@ -47,7 +48,7 @@ function EmptyState() {
   )
 }
 
-function Matching() {
+function Matching({ label }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white px-6 py-24 text-center">
       <span className="relative flex h-20 w-20 text-brand-500">
@@ -56,8 +57,8 @@ function Matching() {
           <Search className="h-8 w-8" aria-hidden="true" />
         </span>
       </span>
-      <h2 className="mt-6 text-lg font-bold text-slate-900">Matching a certified driver…</h2>
-      <p className="mt-1.5 text-sm text-slate-500">Usually under 20 seconds</p>
+      <h2 className="mt-6 text-lg font-bold text-slate-900">{label ?? 'Matching a certified driver…'}</h2>
+      <p className="mt-1.5 text-sm text-slate-500">Drivers have 20 seconds to accept</p>
       <ul className="mt-6 w-full max-w-xs space-y-2">
         {['Police background check', 'Face-match handshake armed', 'VisionCam standby'].map((item) => (
           <li key={item} className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700">
@@ -70,8 +71,10 @@ function Matching() {
   )
 }
 
-function TripComplete({ trip, summary, onSave }) {
+function TripComplete({ trip, summary, onSave, onRate }) {
   const clean = summary.breaches === 0
+  const [rating, setRating] = useState(0)
+  const [saving, setSaving] = useState(false)
   return (
     <div className="mx-auto max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center">
       <span className={cn('mx-auto flex h-16 w-16 items-center justify-center rounded-3xl', clean ? 'bg-brand-50' : 'bg-brand-100')}>
@@ -95,42 +98,76 @@ function TripComplete({ trip, summary, onSave }) {
         ))}
       </div>
 
+      <div className="mt-6">
+        <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-500">Rate your driver</p>
+        <div className="flex justify-center gap-1.5">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <button
+              key={n}
+              type="button"
+              aria-label={`${n} star${n > 1 ? 's' : ''}`}
+              onClick={() => setRating(n)}
+              className="rounded-xl p-1.5 transition-colors hover:bg-slate-100"
+            >
+              <Star
+                className={cn('h-6 w-6', n <= rating ? 'fill-brand-500 text-brand-500' : 'text-slate-300')}
+                aria-hidden="true"
+              />
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="mt-6 flex items-start gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-4 text-left">
         <BadgeCheck className="mt-0.5 h-5 w-5 shrink-0 text-brand-500" aria-hidden="true" />
         <p className="text-sm text-slate-700">
-          Route, telematics and inspection photos have been sealed. A trip certificate is ready in your Vault.
+          Route and telematics are sealed to the trip ledger.{' '}
+          <span className="font-semibold">Inspection photos and the exportable certificate</span> arrive
+          with the Trip Vault. <DemoBadge title="Trip Vault is Phase 3" />
         </p>
       </div>
 
       <button
         type="button"
-        onClick={onSave}
-        className="mt-6 w-full rounded-2xl bg-brand-500 px-5 py-4 text-sm font-black text-white shadow-lg shadow-brand-500/25 transition-colors hover:bg-brand-600"
+        disabled={saving}
+        onClick={async () => {
+          setSaving(true)
+          try {
+            if (rating > 0) await onRate?.(rating)
+          } catch {
+            // A rating failure must not trap the user on this screen.
+          }
+          await onSave()
+        }}
+        className="mt-6 w-full rounded-2xl bg-brand-500 px-5 py-4 text-sm font-black text-white shadow-lg shadow-brand-500/25 transition-colors hover:bg-brand-600 disabled:bg-slate-200 disabled:text-slate-500"
       >
-        Seal to Trip Vault
+        {saving ? 'Saving…' : rating > 0 ? 'Submit rating & finish' : 'Finish'}
       </button>
     </div>
   )
 }
 
 export default function Track() {
-  const { phase, trip, config, summary, confirmMatch, completeTrip, cancelTrip, saveToVault } = useTrip()
+  const { phase, trip, summary, driverPosition, connection, cancelTrip, rateTrip, saveToVault } =
+    useTrip()
   const { toast } = useToast()
   const navigate = useNavigate()
 
   const [guardianOpen, setGuardianOpen] = useState(false)
+  const [guardians, setGuardians] = useState([])
   const [sharedIds, setSharedIds] = useState([])
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [sosStage, setSosStage] = useState('idle')
   const [countdown, setCountdown] = useState(SOS_COUNTDOWN_S)
   const holdRef = useRef(null)
 
-  // Matching resolves into a live trip after a short delay.
+  // Real guardians from the account, for the share sheet.
   useEffect(() => {
-    if (phase !== 'matching') return undefined
-    const t = setTimeout(() => confirmMatch(config), 1800)
-    return () => clearTimeout(t)
-  }, [phase, config, confirmMatch])
+    api.me.guardians
+      .list()
+      .then(setGuardians)
+      .catch(() => setGuardians([]))
+  }, [])
 
   useEffect(() => () => {
     if (holdRef.current) clearTimeout(holdRef.current)
@@ -141,11 +178,14 @@ export default function Track() {
     [toast],
   )
 
+  // Progress and the speed trace remain simulated: the Phase 2 integrity engine
+  // is what will supply real speed-vs-ceiling analysis. Completion is NOT
+  // simulated — the driver ends the trip server-side and the socket tells us.
   const telemetry = useTripTelemetry({
     ceiling: trip?.ceiling ?? 60,
     active: phase === 'live' && Boolean(trip),
     onBreach: handleBreach,
-    onComplete: completeTrip,
+    onComplete: undefined,
   })
 
   useEffect(() => {
@@ -162,13 +202,28 @@ export default function Track() {
   }, [sosStage, countdown, toast])
 
   if (phase === 'idle') return <EmptyState />
-  if (phase === 'matching') return <Matching />
-  if (phase === 'complete' && trip && summary) {
-    return <TripComplete trip={trip} summary={summary} onSave={() => { saveToVault(); navigate('/app/vault') }} />
+  if (phase === 'matching') return <Matching label={trip?.statusLabel} />
+  if (phase === 'complete' && trip) {
+    return (
+      <TripComplete
+        trip={trip}
+        summary={summary ?? { maxSpeed: telemetry.maxSpeed, breaches: telemetry.breaches }}
+        onRate={rateTrip}
+        onSave={async () => {
+          await saveToVault()
+          navigate('/app/vault')
+        }}
+      />
+    )
   }
   if (!trip) return <EmptyState />
 
-  const { progress, speed, maxSpeed, breaches, overCeiling, etaMin, status } = telemetry
+  const { progress, maxSpeed, breaches, etaMin } = telemetry
+  // A real DRIVER_LOCATION frame wins over the simulated trace.
+  const liveSpeed = driverPosition?.speed
+  const speed = liveSpeed != null ? Math.round(liveSpeed) : telemetry.speed
+  const overCeiling = speed > trip.ceiling
+  const status = trip.statusLabel ?? telemetry.status
 
   const toggleShare = (id) =>
     setSharedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
@@ -188,7 +243,7 @@ export default function Track() {
         <div>
           <h1 className="text-3xl font-black tracking-tight text-slate-900">Live tracking</h1>
           <p className="mt-1.5 text-sm text-slate-600">
-            Trip {trip.id} · {trip.skill} · VisionCam Mode {trip.visionMode}
+            Trip {trip.id} · {trip.skill} · {connection === 'open' ? 'Live' : 'Reconnecting…'}
           </p>
         </div>
         <button
@@ -210,7 +265,16 @@ export default function Track() {
             </button>
             <button
               type="button"
-              onClick={() => { cancelTrip(); telemetry.reset(); setConfirmCancel(false); toast('Trip cancelled', 'info') }}
+              onClick={async () => {
+                setConfirmCancel(false)
+                try {
+                  await cancelTrip()
+                  telemetry.reset()
+                  toast('Trip cancelled', 'info')
+                } catch (err) {
+                  toast(err?.message ?? 'Could not cancel the trip', 'warning')
+                }
+              }}
               className="rounded-xl bg-brand-500 px-4 py-2 text-xs font-black text-white"
             >
               Cancel trip
@@ -242,12 +306,14 @@ export default function Track() {
           <SectionCard>
             <div className="flex flex-wrap items-center gap-4">
               <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-base font-black text-brand-600">
-                {trip.driver.initials}
+                {trip.driver?.initials ?? '··'}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-base font-bold text-slate-900">{trip.driver.name}</p>
+                <p className="truncate text-base font-bold text-slate-900">
+                  {trip.driver?.name ?? 'Assigning a driver…'}
+                </p>
                 <p className="truncate text-sm text-slate-500">
-                  {trip.driver.vehicle} · {trip.driver.plate}
+                  {trip.driver ? `${trip.driver.vehicle} · ${trip.driver.plate}` : 'Vehicle details arrive on acceptance'}
                 </p>
               </div>
               <div className="flex shrink-0 gap-2">
@@ -291,7 +357,7 @@ export default function Track() {
           <div className="grid gap-4 sm:grid-cols-3">
             <StatCard icon={Gauge} label="Max speed" value={maxSpeed} unit="km/h" danger={maxSpeed > trip.ceiling} />
             <StatCard icon={Car} label="Fare locked" value={formatINR(trip.fare)} />
-            <StatCard icon={Users} label="Guardians" value={`${sharedIds.length}/${DEFAULT_GUARDIANS.length}`} />
+            <StatCard icon={Users} label="Guardians" value={`${sharedIds.length}/${guardians.length}`} />
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -334,7 +400,12 @@ export default function Track() {
 
       <Modal open={guardianOpen} onClose={() => setGuardianOpen(false)} title="Share guardian link">
         <ul className="space-y-2">
-          {DEFAULT_GUARDIANS.map((g) => {
+          {guardians.length === 0 && (
+            <li className="rounded-2xl border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500">
+              No guardians yet — add up to 3 in your Profile.
+            </li>
+          )}
+          {guardians.map((g) => {
             const selected = sharedIds.includes(g.id)
             return (
               <li key={g.id}>

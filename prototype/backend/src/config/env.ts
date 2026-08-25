@@ -41,6 +41,10 @@ const EnvSchema = z.object({
 
   GOOGLE_CLIENT_IDS: z.string().default(''),
 
+  // Comma-separated browser origins allowed to call the API. Native apps are
+  // unaffected: CORS is a browser policy and Expo does not send an Origin.
+  CORS_ORIGINS: z.string().default('http://localhost:5173,http://localhost:5174'),
+
   SMS_PROVIDER: z.enum(['console', 'twilio']).default('console'),
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
@@ -76,3 +80,6 @@ export const env: Env = load()
 
 export const googleClientIds = (): string[] =>
   env.GOOGLE_CLIENT_IDS.split(',').map((s) => s.trim()).filter(Boolean)
+
+export const corsOrigins = (): string[] =>
+  env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)

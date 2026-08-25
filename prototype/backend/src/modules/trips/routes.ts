@@ -10,7 +10,7 @@ import { computeFare } from './fare.js'
 import { setAvailability } from './geo-index.js'
 import { performHandshake } from './handshake.js'
 import { respondToOffer, startDispatch } from './matching.js'
-import { getRateCard } from './rate-cards.js'
+import { getRateCard, listRateCards } from './rate-cards.js'
 import {
   bookTrip,
   cancelTrip,
@@ -79,10 +79,43 @@ const TripViewSchema = z.object({
   driver_earnings: z.number().nullable(),
   requested_at: z.coerce.string(),
   completed_at: z.coerce.string().nullable(),
+  driver: z
+    .object({
+      id: z.string().uuid(),
+      name: z.string().nullable(),
+      initials: z.string().nullable(),
+      vehicle_model: z.string().nullable(),
+      vehicle_plate: z.string().nullable(),
+      rating: z.number().nullable(),
+      mydriver_score: z.number().nullable(),
+    })
+    .nullable(),
 })
 
 export function registerTripRoutes(app: FastifyInstance): void {
   const r = app.withTypeProvider<ZodTypeProvider>()
+
+  // Public: the apps render the skill picker from this instead of hardcoding
+  // rates, so a price change never needs a client release.
+  r.get(
+    '/v1/rate-cards',
+    {
+      schema: {
+        response: {
+          200: z.array(
+            z.object({
+              skill_id: z.string(),
+              label: z.string(),
+              per_km_rate: z.number(),
+              hourly_rate: z.number(),
+              included_km_per_hour: z.number().int(),
+            }),
+          ),
+        },
+      },
+    },
+    async () => listRateCards(),
+  )
 
   r.post(
     '/v1/trips/quote',
@@ -301,15 +334,33 @@ export function registerTripRoutes(app: FastifyInstance): void {
     {
       onRequest: [requireAuth, requireRole('DRIVER')],
       schema: {
-        body: z.object({ availability: z.enum(['OFFLINE', 'ONLINE', 'ON_TRIP']) }).strict(),
+        body: z
+          .object({
+            availability: z.enum(['OFFLINE', 'ONLINE', 'ON_TRIP']),
+            // Supplying a position when going ONLINE makes the driver
+            // immediately dispatchable instead of waiting for telemetry.
+            location: LatLngSchema.optional(),
+          })
+          .strict(),
         response: {
-          200: z.object({ availability: z.enum(['OFFLINE', 'ONLINE', 'ON_TRIP']) }),
+          200: z.object({
+            availability: z.enum(['OFFLINE', 'ONLINE', 'ON_TRIP']),
+            dispatchable: z.boolean(),
+          }),
         },
       },
     },
     async (request) => {
-      await setAvailability(request.auth!.userId, request.body.availability)
-      return { availability: request.body.availability }
+      await setAvailability(
+        request.auth!.userId,
+        request.body.availability,
+        request.body.location,
+      )
+      return {
+        availability: request.body.availability,
+        dispatchable:
+          request.body.availability === 'ONLINE' && Boolean(request.body.location),
+      }
     },
   )
 

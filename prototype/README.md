@@ -1,26 +1,102 @@
-# MyDriver Prototype
+# MyDriver
 
-Frontend-only prototypes for the MyDriver ecosystem. **No backend** — every screen runs on simulated mock data.
+A working MyDriver stack: a real backend with three clients wired to it.
 
 ## What's inside
 
-| Folder     | App                                                          | Run                |
-| ---------- | ------------------------------------------------------------ | ------------------ |
-| `website/` | Marketing website (skills, safety stack, pricing, FAQ)        | `npm run dev`      |
-| `app/`     | Web app prototype — Customer & Driver modes in one shell      | `npm run dev`      |
-| `mobile/`  | React Native (Expo) app — the same two flows, on device       | `npm start`        |
+| Folder            | What it is                                                    | Backend?           |
+| ----------------- | ------------------------------------------------------------- | ------------------ |
+| `backend/`        | Fastify + TypeScript API — auth, trips, realtime telemetry     | **is** the backend |
+| `website/`        | Marketing site + customer dashboard (Vite + React 19)          | **connected**      |
+| `mobile/user/`    | Customer app (Expo SDK 57 + React Native 0.86)                 | **connected**      |
+| `mobile/driver/`  | Driver app (Expo SDK 57 + React Native 0.86)                   | **connected**      |
+| `app/`            | Older combined customer+driver web demo                        | mocks only         |
+| `shared/`         | Canonical API client, vendored into the three connected apps   | —                  |
 
-`website/` and `app/` are Vite + React 19 + Tailwind CSS 4. `mobile/` is Expo SDK 57 + React Native 0.86 with React Navigation.
+`app/` is deliberately left on mock data: `mobile/user` and `mobile/driver` now
+own those flows properly, so wiring it would mean maintaining the same screens
+twice. It remains a useful offline design reference.
 
 ## Quick start
 
+The backend must be running first — the three connected apps have no mock
+fallback for auth or trips.
+
 ```bash
-cd prototype/website && npm install && npm run dev
-cd prototype/app     && npm install && npm run dev
-cd prototype/mobile  && npm install && npm start   # then scan the QR code with Expo Go
+# 1. Backend + infrastructure
+cd prototype/backend
+cp .env.example .env
+npm install
+npm run infra:up          # TimescaleDB, PgBouncer, Redis, MinIO
+npm run db:migrate && npm run db:seed
+npm run dev               # http://localhost:4000
+
+# 2. Website
+cd prototype/website && cp .env.example .env && npm install && npm run dev
+
+# 3. Customer app          # 4. Driver app
+cd prototype/mobile/user   #    cd prototype/mobile/driver
+npm install && npm start   #    npm install && npm start
 ```
 
-The mobile app runs in **Expo Go** — no Xcode or Android Studio build required.
+No API keys are needed. SMS, push, storage and face-liveness all run through
+console/in-memory adapters in development.
+
+**Reading the OTP:** there is no real SMS in development. The 6-digit code is
+printed to the backend's stdout:
+
+```
+[sms:console] -> +919876543210: 481920 is your MyDriver verification code.
+```
+
+**Mobile on a real device:** the apps derive the backend URL from the Expo dev
+server's host, so Expo Go on your phone reaches your laptop automatically. No IP
+editing. Override with `EXPO_PUBLIC_API_URL` if you need a tunnel.
+
+## Verifying the whole stack
+
+```bash
+cd prototype/backend && npm test          # 157 tests
+node prototype/shared/smoke-test.mjs      # 32 checks, end to end through the real client
+```
+
+The smoke test drives login → booking → dispatch → handshake → telemetry →
+completion → rating → history using the same client the apps use.
+
+## Google sign-in
+
+Not yet active. Create OAuth clients in Google Cloud Console → Credentials and
+add the IDs in **two** places:
+
+| Where | Variable |
+| ----- | -------- |
+| `backend/.env` | `GOOGLE_CLIENT_IDS` — comma-separated, **all three** IDs |
+| `website/.env` | `VITE_GOOGLE_CLIENT_ID` — the **Web** client ID |
+| `mobile/user/.env`, `mobile/driver/.env` | `EXPO_PUBLIC_GOOGLE_CLIENT_ID` — the iOS/Android ID |
+
+Until then the Google buttons explain they are unconfigured, and phone OTP works
+fully. The backend's Google path is built and tested — it activates on config
+alone.
+
+## What is real and what is not
+
+Everything the Phase 1 backend supports is live: login, booking, fare quoting,
+dispatch, driver acceptance, the pickup handshake, live location, trip
+completion, ratings, guardians and trip history.
+
+These screens carry a visible **Demo** badge because their backend is not built
+yet — nothing is deleted, and Phase 2/3 drops in behind them:
+
+| Feature | Waiting on |
+| ------- | ---------- |
+| 8-point inspection capture | Trip Vault — Phase 3 |
+| Trip certificate export | Trip Vault — Phase 3 |
+| Silent SOS, guardian link dispatch | Escalation engine — Phase 2 |
+| Speed-breach / anomaly alerts | Integrity engine — Phase 2 |
+| VisionCam mode picker | **Permanently excluded** from this backend |
+
+The VisionCam exclusion is enforced, not merely documented: the backend rejects
+a booking carrying a `mode` field rather than ignoring it.
 
 ## Design system
 
@@ -58,7 +134,16 @@ Use the **Customer / Driver** switch in each home screen's header.
 
 ## Notes
 
-- All data lives in `src/data/mock.js`; nothing is persisted or sent anywhere. `app/` and `mobile/` share the same file contents.
-- The mobile app simulates camera, GPS and accelerometer rather than using device APIs. The native modules a production build would need (`react-native-vision-camera`, background geolocation, volume-button SOS listeners) are listed in `docs/mobile_app_spec.md` and are intentionally out of scope here.
+- `mock.js` still supplies presentation-only data in the connected apps — place
+  names, marketing copy, skill descriptions. Prices come from the API
+  (`GET /v1/rate-cards`), and all trip and account data is real.
+- The mobile apps still simulate camera, GPS and accelerometer rather than using
+  device APIs — but the simulated telemetry is streamed to the real backend over
+  a real WebSocket, stored in TimescaleDB, and the completed trip's distance is
+  computed from it. The native modules a production build would need
+  (`react-native-vision-camera`, background geolocation, volume-button SOS
+  listeners) are listed in `docs/mobile_app_spec.md` and remain out of scope.
 - Store buttons, calls and exports are clearly-labelled demo actions.
-- For production this frontend would be hardened with real CSP headers, auth and API integration — intentionally out of scope for the prototype.
+- Auth is real: OTP over the API, JWTs with rotating refresh tokens, stored in
+  `localStorage` on web and the device keychain (`expo-secure-store`) on mobile.
+  For production the web app would additionally need CSP headers.

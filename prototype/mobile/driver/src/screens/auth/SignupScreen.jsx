@@ -13,10 +13,11 @@ import {
 import { colors, radius } from '../../theme/tokens';
 
 export default function SignupScreen({ navigation }) {
+  const { requestOtp, verifyOtp } = useAuth()
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [method, setMethod] = useState('google');
+  const [method, setMethod] = useState(GOOGLE_ENABLED ? 'google' : 'phone');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
 
@@ -85,7 +86,7 @@ export default function SignupScreen({ navigation }) {
           <Text style={styles.label}>Phone Number</Text>
           <View style={styles.phoneRow}>
             <View style={styles.countryCode}>
-              <Text style={styles.countryCodeText}>+1</Text>
+              <Text style={styles.countryCodeText}>+91</Text>
             </View>
             <TextInput
               style={styles.phoneInput}
@@ -145,7 +146,7 @@ export default function SignupScreen({ navigation }) {
               </TouchableOpacity>
             ) : (
               <>
-                <Text style={styles.hint}>Enter the 6-digit code sent to +1 {phone}</Text>
+                <Text style={styles.hint}>Enter the 6-digit code sent to {toE164(phone)}</Text>
                 <TextInput
                   style={styles.otpInput}
                   placeholder="000000"
