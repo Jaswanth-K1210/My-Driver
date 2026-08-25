@@ -1,0 +1,54 @@
+services:
+  postgres:
+    image: timescale/timescaledb:2.17.2-pg17
+    environment:
+      POSTGRES_USER: mydriver
+      POSTGRES_PASSWORD: mydriver
+      POSTGRES_DB: mydriver
+    ports: ['5433:5432']
+    volumes: ['pgdata:/var/lib/postgresql/data']
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U mydriver -d mydriver']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    environment:
+      DB_HOST: postgres
+      DB_USER: mydriver
+      DB_PASSWORD: mydriver
+      DB_NAME: mydriver
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 10000
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits,options,search_path
+      DEFAULT_POOL_SIZE: 25
+      # 'plain' lets PgBouncer hold the password and let Postgres negotiate
+      # SCRAM itself. Pass-through scram-sha-256 stalls without an auth_query.
+      AUTH_TYPE: plain
+    ports: ['6432:5432']
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  redis:
+    image: redis:7.4-alpine
+    ports: ['6380:6379']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: mydriver
+      MINIO_ROOT_PASSWORD: mydriver123
+    ports: ['9000:9000', '9001:9001']
+    volumes: ['miniodata:/data']
+
+volumes:
+  pgdata:
+  miniodata:

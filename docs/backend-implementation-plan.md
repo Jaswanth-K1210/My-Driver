@@ -2925,3 +2925,4962 @@ git commit -m "feat(backend): add RBAC preHandlers and current-user endpoints"
 ```
 
 ---
+
+### Task 11: Refresh and logout endpoints
+
+**Files:**
+- Modify: `prototype/backend/src/modules/auth/routes.ts`
+- Test: `prototype/backend/tests/integration/auth-refresh.test.ts`
+
+**Interfaces:**
+- Consumes: `rotateRefreshToken`, `revokeRefreshToken` (Task 8); `loginAs`, `bearer` (Task 9).
+- Produces: `POST /v1/auth/refresh`, `POST /v1/auth/logout`.
+
+- [ ] **Step 1: Write the failing test**
+
+`prototype/backend/tests/integration/auth-refresh.test.ts`:
+
+```ts
+import { describe, expect, it, beforeAll, beforeEach, afterAll } from 'vitest'
+import type { FastifyInstance } from 'fastify'
+import { buildApp } from '../../src/app.js'
+import { resetDb } from '../helpers/db.js'
+import { resetRedis } from '../helpers/redis.js'
+import { bearer, loginAs } from '../helpers/auth.js'
+
+describe('refresh and logout', () => {
+  let app: FastifyInstance
+
+  beforeAll(async () => { app = await buildApp(); await app.ready() })
+  beforeEach(async () => { await resetDb(); await resetRedis() })
+  afterAll(async () => { await app.close() })
+
+  const refresh = (token: string) =>
+    app.inject({ method: 'POST', url: '/v1/auth/refresh', payload: { refresh_token: token } })
+
+  it('exchanges a refresh token for a new pair', async () => {
+    const { refreshToken } = await loginAs(app, '+919876543210', 'CUSTOMER')
+
+    const res = await refresh(refreshToken)
+    expect(res.statusCode).toBe(200)
+
+    const body = res.json()
+    expect(body.access_token).toBeTruthy()
+    expect(body.refresh_token).not.toBe(refreshToken)
+    expect(body.expires_in).toBe(900)
+  })
+
+  it('keeps the new access token usable', async () => {
+    const { refreshToken } = await loginAs(app, '+919876543210', 'CUSTOMER')
+    const next = (await refresh(refreshToken)).json()
+
+    const me = await app.inject({
+      method: 'GET', url: '/v1/me', headers: bearer(next.access_token),
+    })
+    expect(me.statusCode).toBe(200)
+    expect(me.json().role).toBe('CUSTOMER')
+  })
+
+  it('returns 401 with REFRESH_TOKEN_REUSED when an old token is replayed', async () => {
+    const { refreshToken } = await loginAs(app, '+919876543210', 'CUSTOMER')
+    await refresh(refreshToken)
+
+    const res = await refresh(refreshToken)
+    expect(res.statusCode).toBe(401)
+    expect(res.json().error.code).toBe('REFRESH_TOKEN_REUSED')
+  })
+
+  it('logout revokes the refresh token', async () => {
+    const { refreshToken } = await loginAs(app, '+919876543210', 'CUSTOMER')
+
+    const out = await app.inject({
+      method: 'POST', url: '/v1/auth/logout', payload: { refresh_token: refreshToken },
+    })
+    expect(out.statusCode).toBe(204)
+
+    const res = await refresh(refreshToken)
+    expect(res.statusCode).toBe(401)
+  })
+
+  it('logout of an unknown token still returns 204', async () => {
+    const res = await app.inject({
+      method: 'POST', url: '/v1/auth/logout', payload: { refresh_token: 'nope.nope' },
+    })
+    expect(res.statusCode).toBe(204)
+  })
+})
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/integration/auth-refresh.test.ts
+```
+
+Expected: FAIL — `/v1/auth/refresh` returns 404.
+
+- [ ] **Step 3: Add the routes**
+
+Append inside `registerAuthRoutes` in `src/modules/auth/routes.ts`:
+
+```ts
+import { revokeRefreshToken, rotateRefreshToken } from './tokens.js'
+
+r.post('/v1/auth/refresh', {
+  schema: {
+    body: z.object({ refresh_token: z.string().min(10) }),
+    response: {
+      200: z.object({
+        access_token: z.string(),
+        refresh_token: z.string(),
+        expires_in: z.number().int(),
+      }),
+    },
+  },
+}, async (request) => rotateRefreshToken(app, request.body.refresh_token))
+
+r.post('/v1/auth/logout', {
+  schema: {
+    body: z.object({ refresh_token: z.string().min(1) }),
+    response: { 204: z.null() },
+  },
+}, async (request, reply) => {
+  await revokeRefreshToken(request.body.refresh_token)
+  return reply.status(204).send()
+})
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+```bash
+npm test -- tests/integration/auth-refresh.test.ts
+```
+
+Expected: PASS — 5 tests.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add refresh and logout endpoints"
+```
+
+---
+
+### Task 12: Google sign-in
+
+Verify the Google `id_token` against Google's JWKS and apply the spec's account-linking rule: match `google_sub`, else link by verified email, else create a phone-less user.
+
+**Files:**
+- Create: `prototype/backend/src/modules/auth/google.ts`
+- Modify: `prototype/backend/src/modules/auth/routes.ts`
+- Test: `prototype/backend/tests/integration/auth-google.test.ts`
+
+**Interfaces:**
+- Consumes: `grantRole`, `getUserRoles` (Task 9); `issueTokens` (Task 8).
+- Produces:
+  - `verifyGoogleIdToken(idToken: string): Promise<GoogleIdentity>` where `GoogleIdentity = { sub: string; email: string | null; emailVerified: boolean; name: string | null }`
+  - `setGoogleVerifier(fn | undefined): void` — test seam
+  - `signInWithGoogle(app, input: { idToken: string; role: Role; deviceId?: string }): Promise<{ tokens: TokenPair; user: PublicUser }>`
+
+- [ ] **Step 1: Write the failing test**
+
+`prototype/backend/tests/integration/auth-google.test.ts`:
+
+```ts
+import { describe, expect, it, beforeAll, beforeEach, afterAll } from 'vitest'
+import type { FastifyInstance } from 'fastify'
+import { buildApp } from '../../src/app.js'
+import { pool } from '../../src/db/client.js'
+import { setGoogleVerifier } from '../../src/modules/auth/google.js'
+import { resetDb } from '../helpers/db.js'
+import { resetRedis } from '../helpers/redis.js'
+import { loginAs } from '../helpers/auth.js'
+
+describe('POST /v1/auth/google', () => {
+  let app: FastifyInstance
+
+  beforeAll(async () => { app = await buildApp(); await app.ready() })
+  beforeEach(async () => { await resetDb(); await resetRedis() })
+  afterAll(async () => { setGoogleVerifier(undefined); await app.close() })
+
+  const google = (payload: unknown) =>
+    app.inject({ method: 'POST', url: '/v1/auth/google', payload })
+
+  function stubGoogle(identity: {
+    sub: string; email: string | null; emailVerified: boolean; name: string | null
+  }) {
+    setGoogleVerifier(async () => identity)
+  }
+
+  it('creates a phone-less user on first Google sign-in', async () => {
+    stubGoogle({ sub: 'g-1', email: 'priya@example.com', emailVerified: true, name: 'Priya' })
+
+    const res = await google({ id_token: 'stub', role: 'CUSTOMER' })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().user).toMatchObject({
+      role: 'CUSTOMER', phone_number: null, email: 'priya@example.com', full_name: 'Priya',
+    })
+  })
+
+  it('returns the same user on a second sign-in with the same sub', async () => {
+    stubGoogle({ sub: 'g-1', email: 'priya@example.com', emailVerified: true, name: 'Priya' })
+
+    const first = (await google({ id_token: 'stub', role: 'CUSTOMER' })).json()
+    const second = (await google({ id_token: 'stub', role: 'CUSTOMER' })).json()
+
+    expect(second.user.id).toBe(first.user.id)
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM users')
+    expect(rows[0].n).toBe(1)
+  })
+
+  it('links to an existing user when the verified email matches', async () => {
+    const { userId, accessToken } = await loginAs(app, '+919876543210', 'CUSTOMER')
+    await app.inject({
+      method: 'PATCH', url: '/v1/me',
+      headers: { authorization: `Bearer ${accessToken}` },
+      payload: { email: 'priya@example.com' },
+    })
+
+    stubGoogle({ sub: 'g-2', email: 'priya@example.com', emailVerified: true, name: 'Priya' })
+    const res = await google({ id_token: 'stub', role: 'CUSTOMER' })
+
+    expect(res.json().user.id).toBe(userId)
+    expect(res.json().user.phone_number).toBe('+919876543210')
+
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM users')
+    expect(rows[0].n).toBe(1)
+  })
+
+  it('does NOT link when the email is unverified', async () => {
+    await loginAs(app, '+919876543210', 'CUSTOMER')
+    stubGoogle({ sub: 'g-3', email: 'priya@example.com', emailVerified: false, name: null })
+
+    const res = await google({ id_token: 'stub', role: 'CUSTOMER' })
+    expect(res.statusCode).toBe(200)
+
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM users')
+    expect(rows[0].n).toBe(2)
+  })
+
+  it('grants the requested role', async () => {
+    stubGoogle({ sub: 'g-4', email: 'ramesh@example.com', emailVerified: true, name: 'Ramesh' })
+    const res = await google({ id_token: 'stub', role: 'DRIVER' })
+
+    expect(res.json().user.role).toBe('DRIVER')
+    const { rows } = await pool.query('SELECT role FROM user_roles')
+    expect(rows.map((r) => r.role)).toEqual(['DRIVER'])
+  })
+
+  it('returns 401 when token verification fails', async () => {
+    setGoogleVerifier(async () => { throw new Error('bad signature') })
+
+    const res = await google({ id_token: 'stub', role: 'CUSTOMER' })
+    expect(res.statusCode).toBe(401)
+    expect(res.json().error.code).toBe('INVALID_GOOGLE_TOKEN')
+  })
+})
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/integration/auth-google.test.ts
+```
+
+Expected: FAIL — `Cannot find module '../../src/modules/auth/google.js'`.
+
+- [ ] **Step 3: Implement Google verification and linking**
+
+`prototype/backend/src/modules/auth/google.ts`:
+
+```ts
+import { createRemoteJWKSet, jwtVerify } from 'jose'
+import type { FastifyInstance } from 'fastify'
+import { pool } from '../../db/client.js'
+import { googleClientIds } from '../../config/env.js'
+import { unauthorized } from '../../lib/errors.js'
+import { grantRole, type PublicUser } from './service.js'
+import { issueTokens, type TokenPair } from './tokens.js'
+import type { Role } from './otp.js'
+
+export type GoogleIdentity = {
+  sub: string
+  email: string | null
+  emailVerified: boolean
+  name: string | null
+}
+
+const JWKS = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'))
+
+async function defaultVerifier(idToken: string): Promise<GoogleIdentity> {
+  const audiences = googleClientIds()
+  if (audiences.length === 0) {
+    throw new Error('GOOGLE_CLIENT_IDS is not configured')
+  }
+
+  const { payload } = await jwtVerify(idToken, JWKS, {
+    issuer: ['https://accounts.google.com', 'accounts.google.com'],
+    audience: audiences,
+  })
+
+  return {
+    sub: String(payload.sub),
+    email: typeof payload.email === 'string' ? payload.email : null,
+    emailVerified: payload.email_verified === true,
+    name: typeof payload.name === 'string' ? payload.name : null,
+  }
+}
+
+let verifier: (idToken: string) => Promise<GoogleIdentity> = defaultVerifier
+
+/** Test seam. Passing undefined restores real JWKS verification. */
+export function setGoogleVerifier(fn: ((t: string) => Promise<GoogleIdentity>) | undefined): void {
+  verifier = fn ?? defaultVerifier
+}
+
+export const verifyGoogleIdToken = (idToken: string): Promise<GoogleIdentity> => verifier(idToken)
+
+async function resolveUser(identity: GoogleIdentity): Promise<string> {
+  const bySub = await pool.query<{ id: string }>(
+    `SELECT id FROM users WHERE google_sub = $1`, [identity.sub],
+  )
+  if (bySub.rows[0]) return bySub.rows[0].id
+
+  // Link by email only when Google asserts the address is verified. An
+  // unverified address is attacker-controllable and must never merge accounts.
+  if (identity.email && identity.emailVerified) {
+    const byEmail = await pool.query<{ id: string }>(
+      `UPDATE users SET google_sub = $1, updated_at = now()
+        WHERE email = $2 AND google_sub IS NULL
+        RETURNING id`,
+      [identity.sub, identity.email],
+    )
+    if (byEmail.rows[0]) return byEmail.rows[0].id
+  }
+
+  const created = await pool.query<{ id: string }>(
+    `INSERT INTO users (google_sub, email, full_name)
+     VALUES ($1, $2, $3) RETURNING id`,
+    [identity.sub, identity.emailVerified ? identity.email : null, identity.name],
+  )
+  return created.rows[0]!.id
+}
+
+export async function signInWithGoogle(
+  app: FastifyInstance,
+  input: { idToken: string; role: Role; deviceId?: string },
+): Promise<{ tokens: TokenPair; user: PublicUser }> {
+  let identity: GoogleIdentity
+  try {
+    identity = await verifyGoogleIdToken(input.idToken)
+  } catch {
+    throw unauthorized('INVALID_GOOGLE_TOKEN', 'Google token could not be verified')
+  }
+
+  const userId = await resolveUser(identity)
+  await grantRole(userId, input.role)
+
+  const { rows } = await pool.query(
+    `SELECT id, phone_number, email, full_name FROM users WHERE id = $1`, [userId],
+  )
+  const tokens = await issueTokens(app, userId, input.role, input.deviceId)
+
+  return { tokens, user: { ...rows[0]!, role: input.role } as PublicUser }
+}
+```
+
+- [ ] **Step 4: Add the route**
+
+Append inside `registerAuthRoutes`:
+
+```ts
+import { signInWithGoogle } from './google.js'
+
+r.post('/v1/auth/google', {
+  schema: {
+    body: z.object({
+      id_token: z.string().min(10),
+      role: RoleSchema,
+      device_id: z.string().max(128).optional(),
+    }),
+    response: {
+      200: z.object({
+        access_token: z.string(),
+        refresh_token: z.string(),
+        expires_in: z.number().int(),
+        user: PublicUserSchema,
+      }),
+    },
+  },
+}, async (request) => {
+  const { tokens, user } = await signInWithGoogle(app, {
+    idToken: request.body.id_token,
+    role: request.body.role,
+    deviceId: request.body.device_id,
+  })
+  return { ...tokens, user }
+})
+```
+
+- [ ] **Step 5: Run the test to verify it passes**
+
+```bash
+npm test -- tests/integration/auth-google.test.ts
+```
+
+Expected: PASS — 6 tests.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add Google sign-in with JWKS verification and account linking"
+```
+
+---
+
+### Task 13: Guardian contacts and DPDP consents
+
+Both are small user-owned collections and share one migration and one route file.
+
+**Files:**
+- Create: `prototype/backend/migrations/0004_guardians_consents.sql`
+- Create: `prototype/backend/src/modules/users/guardians.ts`
+- Create: `prototype/backend/src/modules/users/consents.ts`
+- Modify: `prototype/backend/src/modules/users/routes.ts`
+- Test: `prototype/backend/tests/integration/guardians.test.ts`
+- Test: `prototype/backend/tests/integration/consents.test.ts`
+
+**Interfaces:**
+- Consumes: `requireAuth` (Task 10).
+- Produces:
+  - `listGuardians(userId): Promise<Guardian[]>` where `Guardian = { id: string; name: string; relation: string | null; phone: string; position: number }`
+  - `addGuardian(userId, input): Promise<Guardian>`
+  - `updateGuardian(userId, id, patch): Promise<Guardian>`
+  - `deleteGuardian(userId, id): Promise<void>`
+  - `MAX_GUARDIANS = 3`
+  - `listConsents(userId): Promise<Consent[]>`
+  - `recordConsent(userId, purpose, version, granted): Promise<Consent>`
+  - `type ConsentPurpose = 'LOCATION_TRACKING' | 'TELEMATICS_COLLECTION' | 'GUARDIAN_SHARING' | 'BIOMETRIC_LIVENESS'`
+
+- [ ] **Step 1: Write the failing tests**
+
+`prototype/backend/tests/integration/guardians.test.ts`:
+
+```ts
+import { describe, expect, it, beforeAll, beforeEach, afterAll } from 'vitest'
+import type { FastifyInstance } from 'fastify'
+import { buildApp } from '../../src/app.js'
+import { resetDb } from '../helpers/db.js'
+import { resetRedis } from '../helpers/redis.js'
+import { bearer, loginAs } from '../helpers/auth.js'
+
+describe('guardian contacts', () => {
+  let app: FastifyInstance
+  let token: string
+
+  beforeAll(async () => { app = await buildApp(); await app.ready() })
+  beforeEach(async () => {
+    await resetDb(); await resetRedis()
+    token = (await loginAs(app, '+919876543210', 'CUSTOMER')).accessToken
+  })
+  afterAll(async () => { await app.close() })
+
+  const add = (payload: unknown) =>
+    app.inject({ method: 'POST', url: '/v1/me/guardians', headers: bearer(token), payload })
+
+  it('starts empty', async () => {
+    const res = await app.inject({
+      method: 'GET', url: '/v1/me/guardians', headers: bearer(token),
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual([])
+  })
+
+  it('adds a guardian and assigns the next position', async () => {
+    const res = await add({ name: 'Rajesh Sharma', relation: 'Father', phone: '+919848012345' })
+
+    expect(res.statusCode).toBe(201)
+    expect(res.json()).toMatchObject({
+      name: 'Rajesh Sharma', relation: 'Father', phone: '+919848012345', position: 1,
+    })
+  })
+
+  it('refuses a fourth guardian', async () => {
+    await add({ name: 'One', phone: '+919848012341' })
+    await add({ name: 'Two', phone: '+919848012342' })
+    await add({ name: 'Three', phone: '+919848012343' })
+
+    const res = await add({ name: 'Four', phone: '+919848012344' })
+    expect(res.statusCode).toBe(409)
+    expect(res.json().error.code).toBe('GUARDIAN_LIMIT_REACHED')
+  })
+
+  it('frees a position when a guardian is deleted', async () => {
+    const first = (await add({ name: 'One', phone: '+919848012341' })).json()
+    await add({ name: 'Two', phone: '+919848012342' })
+    await add({ name: 'Three', phone: '+919848012343' })
+
+    const del = await app.inject({
+      method: 'DELETE', url: `/v1/me/guardians/${first.id}`, headers: bearer(token),
+    })
+    expect(del.statusCode).toBe(204)
+
+    const res = await add({ name: 'Four', phone: '+919848012344' })
+    expect(res.statusCode).toBe(201)
+  })
+
+  it('updates a guardian in place', async () => {
+    const created = (await add({ name: 'One', phone: '+919848012341' })).json()
+
+    const res = await app.inject({
+      method: 'PATCH', url: `/v1/me/guardians/${created.id}`,
+      headers: bearer(token), payload: { name: 'Meera Sharma', relation: 'Sister' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toMatchObject({ name: 'Meera Sharma', relation: 'Sister' })
+  })
+
+  it('cannot touch another user’s guardian', async () => {
+    const created = (await add({ name: 'One', phone: '+919848012341' })).json()
+    const other = (await loginAs(app, '+919876543299', 'CUSTOMER')).accessToken
+
+    const res = await app.inject({
+      method: 'DELETE', url: `/v1/me/guardians/${created.id}`, headers: bearer(other),
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('rejects a non-E.164 phone number', async () => {
+    const res = await add({ name: 'One', phone: '9848012341' })
+    expect(res.statusCode).toBe(400)
+  })
+})
+```
+
+`prototype/backend/tests/integration/consents.test.ts`:
+
+```ts
+import { describe, expect, it, beforeAll, beforeEach, afterAll } from 'vitest'
+import type { FastifyInstance } from 'fastify'
+import { buildApp } from '../../src/app.js'
+import { resetDb } from '../helpers/db.js'
+import { resetRedis } from '../helpers/redis.js'
+import { bearer, loginAs } from '../helpers/auth.js'
+
+describe('DPDP consents', () => {
+  let app: FastifyInstance
+  let token: string
+
+  beforeAll(async () => { app = await buildApp(); await app.ready() })
+  beforeEach(async () => {
+    await resetDb(); await resetRedis()
+    token = (await loginAs(app, '+919876543210', 'CUSTOMER')).accessToken
+  })
+  afterAll(async () => { await app.close() })
+
+  const record = (payload: unknown) =>
+    app.inject({ method: 'POST', url: '/v1/me/consents', headers: bearer(token), payload })
+
+  it('records a granted consent with its version', async () => {
+    const res = await record({
+      purpose: 'LOCATION_TRACKING', version: '2026-08-01', granted: true,
+    })
+
+    expect(res.statusCode).toBe(201)
+    expect(res.json()).toMatchObject({
+      purpose: 'LOCATION_TRACKING', version: '2026-08-01',
+    })
+    expect(res.json().granted_at).toBeTruthy()
+    expect(res.json().revoked_at).toBeNull()
+  })
+
+  it('revokes a previously granted consent rather than deleting it', async () => {
+    await record({ purpose: 'GUARDIAN_SHARING', version: '2026-08-01', granted: true })
+    const res = await record({ purpose: 'GUARDIAN_SHARING', version: '2026-08-01', granted: false })
+
+    expect(res.statusCode).toBe(201)
+    expect(res.json().revoked_at).toBeTruthy()
+
+    const list = await app.inject({
+      method: 'GET', url: '/v1/me/consents', headers: bearer(token),
+    })
+    // Both the grant and the revocation are retained: consent history is an audit trail.
+    expect(list.json()).toHaveLength(2)
+  })
+
+  it('rejects an unknown purpose', async () => {
+    const res = await record({ purpose: 'SELL_MY_DATA', version: '1', granted: true })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('requires authentication', async () => {
+    const res = await app.inject({ method: 'GET', url: '/v1/me/consents' })
+    expect(res.statusCode).toBe(401)
+  })
+})
+```
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+```bash
+npm test -- tests/integration/guardians.test.ts tests/integration/consents.test.ts
+```
+
+Expected: FAIL — routes return 404.
+
+- [ ] **Step 3: Write the migration**
+
+`prototype/backend/migrations/0004_guardians_consents.sql`:
+
+```sql
+CREATE TABLE IF NOT EXISTS guardian_contacts (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name       TEXT NOT NULL,
+  relation   TEXT,
+  phone      VARCHAR(16) NOT NULL,
+  position   SMALLINT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- The maximum of three guardians is a database rule, not merely an app rule.
+  CONSTRAINT guardian_position_range CHECK (position BETWEEN 1 AND 3),
+  CONSTRAINT guardian_unique_position UNIQUE (user_id, position)
+);
+
+DO $$ BEGIN
+  CREATE TYPE consent_purpose AS ENUM (
+    'LOCATION_TRACKING', 'TELEMATICS_COLLECTION', 'GUARDIAN_SHARING', 'BIOMETRIC_LIVENESS'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS consents (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose    consent_purpose NOT NULL,
+  version    TEXT NOT NULL,
+  granted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  revoked_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_consents_user ON consents(user_id, purpose);
+```
+
+- [ ] **Step 4: Implement guardians**
+
+`prototype/backend/src/modules/users/guardians.ts`:
+
+```ts
+import { pool } from '../../db/client.js'
+import { conflict, notFound } from '../../lib/errors.js'
+
+export const MAX_GUARDIANS = 3
+
+export type Guardian = {
+  id: string
+  name: string
+  relation: string | null
+  phone: string
+  position: number
+}
+
+export async function listGuardians(userId: string): Promise<Guardian[]> {
+  const { rows } = await pool.query<Guardian>(
+    `SELECT id, name, relation, phone, position
+       FROM guardian_contacts WHERE user_id = $1 ORDER BY position`,
+    [userId],
+  )
+  return rows
+}
+
+export async function addGuardian(
+  userId: string, input: { name: string; relation?: string; phone: string },
+): Promise<Guardian> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    // Lock this user's rows so two concurrent adds cannot both see two guardians.
+    const { rows: taken } = await client.query<{ position: number }>(
+      `SELECT position FROM guardian_contacts WHERE user_id = $1 FOR UPDATE`,
+      [userId],
+    )
+    if (taken.length >= MAX_GUARDIANS) {
+      throw conflict('GUARDIAN_LIMIT_REACHED', `A maximum of ${MAX_GUARDIANS} guardians is allowed`)
+    }
+
+    const used = new Set(taken.map((t) => t.position))
+    let position = 1
+    while (used.has(position)) position++
+
+    const { rows } = await client.query<Guardian>(
+      `INSERT INTO guardian_contacts (user_id, name, relation, phone, position)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, name, relation, phone, position`,
+      [userId, input.name, input.relation ?? null, input.phone, position],
+    )
+    await client.query('COMMIT')
+    return rows[0]!
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+export async function updateGuardian(
+  userId: string, id: string, patch: { name?: string; relation?: string; phone?: string },
+): Promise<Guardian> {
+  const { rows } = await pool.query<Guardian>(
+    `UPDATE guardian_contacts
+        SET name     = COALESCE($3, name),
+            relation = COALESCE($4, relation),
+            phone    = COALESCE($5, phone)
+      WHERE id = $1 AND user_id = $2
+      RETURNING id, name, relation, phone, position`,
+    [id, userId, patch.name ?? null, patch.relation ?? null, patch.phone ?? null],
+  )
+  const row = rows[0]
+  if (!row) throw notFound('GUARDIAN_NOT_FOUND', 'No such guardian contact')
+  return row
+}
+
+export async function deleteGuardian(userId: string, id: string): Promise<void> {
+  const { rowCount } = await pool.query(
+    `DELETE FROM guardian_contacts WHERE id = $1 AND user_id = $2`, [id, userId],
+  )
+  if (rowCount === 0) throw notFound('GUARDIAN_NOT_FOUND', 'No such guardian contact')
+}
+```
+
+- [ ] **Step 5: Implement consents**
+
+`prototype/backend/src/modules/users/consents.ts`:
+
+```ts
+import { pool } from '../../db/client.js'
+
+export type ConsentPurpose =
+  | 'LOCATION_TRACKING'
+  | 'TELEMATICS_COLLECTION'
+  | 'GUARDIAN_SHARING'
+  | 'BIOMETRIC_LIVENESS'
+
+export type Consent = {
+  id: string
+  purpose: ConsentPurpose
+  version: string
+  granted_at: string
+  revoked_at: string | null
+}
+
+export async function listConsents(userId: string): Promise<Consent[]> {
+  const { rows } = await pool.query<Consent>(
+    `SELECT id, purpose, version, granted_at, revoked_at
+       FROM consents WHERE user_id = $1 ORDER BY granted_at DESC`,
+    [userId],
+  )
+  return rows
+}
+
+/**
+ * Consent history is an audit trail under the DPDP Act. A revocation is a new
+ * row, never an update or a delete of the original grant.
+ */
+export async function recordConsent(
+  userId: string, purpose: ConsentPurpose, version: string, granted: boolean,
+): Promise<Consent> {
+  const { rows } = await pool.query<Consent>(
+    `INSERT INTO consents (user_id, purpose, version, revoked_at)
+     VALUES ($1, $2, $3, CASE WHEN $4::boolean THEN NULL ELSE now() END)
+     RETURNING id, purpose, version, granted_at, revoked_at`,
+    [userId, purpose, version, granted],
+  )
+  return rows[0]!
+}
+```
+
+- [ ] **Step 6: Add the routes**
+
+Append inside `registerUserRoutes` in `src/modules/users/routes.ts`:
+
+```ts
+import {
+  addGuardian, deleteGuardian, listGuardians, updateGuardian,
+} from './guardians.js'
+import { listConsents, recordConsent } from './consents.js'
+
+const PhoneNumber = z.string().regex(/^\+[1-9]\d{7,14}$/, 'must be E.164')
+
+const GuardianSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  relation: z.string().nullable(),
+  phone: z.string(),
+  position: z.number().int(),
+})
+
+const ConsentSchema = z.object({
+  id: z.string().uuid(),
+  purpose: z.enum([
+    'LOCATION_TRACKING', 'TELEMATICS_COLLECTION', 'GUARDIAN_SHARING', 'BIOMETRIC_LIVENESS',
+  ]),
+  version: z.string(),
+  granted_at: z.coerce.string(),
+  revoked_at: z.coerce.string().nullable(),
+})
+
+r.get('/v1/me/guardians', {
+  preHandler: [requireAuth],
+  schema: { response: { 200: z.array(GuardianSchema) } },
+}, async (request) => listGuardians(request.auth!.userId))
+
+r.post('/v1/me/guardians', {
+  preHandler: [requireAuth],
+  schema: {
+    body: z.object({
+      name: z.string().min(1).max(120),
+      relation: z.string().max(60).optional(),
+      phone: PhoneNumber,
+    }),
+    response: { 201: GuardianSchema },
+  },
+}, async (request, reply) =>
+  reply.status(201).send(await addGuardian(request.auth!.userId, request.body)))
+
+r.patch('/v1/me/guardians/:id', {
+  preHandler: [requireAuth],
+  schema: {
+    params: z.object({ id: z.string().uuid() }),
+    body: z.object({
+      name: z.string().min(1).max(120).optional(),
+      relation: z.string().max(60).optional(),
+      phone: PhoneNumber.optional(),
+    }),
+    response: { 200: GuardianSchema },
+  },
+}, async (request) =>
+  updateGuardian(request.auth!.userId, request.params.id, request.body))
+
+r.delete('/v1/me/guardians/:id', {
+  preHandler: [requireAuth],
+  schema: { params: z.object({ id: z.string().uuid() }), response: { 204: z.null() } },
+}, async (request, reply) => {
+  await deleteGuardian(request.auth!.userId, request.params.id)
+  return reply.status(204).send()
+})
+
+r.get('/v1/me/consents', {
+  preHandler: [requireAuth],
+  schema: { response: { 200: z.array(ConsentSchema) } },
+}, async (request) => listConsents(request.auth!.userId))
+
+r.post('/v1/me/consents', {
+  preHandler: [requireAuth],
+  schema: {
+    body: z.object({
+      purpose: ConsentSchema.shape.purpose,
+      version: z.string().min(1).max(40),
+      granted: z.boolean(),
+    }),
+    response: { 201: ConsentSchema },
+  },
+}, async (request, reply) =>
+  reply.status(201).send(await recordConsent(
+    request.auth!.userId, request.body.purpose, request.body.version, request.body.granted,
+  )))
+```
+
+- [ ] **Step 7: Run the tests to verify they pass**
+
+```bash
+npm run db:migrate
+npm test -- tests/integration/guardians.test.ts tests/integration/consents.test.ts
+```
+
+Expected: PASS — 11 tests.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add guardian contacts and DPDP consent records"
+```
+
+---
+
+## Scale & Concurrency Architecture
+
+Added after Task 13 at the request to support one million concurrent users. This section is **binding on every task, including the thirteen already written** — see the Amendments below.
+
+### Capacity math
+
+Design to these numbers, not to vague "make it fast" instincts.
+
+| Quantity | Figure | Consequence |
+| :--- | :--- | :--- |
+| Concurrent users | 1,000,000 | — |
+| Concurrent WebSockets a tuned Node process holds | 50,000–100,000 | **16–24 app instances minimum.** No single-process assumptions anywhere. |
+| Concurrent active trips (assume 20% of users) | 200,000 | 400,000 streaming sockets (driver + customer per trip) |
+| Telemetry frames per second (1 frame / 3 s / socket) | ~133,000/s | Batched writes are mandatory; per-row `INSERT` is impossible |
+| Telemetry rows per day | ~11.5 billion | Compression and retention are mandatory, not optional |
+| Postgres connections if unpooled (24 × 20) | 480 | **PgBouncer in transaction mode**, app pool max 10 |
+| Redis ops/sec if 3 ops per frame | ~400,000/s | **Redis Cluster**, and reduce ops per frame (see rule 6) |
+
+**The honest limit:** a single-node TimescaleDB sustains roughly 50,000 row inserts/second with `COPY`. At 133k/s the write path needs a durable stream buffer (Kafka, NATS JetStream, or Redis Streams) between the gateway and the writer. Phase 1 builds the batched `COPY` writer behind an interface so that buffer drops in without touching the gateway, and emits a metric that says when the threshold is crossed. **Do not claim the system handles 1M concurrent trips until that buffer exists and has been load-tested.**
+
+### Binding rules
+
+Every task must satisfy all fourteen.
+
+1. **No process-local state that affects correctness.** Any instance must serve any HTTP request. The only local state permitted is the socket registry in `realtime/hub.ts`, and cross-instance delivery always goes through Redis. No sticky sessions, no in-memory caches of mutable data.
+2. **Database access goes through PgBouncer** in transaction pooling mode. The application pool is `max: 10`. Never use session-level features (`SET`, advisory locks held across statements, `LISTEN`) — transaction pooling breaks them.
+3. **No `OFFSET` pagination.** Every list endpoint uses keyset pagination on an indexed, monotonically ordered column. `OFFSET 100000` scans 100,000 rows.
+4. **Every query is index-backed.** Before merging a query, run `EXPLAIN (ANALYZE, BUFFERS)` against a seeded table and confirm no sequential scan on a table expected to exceed 10,000 rows.
+5. **No hot-path password-grade hashing.** `argon2` is reserved for long-lived, low-frequency secrets. High-entropy tokens use `HMAC-SHA256` with a server-side pepper (see Amendment A).
+6. **Minimise Redis ops per telemetry frame.** One `PUBLISH` per frame. The driver geo index is refreshed at most once per 10 seconds per driver, not once per frame — dispatch does not need 3-second precision.
+7. **Sharded pub/sub.** Use Redis Cluster `SSUBSCRIBE`/`SPUBLISH` on channel `trip:{tripId}`, so a publish reaches only the shard owning that trip rather than every node.
+8. **Backpressure over buffering.** A client exceeding 1 telemetry frame per second has its excess frames dropped, not queued. A socket whose outbound buffer exceeds 1 MB is closed with code 1013.
+9. **Writes are batched.** Telemetry is flushed by `COPY` every 2 seconds or 100 rows. The buffer is bounded at 10,000 rows per instance; on overflow the oldest rows are dropped and a counter is incremented.
+10. **Mutating endpoints that create resources are idempotent.** `POST /v1/trips/book` honours an `Idempotency-Key` header.
+11. **Queue-style row claims use `FOR UPDATE SKIP LOCKED`.** Never `FOR UPDATE` alone on a work queue — it serialises every worker.
+12. **Hot reads are cached in Redis** with a short TTL and explicit invalidation on write. Trip state and driver profile are cached for 5 seconds.
+13. **Shutdown drains.** On `SIGTERM`: stop accepting connections, fail readiness, close WebSockets with code 1001, flush telemetry buffers, then exit. Never drop buffered rows on shutdown.
+14. **Everything is measured.** Expose `/metrics` in Prometheus format with, at minimum: open socket count, telemetry buffer depth, frames dropped, `COPY` duration, database pool saturation, and dispatch queue latency.
+
+### Amendments to Tasks 1–13
+
+Apply these before continuing. If Tasks 1–13 are already implemented, apply them as a refactor commit.
+
+**Amendment A — replace argon2 on the hot path.**
+
+Create `prototype/backend/src/lib/hash.ts`:
+
+```ts
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto'
+import argon2 from 'argon2'
+import { env } from '../config/env.js'
+
+/**
+ * HMAC-SHA256 with a server-side pepper. Correct for high-entropy secrets
+ * (256-bit refresh tokens) and for short-lived rate-limited codes (OTPs).
+ * Roughly 1000x cheaper than argon2, which matters at 1M concurrent users.
+ */
+export function peppered(value: string): string {
+  return createHmac('sha256', env.TOKEN_PEPPER).update(value).digest('hex')
+}
+
+export function pepperedEquals(value: string, storedHex: string): boolean {
+  const a = Buffer.from(peppered(value), 'hex')
+  const b = Buffer.from(storedHex, 'hex')
+  if (a.length !== b.length) return false
+  return timingSafeEqual(a, b)
+}
+
+/**
+ * Reserved for low-frequency, low-entropy, long-lived secrets. Nothing in
+ * Phase 1 currently needs it; kept so the distinction stays explicit.
+ */
+export const slowHash = (value: string): Promise<string> => argon2.hash(value)
+export const slowVerify = (hash: string, value: string): Promise<boolean> =>
+  argon2.verify(hash, value).catch(() => false)
+
+export const randomToken = (bytes = 32): string => randomBytes(bytes).toString('base64url')
+```
+
+Add to `src/config/env.ts`:
+
+```ts
+TOKEN_PEPPER: z.string().min(32, 'TOKEN_PEPPER must be at least 32 characters'),
+```
+
+Add to `.env.example`:
+
+```
+TOKEN_PEPPER=dev-only-pepper-change-me-at-least-32-chars
+```
+
+Then:
+- In `src/modules/auth/otp.ts`, replace `argon2.hash` with `peppered` and `argon2.verify` with `pepperedEquals`. A 6-digit code is only 10^6 wide, but it lives 5 minutes and allows 5 attempts, so an offline attack on a leaked hash yields an already-expired code.
+- In `src/modules/auth/tokens.ts`, replace `argon2.hash(secret)` with `peppered(secret)` and `argon2.verify(...)` with `pepperedEquals(parts.secret, row.token_hash)`.
+- Update the two tests asserting `code_hash.startsWith('$argon2')` to assert `/^[0-9a-f]{64}$/` instead. The assertion that the stored value differs from the plaintext stays exactly as it is — that is the property that matters.
+
+**Amendment B — PgBouncer.**
+
+Add to `docker-compose.yml`:
+
+```yaml
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.23.1-p2
+    environment:
+      DB_HOST: postgres
+      DB_USER: mydriver
+      DB_PASSWORD: mydriver
+      DB_NAME: mydriver
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 10000
+      DEFAULT_POOL_SIZE: 25
+      AUTH_TYPE: scram-sha-256
+    ports: ['6432:5432']
+    depends_on:
+      postgres: { condition: service_healthy }
+```
+
+Point `DATABASE_URL` at port 6432 and cap the application pool:
+
+```
+DATABASE_URL=postgres://mydriver:mydriver@localhost:6432/mydriver
+DATABASE_POOL_MAX=10
+# Migrations bypass PgBouncer: DDL needs a session-mode connection.
+DATABASE_MIGRATION_URL=postgres://mydriver:mydriver@localhost:5433/mydriver
+```
+
+In `src/config/env.ts` add `DATABASE_POOL_MAX` (default 10) and `DATABASE_MIGRATION_URL`. In `src/db/client.ts` use `max: env.DATABASE_POOL_MAX`, and in `src/db/migrate.ts` open a separate short-lived pool against `DATABASE_MIGRATION_URL`.
+
+**Amendment C — split liveness from readiness.**
+
+Replace the single `/health` route in `src/app.ts`:
+
+```ts
+let ready = true
+export const setReady = (value: boolean): void => { ready = value }
+
+app.get('/health', async () => ({ status: 'ok', service: 'mydriver-backend' }))
+
+app.get('/ready', async (_request, reply) => {
+  if (!ready) {
+    return reply.status(503).send({ error: { code: 'DRAINING', message: 'Shutting down' } })
+  }
+  try {
+    await pool.query('SELECT 1')
+    await redis.ping()
+    return { status: 'ready' }
+  } catch {
+    return reply.status(503).send({
+      error: { code: 'DEPENDENCY_UNAVAILABLE', message: 'A dependency is unreachable' },
+    })
+  }
+})
+```
+
+`/health` answers "is this process alive" for the container runtime. `/ready` answers "should the load balancer send traffic here" and must fail during drain, or shutdown drops in-flight requests. The existing health test keeps passing unchanged.
+
+**Amendment D — Redis Cluster-ready client.**
+
+In `src/redis/client.ts`, accept a comma-separated `REDIS_URL` and build a `Redis.Cluster` when more than one node is listed. Add to `src/config/env.ts`:
+
+```ts
+REDIS_URL: z.string().min(1),          // comma-separated for cluster mode
+REDIS_CLUSTER: z.coerce.boolean().default(false),
+```
+
+```ts
+import Redis, { Cluster } from 'ioredis'
+import { env } from '../config/env.js'
+
+type Client = Redis | Cluster
+
+function build(): Client {
+  const nodes = env.REDIS_URL.split(',').map((s) => s.trim()).filter(Boolean)
+  if (env.REDIS_CLUSTER || nodes.length > 1) {
+    return new Cluster(nodes.map((url) => {
+      const u = new URL(url)
+      return { host: u.hostname, port: Number(u.port || 6379) }
+    }))
+  }
+  return new Redis(nodes[0]!, { maxRetriesPerRequest: 3 })
+}
+
+export const redis: Client = build()
+export const createSubscriber = (): Client => build()
+export const isCluster = (c: Client): c is Cluster => c instanceof Cluster
+export async function closeRedis(): Promise<void> { await redis.quit() }
+```
+
+Channel names use the `trip:{tripId}` hash-tag form already specified, so every key and channel for one trip lands on the same shard.
+
+---
+
+### Task 14: Driver profiles and rate cards
+
+**Files:**
+- Create: `prototype/backend/migrations/0005_driver_profiles_rate_cards.sql`
+- Create: `prototype/backend/src/modules/trips/rate-cards.ts`
+- Create: `prototype/backend/src/db/seed.ts`
+- Modify: `prototype/backend/package.json` (add `"db:seed": "tsx src/db/seed.ts"`)
+- Test: `prototype/backend/tests/integration/rate-cards.test.ts`
+
+**Interfaces:**
+- Consumes: `pool` (Task 2).
+- Produces:
+  - `type SkillId = 'MD-Standard' | 'MD-Auto' | 'MD-SUV' | 'MD-Lux' | 'MD-Night'`
+  - `type RateCard = { skill_id: SkillId; label: string; per_km_rate: number; hourly_rate: number; included_km_per_hour: number }`
+  - `getRateCard(skillId: string): Promise<RateCard>` — Redis-cached for 60s
+  - `ensureDriverProfile(userId: string): Promise<void>`
+  - `seed(): Promise<void>`
+
+- [ ] **Step 1: Write the failing test**
+
+`prototype/backend/tests/integration/rate-cards.test.ts`:
+
+```ts
+import { describe, expect, it, beforeAll, beforeEach, afterAll } from 'vitest'
+import { pool } from '../../src/db/client.js'
+import { closeRedis } from '../../src/redis/client.js'
+import { getRateCard } from '../../src/modules/trips/rate-cards.js'
+import { seed } from '../../src/db/seed.js'
+import { resetDb } from '../helpers/db.js'
+import { resetRedis } from '../helpers/redis.js'
+
+describe('rate cards', () => {
+  beforeAll(async () => { await resetDb() })
+  beforeEach(async () => { await resetRedis(); await seed() })
+  afterAll(async () => { await closeRedis() })
+
+  it('seeds all five skill certifications', async () => {
+    const { rows } = await pool.query('SELECT skill_id FROM rate_cards ORDER BY skill_id')
+    expect(rows.map((r) => r.skill_id)).toEqual(
+      ['MD-Auto', 'MD-Lux', 'MD-Night', 'MD-SUV', 'MD-Standard'],
+    )
+  })
+
+  it('matches the rates the prototype already advertises', async () => {
+    const standard = await getRateCard('MD-Standard')
+    expect(standard.per_km_rate).toBe(16)
+    expect(standard.hourly_rate).toBe(240)
+
+    const night = await getRateCard('MD-Night')
+    expect(night.per_km_rate).toBe(19)
+    expect(night.hourly_rate).toBe(280)
+  })
+
+  it('is idempotent — seeding twice does not duplicate', async () => {
+    await seed()
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM rate_cards')
+    expect(rows[0].n).toBe(5)
+  })
+
+  it('throws a typed error for an unknown skill', async () => {
+    await expect(getRateCard('MD-Rocket')).rejects.toMatchObject({ code: 'UNKNOWN_SKILL' })
+  })
+})
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/integration/rate-cards.test.ts
+```
+
+Expected: FAIL — modules missing.
+
+- [ ] **Step 3: Write the migration**
+
+`prototype/backend/migrations/0005_driver_profiles_rate_cards.sql`:
+
+```sql
+DO $$ BEGIN
+  CREATE TYPE driver_availability AS ENUM ('OFFLINE', 'ONLINE', 'ON_TRIP');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS driver_profiles (
+  user_id                UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  certifications         TEXT[] NOT NULL DEFAULT ARRAY['MD-Standard'],
+  night_shield_certified BOOLEAN NOT NULL DEFAULT false,
+  mydriver_score         DECIMAL(5,2) NOT NULL DEFAULT 100.00,
+  rating                 DECIMAL(3,2),
+  rating_count           INT NOT NULL DEFAULT 0,
+  total_trips            INT NOT NULL DEFAULT 0,
+  vehicle_model          TEXT,
+  vehicle_plate          TEXT,
+  availability           driver_availability NOT NULL DEFAULT 'OFFLINE',
+  face_reference_key     TEXT,
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_driver_available
+  ON driver_profiles(availability) WHERE availability = 'ONLINE';
+CREATE INDEX IF NOT EXISTS idx_driver_certifications
+  ON driver_profiles USING GIN (certifications);
+
+CREATE TABLE IF NOT EXISTS rate_cards (
+  skill_id             TEXT PRIMARY KEY,
+  label                TEXT NOT NULL,
+  per_km_rate          DECIMAL(6,2) NOT NULL,
+  hourly_rate          DECIMAL(6,2) NOT NULL,
+  included_km_per_hour SMALLINT NOT NULL DEFAULT 10,
+  active               BOOLEAN NOT NULL DEFAULT true
+);
+```
+
+- [ ] **Step 4: Implement rate-card reads with a short cache**
+
+`prototype/backend/src/modules/trips/rate-cards.ts`:
+
+```ts
+import { pool } from '../../db/client.js'
+import { redis } from '../../redis/client.js'
+import { notFound } from '../../lib/errors.js'
+
+export type SkillId = 'MD-Standard' | 'MD-Auto' | 'MD-SUV' | 'MD-Lux' | 'MD-Night'
+
+export type RateCard = {
+  skill_id: string
+  label: string
+  per_km_rate: number
+  hourly_rate: number
+  included_km_per_hour: number
+}
+
+const CACHE_TTL_SECONDS = 60
+
+/**
+ * Rate cards are read on every quote and every booking but change roughly
+ * never. Caching them removes a query from the hottest path in the service.
+ */
+export async function getRateCard(skillId: string): Promise<RateCard> {
+  const key = `ratecard:${skillId}`
+  const cached = await redis.get(key)
+  if (cached) return JSON.parse(cached) as RateCard
+
+  const { rows } = await pool.query(
+    `SELECT skill_id, label,
+            per_km_rate::float8          AS per_km_rate,
+            hourly_rate::float8          AS hourly_rate,
+            included_km_per_hour
+       FROM rate_cards WHERE skill_id = $1 AND active = true`,
+    [skillId],
+  )
+  const card = rows[0] as RateCard | undefined
+  if (!card) throw notFound('UNKNOWN_SKILL', `No active rate card for ${skillId}`)
+
+  await redis.set(key, JSON.stringify(card), 'EX', CACHE_TTL_SECONDS)
+  return card
+}
+
+export async function ensureDriverProfile(userId: string): Promise<void> {
+  await pool.query(
+    `INSERT INTO driver_profiles (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
+    [userId],
+  )
+}
+```
+
+Rates are cast to `float8` here deliberately: these are *rates*, not amounts of money. All computed money stays `DECIMAL` in the database.
+
+- [ ] **Step 5: Implement the seed**
+
+`prototype/backend/src/db/seed.ts`:
+
+```ts
+import { pool } from './client.js'
+
+// Values copied from prototype/website/src/data/mock.js so the backend quotes
+// exactly what the marketing site and the apps already advertise.
+const RATE_CARDS = [
+  { skill_id: 'MD-Standard', label: 'Standard',  per_km: 16, hourly: 240 },
+  { skill_id: 'MD-Auto',     label: 'Auto',      per_km: 12, hourly: 180 },
+  { skill_id: 'MD-SUV',      label: 'SUV',       per_km: 22, hourly: 330 },
+  { skill_id: 'MD-Lux',      label: 'Lux',       per_km: 35, hourly: 520 },
+  { skill_id: 'MD-Night',    label: 'Night',     per_km: 19, hourly: 280 },
+]
+
+export async function seed(): Promise<void> {
+  for (const c of RATE_CARDS) {
+    await pool.query(
+      `INSERT INTO rate_cards (skill_id, label, per_km_rate, hourly_rate)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (skill_id) DO UPDATE
+         SET label = EXCLUDED.label,
+             per_km_rate = EXCLUDED.per_km_rate,
+             hourly_rate = EXCLUDED.hourly_rate`,
+      [c.skill_id, c.label, c.per_km, c.hourly],
+    )
+  }
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  await seed()
+  await pool.end()
+}
+```
+
+- [ ] **Step 6: Run the test to verify it passes**
+
+```bash
+npm run db:migrate && npm test -- tests/integration/rate-cards.test.ts
+```
+
+Expected: PASS — 4 tests.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add driver profiles, rate cards, and seed data"
+```
+
+---
+
+### Task 15: Fare engine and the quote endpoint
+
+**Files:**
+- Create: `prototype/backend/src/modules/trips/fare.ts`
+- Create: `prototype/backend/src/modules/trips/routes.ts`
+- Modify: `prototype/backend/src/app.ts`
+- Test: `prototype/backend/tests/unit/fare.test.ts`
+- Test: `prototype/backend/tests/integration/trips-quote.test.ts`
+
+**Interfaces:**
+- Consumes: `estimateRoadDistanceKm` (Task 4), `isNightPickupIST` (Task 4), `getRateCard` (Task 14).
+- Produces:
+  - `PLATFORM_FEE = 19`, `NIGHT_FEE = 30`
+  - `type FareInput = { bookingType: 'POINT_TO_POINT' | 'HOURLY'; distanceKm: number; hours?: number; perKmRate: number; hourlyRate: number; pickupAt: Date }`
+  - `type FareBreakdown = { base: number; platform_fee: number; night_fee: number; total: number; driver_earnings: number }`
+  - `computeFare(input: FareInput): FareBreakdown` — pure
+  - `quoteTrip(input): Promise<Quote>`
+
+- [ ] **Step 1: Write the failing unit test**
+
+`prototype/backend/tests/unit/fare.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest'
+import { NIGHT_FEE, PLATFORM_FEE, computeFare } from '../../src/modules/trips/fare.js'
+
+const day = new Date('2026-08-25T06:30:00Z')    // 12:00 IST
+const night = new Date('2026-08-25T18:00:00Z')  // 23:30 IST
+
+describe('computeFare', () => {
+  it('charges per km plus the platform fee on a day trip', () => {
+    const fare = computeFare({
+      bookingType: 'POINT_TO_POINT', distanceKm: 10,
+      perKmRate: 16, hourlyRate: 240, pickupAt: day,
+    })
+    expect(fare).toEqual({
+      base: 160, platform_fee: 19, night_fee: 0, total: 179, driver_earnings: 160,
+    })
+  })
+
+  it('adds the night fee for a pickup inside the night window', () => {
+    const fare = computeFare({
+      bookingType: 'POINT_TO_POINT', distanceKm: 10,
+      perKmRate: 19, hourlyRate: 280, pickupAt: night,
+    })
+    expect(fare.night_fee).toBe(NIGHT_FEE)
+    expect(fare.total).toBe(190 + PLATFORM_FEE + NIGHT_FEE)
+  })
+
+  it('charges the hourly rate for an hourly booking and ignores distance', () => {
+    const fare = computeFare({
+      bookingType: 'HOURLY', distanceKm: 999, hours: 4,
+      perKmRate: 16, hourlyRate: 240, pickupAt: day,
+    })
+    expect(fare.base).toBe(960)
+    expect(fare.total).toBe(979)
+  })
+
+  it('always sets driver_earnings to total minus platform fee', () => {
+    const fare = computeFare({
+      bookingType: 'POINT_TO_POINT', distanceKm: 7.2,
+      perKmRate: 16, hourlyRate: 240, pickupAt: night,
+    })
+    expect(fare.driver_earnings).toBe(fare.total - PLATFORM_FEE)
+  })
+
+  it('rounds every component to two decimals', () => {
+    const fare = computeFare({
+      bookingType: 'POINT_TO_POINT', distanceKm: 7.777,
+      perKmRate: 16.33, hourlyRate: 240, pickupAt: day,
+    })
+    expect(fare.base).toBe(127.00)
+    expect(Number.isInteger(Math.round(fare.total * 100))).toBe(true)
+  })
+
+  it('rejects an hourly booking with no hours', () => {
+    expect(() => computeFare({
+      bookingType: 'HOURLY', distanceKm: 0,
+      perKmRate: 16, hourlyRate: 240, pickupAt: day,
+    })).toThrow(/hours/i)
+  })
+
+  it('rejects a negative distance', () => {
+    expect(() => computeFare({
+      bookingType: 'POINT_TO_POINT', distanceKm: -1,
+      perKmRate: 16, hourlyRate: 240, pickupAt: day,
+    })).toThrow(/distance/i)
+  })
+})
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/unit/fare.test.ts
+```
+
+Expected: FAIL — module missing.
+
+- [ ] **Step 3: Implement the fare engine**
+
+`prototype/backend/src/modules/trips/fare.ts`:
+
+```ts
+import { isNightPickupIST } from '../../lib/time.js'
+
+export const PLATFORM_FEE = 19
+export const NIGHT_FEE = 30
+
+export type BookingType = 'POINT_TO_POINT' | 'HOURLY'
+
+export type FareInput = {
+  bookingType: BookingType
+  distanceKm: number
+  hours?: number
+  perKmRate: number
+  hourlyRate: number
+  pickupAt: Date
+}
+
+export type FareBreakdown = {
+  base: number
+  platform_fee: number
+  night_fee: number
+  total: number
+  driver_earnings: number
+}
+
+const round2 = (n: number): number => Math.round(n * 100) / 100
+
+export function computeFare(input: FareInput): FareBreakdown {
+  if (input.bookingType === 'HOURLY' && (!input.hours || input.hours <= 0)) {
+    throw new Error('An hourly booking requires a positive number of hours')
+  }
+  if (input.bookingType === 'POINT_TO_POINT' && input.distanceKm < 0) {
+    throw new Error('distanceKm must not be negative')
+  }
+
+  const base = round2(
+    input.bookingType === 'HOURLY'
+      ? input.hourlyRate * input.hours!
+      : input.perKmRate * input.distanceKm,
+  )
+
+  const night_fee = isNightPickupIST(input.pickupAt) ? NIGHT_FEE : 0
+  const total = round2(base + PLATFORM_FEE + night_fee)
+
+  return {
+    base,
+    platform_fee: PLATFORM_FEE,
+    night_fee,
+    total,
+    driver_earnings: round2(total - PLATFORM_FEE),
+  }
+}
+```
+
+- [ ] **Step 4: Write the failing quote integration test**
+
+`prototype/backend/tests/integration/trips-quote.test.ts`:
+
+```ts
+import { describe, expect, it, beforeAll, beforeEach, afterAll } from 'vitest'
+import type { FastifyInstance } from 'fastify'
+import { buildApp } from '../../src/app.js'
+import { seed } from '../../src/db/seed.js'
+import { resetDb } from '../helpers/db.js'
+import { resetRedis } from '../helpers/redis.js'
+import { bearer, loginAs } from '../helpers/auth.js'
+
+describe('POST /v1/trips/quote', () => {
+  let app: FastifyInstance
+  let token: string
+
+  beforeAll(async () => { app = await buildApp(); await app.ready() })
+  beforeEach(async () => {
+    await resetDb(); await resetRedis(); await seed()
+    token = (await loginAs(app, '+919876543210', 'CUSTOMER')).accessToken
+  })
+  afterAll(async () => { await app.close() })
+
+  const quote = (payload: unknown) =>
+    app.inject({ method: 'POST', url: '/v1/trips/quote', headers: bearer(token), payload })
+
+  it('returns an estimated distance and a fare breakdown', async () => {
+    const res = await quote({
+      booking_type: 'POINT_TO_POINT',
+      pickup: { lat: 17.4399, lng: 78.3813 },
+      drop: { lat: 17.4483, lng: 78.3915 },
+      required_certification: 'MD-Standard',
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(body.distance_km).toBeGreaterThan(1.8)
+    expect(body.distance_km).toBeLessThan(2.0)
+    expect(body.fare.platform_fee).toBe(19)
+    expect(body.fare.total).toBeGreaterThan(0)
+  })
+
+  it('creates no trip record', async () => {
+    await quote({
+      booking_type: 'POINT_TO_POINT',
+      pickup: { lat: 17.4399, lng: 78.3813 },
+      drop: { lat: 17.4483, lng: 78.3915 },
+      required_certification: 'MD-Standard',
+    })
+    const { pool } = await import('../../src/db/client.js')
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM trips')
+    expect(rows[0].n).toBe(0)
+  })
+
+  it('quotes an hourly package without a drop location', async () => {
+    const res = await quote({
+      booking_type: 'HOURLY', hours: 4,
+      pickup: { lat: 17.4399, lng: 78.3813 },
+      required_certification: 'MD-Lux',
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().fare.base).toBe(2080)
+  })
+
+  it('rejects a point-to-point quote with no drop', async () => {
+    const res = await quote({
+      booking_type: 'POINT_TO_POINT',
+      pickup: { lat: 17.4399, lng: 78.3813 },
+      required_certification: 'MD-Standard',
+    })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error.code).toBe('DROP_REQUIRED')
+  })
+
+  it('rejects an unknown certification', async () => {
+    const res = await quote({
+      booking_type: 'POINT_TO_POINT',
+      pickup: { lat: 17.4399, lng: 78.3813 },
+      drop: { lat: 17.4483, lng: 78.3915 },
+      required_certification: 'MD-Rocket',
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('rejects a request carrying a VisionCam mode', async () => {
+    const res = await quote({
+      booking_type: 'POINT_TO_POINT',
+      pickup: { lat: 17.4399, lng: 78.3813 },
+      drop: { lat: 17.4483, lng: 78.3915 },
+      required_certification: 'MD-Standard',
+      mode: 'MODE_F',
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('requires authentication', async () => {
+    const res = await app.inject({ method: 'POST', url: '/v1/trips/quote', payload: {} })
+    expect(res.statusCode).toBe(401)
+  })
+})
+```
+
+The VisionCam assertion is load-bearing: it is the test that keeps the dashcam exclusion honest. Achieve it with `.strict()` on the Zod body schema so any unknown key is rejected.
+
+- [ ] **Step 5: Implement the quote endpoint**
+
+`prototype/backend/src/modules/trips/routes.ts`:
+
+```ts
+import type { FastifyInstance } from 'fastify'
+import type { ZodTypeProvider } from 'fastify-type-provider-zod'
+import { z } from 'zod'
+import { badRequest } from '../../lib/errors.js'
+import { estimateRoadDistanceKm } from '../../lib/geo.js'
+import { requireAuth, requireRole } from '../auth/rbac.js'
+import { computeFare } from './fare.js'
+import { getRateCard } from './rate-cards.js'
+
+export const LatLngSchema = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+})
+
+const FareSchema = z.object({
+  base: z.number(),
+  platform_fee: z.number(),
+  night_fee: z.number(),
+  total: z.number(),
+  driver_earnings: z.number(),
+})
+
+// .strict() is what rejects a stray `mode` field. Do not relax it.
+export const QuoteBody = z.object({
+  booking_type: z.enum(['POINT_TO_POINT', 'HOURLY']),
+  hours: z.union([z.literal(2), z.literal(4), z.literal(8), z.literal(12)]).optional(),
+  pickup: LatLngSchema,
+  drop: LatLngSchema.optional(),
+  required_certification: z.string().min(1).max(40),
+}).strict()
+
+export function registerTripRoutes(app: FastifyInstance): void {
+  const r = app.withTypeProvider<ZodTypeProvider>()
+
+  r.post('/v1/trips/quote', {
+    preHandler: [requireAuth, requireRole('CUSTOMER')],
+    schema: {
+      body: QuoteBody,
+      response: {
+        200: z.object({
+          distance_km: z.number(),
+          required_certification: z.string(),
+          fare: FareSchema,
+        }),
+      },
+    },
+  }, async (request) => {
+    const body = request.body
+
+    if (body.booking_type === 'POINT_TO_POINT' && !body.drop) {
+      throw badRequest('DROP_REQUIRED', 'A drop location is required for a point-to-point trip')
+    }
+
+    const card = await getRateCard(body.required_certification)
+    const distanceKm = body.drop ? estimateRoadDistanceKm(body.pickup, body.drop) : 0
+
+    return {
+      distance_km: Math.round(distanceKm * 100) / 100,
+      required_certification: card.skill_id,
+      fare: computeFare({
+        bookingType: body.booking_type,
+        distanceKm,
+        hours: body.hours,
+        perKmRate: card.per_km_rate,
+        hourlyRate: card.hourly_rate,
+        pickupAt: new Date(),
+      }),
+    }
+  })
+}
+```
+
+Register in `src/app.ts`:
+
+```ts
+import { registerTripRoutes } from './modules/trips/routes.js'
+
+registerTripRoutes(app)
+```
+
+- [ ] **Step 6: Run the tests to verify they pass**
+
+```bash
+npm test -- tests/unit/fare.test.ts tests/integration/trips-quote.test.ts
+```
+
+Expected: PASS — 14 tests.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add fare engine and trip quote endpoint"
+```
+
+---
+
+### Task 16: Driver availability and the Redis geo index
+
+Rule 6 applies: the geo index refreshes at most once per 10 seconds per driver.
+
+**Files:**
+- Create: `prototype/backend/src/modules/trips/geo-index.ts`
+- Modify: `prototype/backend/src/modules/trips/routes.ts`
+- Test: `prototype/backend/tests/integration/driver-availability.test.ts`
+
+**Interfaces:**
+- Consumes: `requireRole` (Task 10), `ensureDriverProfile` (Task 14).
+- Produces:
+  - `setAvailability(userId, availability): Promise<void>`
+  - `upsertDriverLocation(userId: string, at: LatLng, opts?: { force?: boolean }): Promise<boolean>` — returns whether the index was written
+  - `findNearbyDrivers(at: LatLng, radiusKm: number, certification: string, limit: number): Promise<string[]>`
+  - `removeDriverFromIndex(userId: string): Promise<void>`
+  - `GEO_KEY = 'drivers:online'`, `GEO_REFRESH_SECONDS = 10`, `SEARCH_RADIUS_KM = 5`
+
+- [ ] **Step 1: Write the failing test**
+
+`prototype/backend/tests/integration/driver-availability.test.ts`:
+
+```ts
+import { describe, expect, it, beforeAll, beforeEach, afterAll } from 'vitest'
+import type { FastifyInstance } from 'fastify'
+import { buildApp } from '../../src/app.js'
+import { pool } from '../../src/db/client.js'
+import { redis } from '../../src/redis/client.js'
+import {
+  findNearbyDrivers, upsertDriverLocation,
+} from '../../src/modules/trips/geo-index.js'
+import { seed } from '../../src/db/seed.js'
+import { resetDb } from '../helpers/db.js'
+import { resetRedis } from '../helpers/redis.js'
+import { bearer, loginAs } from '../helpers/auth.js'
+
+const hitecCity = { lat: 17.4399, lng: 78.3813 }
+const faraway = { lat: 17.9000, lng: 78.9000 }
+
+describe('driver availability and geo index', () => {
+  let app: FastifyInstance
+  let driverId: string
+  let driverToken: string
+
+  beforeAll(async () => { app = await buildApp(); await app.ready() })
+  beforeEach(async () => {
+    await resetDb(); await resetRedis(); await seed()
+    const login = await loginAs(app, '+919848012345', 'DRIVER')
+    driverId = login.userId
+    driverToken = login.accessToken
+  })
+  afterAll(async () => { await app.close() })
+
+  const setAvailability = (availability: string, token = driverToken) =>
+    app.inject({
+      method: 'POST', url: '/v1/driver/availability',
+      headers: bearer(token), payload: { availability },
+    })
+
+  it('creates a driver profile on first availability change', async () => {
+    const res = await setAvailability('ONLINE')
+    expect(res.statusCode).toBe(200)
+
+    const { rows } = await pool.query('SELECT availability FROM driver_profiles WHERE user_id = $1', [driverId])
+    expect(rows[0].availability).toBe('ONLINE')
+  })
+
+  it('refuses a CUSTOMER token', async () => {
+    const customer = (await loginAs(app, '+919876543210', 'CUSTOMER')).accessToken
+    const res = await setAvailability('ONLINE', customer)
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('finds a nearby online driver holding the required certification', async () => {
+    await setAvailability('ONLINE')
+    await upsertDriverLocation(driverId, hitecCity, { force: true })
+
+    const found = await findNearbyDrivers(hitecCity, 5, 'MD-Standard', 10)
+    expect(found).toContain(driverId)
+  })
+
+  it('excludes a driver outside the radius', async () => {
+    await setAvailability('ONLINE')
+    await upsertDriverLocation(driverId, faraway, { force: true })
+
+    const found = await findNearbyDrivers(hitecCity, 5, 'MD-Standard', 10)
+    expect(found).not.toContain(driverId)
+  })
+
+  it('excludes a driver lacking the certification', async () => {
+    await setAvailability('ONLINE')
+    await upsertDriverLocation(driverId, hitecCity, { force: true })
+
+    const found = await findNearbyDrivers(hitecCity, 5, 'MD-Lux', 10)
+    expect(found).not.toContain(driverId)
+  })
+
+  it('removes the driver from the index when going offline', async () => {
+    await setAvailability('ONLINE')
+    await upsertDriverLocation(driverId, hitecCity, { force: true })
+    await setAvailability('OFFLINE')
+
+    const found = await findNearbyDrivers(hitecCity, 5, 'MD-Standard', 10)
+    expect(found).not.toContain(driverId)
+  })
+
+  it('throttles index writes to once per 10 seconds', async () => {
+    await setAvailability('ONLINE')
+
+    expect(await upsertDriverLocation(driverId, hitecCity)).toBe(true)
+    expect(await upsertDriverLocation(driverId, hitecCity)).toBe(false)
+
+    const ttl = await redis.ttl(`geo:throttle:${driverId}`)
+    expect(ttl).toBeGreaterThan(0)
+    expect(ttl).toBeLessThanOrEqual(10)
+  })
+})
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/integration/driver-availability.test.ts
+```
+
+Expected: FAIL — module and route missing.
+
+- [ ] **Step 3: Implement the geo index**
+
+`prototype/backend/src/modules/trips/geo-index.ts`:
+
+```ts
+import { pool } from '../../db/client.js'
+import { redis } from '../../redis/client.js'
+import type { LatLng } from '../../lib/geo.js'
+import { ensureDriverProfile } from './rate-cards.js'
+
+export const GEO_KEY = 'drivers:online'
+export const GEO_REFRESH_SECONDS = 10
+export const SEARCH_RADIUS_KM = 5
+
+export type Availability = 'OFFLINE' | 'ONLINE' | 'ON_TRIP'
+
+export async function setAvailability(userId: string, availability: Availability): Promise<void> {
+  await ensureDriverProfile(userId)
+  await pool.query(
+    `UPDATE driver_profiles SET availability = $2, updated_at = now() WHERE user_id = $1`,
+    [userId, availability],
+  )
+  if (availability !== 'ONLINE') await removeDriverFromIndex(userId)
+}
+
+/**
+ * Rule 6: dispatch does not need 3-second precision, so the geo index is
+ * refreshed at most once per driver per 10 seconds. At 200k concurrent trips
+ * this turns ~66k GEOADDs/second into ~6.6k.
+ */
+export async function upsertDriverLocation(
+  userId: string, at: LatLng, opts: { force?: boolean } = {},
+): Promise<boolean> {
+  const throttleKey = `geo:throttle:${userId}`
+
+  if (!opts.force) {
+    const fresh = await redis.set(throttleKey, '1', 'EX', GEO_REFRESH_SECONDS, 'NX')
+    if (fresh === null) return false
+  } else {
+    await redis.set(throttleKey, '1', 'EX', GEO_REFRESH_SECONDS)
+  }
+
+  await redis.geoadd(GEO_KEY, at.lng, at.lat, userId)
+  return true
+}
+
+export async function removeDriverFromIndex(userId: string): Promise<void> {
+  await redis.zrem(GEO_KEY, userId)
+  await redis.del(`geo:throttle:${userId}`)
+}
+
+/**
+ * Redis narrows by geography; Postgres narrows by certification and
+ * availability. Doing it in that order keeps the SQL predicate over a handful
+ * of candidate ids rather than the whole driver table.
+ */
+export async function findNearbyDrivers(
+  at: LatLng, radiusKm: number, certification: string, limit: number,
+): Promise<string[]> {
+  const nearby = (await redis.georadius(
+    GEO_KEY, at.lng, at.lat, radiusKm, 'km', 'ASC', 'COUNT', limit * 4,
+  )) as string[]
+
+  if (nearby.length === 0) return []
+
+  const { rows } = await pool.query<{ user_id: string }>(
+    `SELECT user_id
+       FROM driver_profiles
+      WHERE user_id = ANY($1::uuid[])
+        AND availability = 'ONLINE'
+        AND $2 = ANY(certifications)
+      ORDER BY mydriver_score DESC
+      LIMIT $3`,
+    [nearby, certification, limit],
+  )
+
+  const eligible = new Set(rows.map((r) => r.user_id))
+  // Preserve the distance ordering Redis gave us, filtered to eligible drivers.
+  return nearby.filter((id) => eligible.has(id))
+}
+```
+
+- [ ] **Step 4: Add the availability route**
+
+Append inside `registerTripRoutes`:
+
+```ts
+import { setAvailability } from './geo-index.js'
+
+r.post('/v1/driver/availability', {
+  preHandler: [requireAuth, requireRole('DRIVER')],
+  schema: {
+    body: z.object({ availability: z.enum(['OFFLINE', 'ONLINE', 'ON_TRIP']) }).strict(),
+    response: { 200: z.object({ availability: z.enum(['OFFLINE', 'ONLINE', 'ON_TRIP']) }) },
+  },
+}, async (request) => {
+  await setAvailability(request.auth!.userId, request.body.availability)
+  return { availability: request.body.availability }
+})
+```
+
+- [ ] **Step 5: Un-skip the RBAC test from Task 10**
+
+In `tests/integration/me.test.ts`, change `it.skip` back to `it` on the test named *"refuses to let a CUSTOMER token reach a DRIVER-only route"*.
+
+- [ ] **Step 6: Run the tests to verify they pass**
+
+```bash
+npm test -- tests/integration/driver-availability.test.ts tests/integration/me.test.ts
+```
+
+Expected: PASS — 12 tests, none skipped.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add driver availability and throttled Redis geo index"
+```
+
+---
+
+### Task 17: Trip schema and the state machine
+
+**Files:**
+- Create: `prototype/backend/migrations/0006_trips.sql`
+- Create: `prototype/backend/src/modules/trips/state-machine.ts`
+- Test: `prototype/backend/tests/unit/state-machine.test.ts`
+
+**Interfaces:**
+- Consumes: nothing (the state machine is pure).
+- Produces:
+  - `type TripStatus = 'REQUESTED' | 'MATCHED' | 'HANDSHAKE_PENDING' | 'IN_TRIP' | 'COMPLETED' | 'CANCELLED' | 'NO_DRIVERS_FOUND' | 'ESCALATED'`
+  - `canTransition(from: TripStatus, to: TripStatus): boolean`
+  - `assertTransition(from: TripStatus, to: TripStatus): void` — throws `AppError` with code `INVALID_TRIP_TRANSITION`
+  - `isTerminal(status: TripStatus): boolean`
+  - `CANCELLABLE_FROM: readonly TripStatus[]`
+
+- [ ] **Step 1: Write the failing test**
+
+`prototype/backend/tests/unit/state-machine.test.ts`:
+
+```ts
+import { describe, expect, it } from 'vitest'
+import {
+  assertTransition, canTransition, isTerminal, type TripStatus,
+} from '../../src/modules/trips/state-machine.js'
+
+describe('trip state machine', () => {
+  it('allows the happy path in order', () => {
+    expect(canTransition('REQUESTED', 'MATCHED')).toBe(true)
+    expect(canTransition('MATCHED', 'HANDSHAKE_PENDING')).toBe(true)
+    expect(canTransition('HANDSHAKE_PENDING', 'IN_TRIP')).toBe(true)
+    expect(canTransition('IN_TRIP', 'COMPLETED')).toBe(true)
+  })
+
+  it('forbids skipping the handshake', () => {
+    expect(canTransition('MATCHED', 'IN_TRIP')).toBe(false)
+    expect(canTransition('REQUESTED', 'IN_TRIP')).toBe(false)
+  })
+
+  it('forbids going backwards', () => {
+    expect(canTransition('IN_TRIP', 'MATCHED')).toBe(false)
+    expect(canTransition('COMPLETED', 'IN_TRIP')).toBe(false)
+  })
+
+  it('allows cancellation before the trip starts, never after', () => {
+    expect(canTransition('REQUESTED', 'CANCELLED')).toBe(true)
+    expect(canTransition('MATCHED', 'CANCELLED')).toBe(true)
+    expect(canTransition('HANDSHAKE_PENDING', 'CANCELLED')).toBe(true)
+    expect(canTransition('IN_TRIP', 'CANCELLED')).toBe(false)
+    expect(canTransition('COMPLETED', 'CANCELLED')).toBe(false)
+  })
+
+  it('allows an unmatched request to end as NO_DRIVERS_FOUND', () => {
+    expect(canTransition('REQUESTED', 'NO_DRIVERS_FOUND')).toBe(true)
+    expect(canTransition('MATCHED', 'NO_DRIVERS_FOUND')).toBe(false)
+  })
+
+  it('allows a matched trip to fall back to REQUESTED when an offer is declined', () => {
+    expect(canTransition('MATCHED', 'REQUESTED')).toBe(true)
+  })
+
+  it('reserves ESCALATED for an in-progress trip (Phase 2)', () => {
+    expect(canTransition('IN_TRIP', 'ESCALATED')).toBe(true)
+    expect(canTransition('REQUESTED', 'ESCALATED')).toBe(false)
+  })
+
+  it('treats terminal states as terminal', () => {
+    const terminal: TripStatus[] = ['COMPLETED', 'CANCELLED', 'NO_DRIVERS_FOUND']
+    for (const s of terminal) expect(isTerminal(s)).toBe(true)
+    expect(isTerminal('IN_TRIP')).toBe(false)
+  })
+
+  it('never allows a transition out of a terminal state', () => {
+    const all: TripStatus[] = [
+      'REQUESTED', 'MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP',
+      'COMPLETED', 'CANCELLED', 'NO_DRIVERS_FOUND', 'ESCALATED',
+    ]
+    for (const to of all) {
+      expect(canTransition('COMPLETED', to)).toBe(false)
+      expect(canTransition('CANCELLED', to)).toBe(false)
+      expect(canTransition('NO_DRIVERS_FOUND', to)).toBe(false)
+    }
+  })
+
+  it('assertTransition throws a typed error on an illegal move', () => {
+    expect(() => assertTransition('REQUESTED', 'COMPLETED')).toThrow()
+    try {
+      assertTransition('REQUESTED', 'COMPLETED')
+    } catch (err) {
+      expect((err as { code: string }).code).toBe('INVALID_TRIP_TRANSITION')
+      expect((err as { statusCode: number }).statusCode).toBe(409)
+    }
+  })
+
+  it('assertTransition is silent on a legal move', () => {
+    expect(() => assertTransition('REQUESTED', 'MATCHED')).not.toThrow()
+  })
+})
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/unit/state-machine.test.ts
+```
+
+Expected: FAIL — module missing.
+
+- [ ] **Step 3: Write the migration**
+
+`prototype/backend/migrations/0006_trips.sql`:
+
+```sql
+DO $$ BEGIN
+  CREATE TYPE trip_status AS ENUM (
+    'REQUESTED', 'MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP',
+    'COMPLETED', 'CANCELLED', 'NO_DRIVERS_FOUND', 'ESCALATED'
+  );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE booking_type AS ENUM ('POINT_TO_POINT', 'HOURLY');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE offer_status AS ENUM ('PENDING', 'ACCEPTED', 'DECLINED', 'EXPIRED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS trips (
+  id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_id               UUID NOT NULL REFERENCES users(id),
+  driver_id                 UUID REFERENCES users(id),
+  status                    trip_status NOT NULL DEFAULT 'REQUESTED',
+  booking_type              booking_type NOT NULL,
+  hourly_package_hours      SMALLINT,
+  pickup_lat                DOUBLE PRECISION NOT NULL,
+  pickup_lng                DOUBLE PRECISION NOT NULL,
+  pickup_address            TEXT,
+  drop_lat                  DOUBLE PRECISION,
+  drop_lng                  DOUBLE PRECISION,
+  drop_address              TEXT,
+  required_certification    TEXT NOT NULL REFERENCES rate_cards(skill_id),
+  speed_ceiling_kmh         INT NOT NULL,
+  pickup_handshake_otp_hash TEXT NOT NULL,
+  handshake_attempts        SMALLINT NOT NULL DEFAULT 0,
+  dispatch_round            SMALLINT NOT NULL DEFAULT 0,
+  estimated_distance_km     DECIMAL(7,2),
+  estimated_fare            DECIMAL(10,2),
+  distance_km               DECIMAL(7,2),
+  duration_min              INT,
+  fare_amount               DECIMAL(10,2),
+  platform_fee              DECIMAL(10,2),
+  night_fee                 DECIMAL(10,2),
+  driver_earnings           DECIMAL(10,2),
+  cancellation_reason       TEXT,
+  cancelled_by              UUID REFERENCES users(id),
+  idempotency_key           TEXT,
+  requested_at              TIMESTAMPTZ NOT NULL DEFAULT now(),
+  matched_at                TIMESTAMPTZ,
+  handshake_at              TIMESTAMPTZ,
+  started_at                TIMESTAMPTZ,
+  completed_at              TIMESTAMPTZ,
+  cancelled_at              TIMESTAMPTZ,
+  CONSTRAINT trips_hourly_hours CHECK (
+    (booking_type = 'HOURLY' AND hourly_package_hours IS NOT NULL)
+    OR (booking_type = 'POINT_TO_POINT' AND drop_lat IS NOT NULL AND drop_lng IS NOT NULL)
+  )
+);
+
+-- Keyset pagination support (rule 3): (owner, requested_at DESC, id DESC).
+CREATE INDEX IF NOT EXISTS idx_trips_customer_keyset
+  ON trips(customer_id, requested_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_trips_driver_keyset
+  ON trips(driver_id, requested_at DESC, id DESC);
+
+-- Active trips are a tiny fraction of the table; a partial index keeps the
+-- dispatch sweeper off a full scan at a billion historical rows.
+CREATE INDEX IF NOT EXISTS idx_trips_active
+  ON trips(status, requested_at)
+  WHERE status IN ('REQUESTED', 'MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP');
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_trips_idempotency
+  ON trips(customer_id, idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS trip_events (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id    UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  type       TEXT NOT NULL,
+  actor_id   UUID REFERENCES users(id),
+  actor_role user_role,
+  payload    JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_trip_events_trip ON trip_events(trip_id, created_at);
+
+-- trip_events is the immutable lifecycle ledger. Enforce it in the database so
+-- no future code path can quietly rewrite history.
+CREATE OR REPLACE FUNCTION trip_events_append_only() RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'trip_events is append-only';
+END; $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_trip_events_append_only ON trip_events;
+CREATE TRIGGER trg_trip_events_append_only
+  BEFORE UPDATE OR DELETE ON trip_events
+  FOR EACH ROW EXECUTE FUNCTION trip_events_append_only();
+
+CREATE TABLE IF NOT EXISTS trip_offers (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  trip_id      UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+  driver_id    UUID NOT NULL REFERENCES users(id),
+  round        SMALLINT NOT NULL,
+  status       offer_status NOT NULL DEFAULT 'PENDING',
+  sent_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at   TIMESTAMPTZ NOT NULL,
+  responded_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_offers_pending
+  ON trip_offers(expires_at) WHERE status = 'PENDING';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_offers_one_live_per_trip
+  ON trip_offers(trip_id) WHERE status = 'PENDING';
+
+CREATE TABLE IF NOT EXISTS driver_ratings (
+  trip_id    UUID PRIMARY KEY REFERENCES trips(id) ON DELETE CASCADE,
+  driver_id  UUID NOT NULL REFERENCES users(id),
+  rating     SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  comment    TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ratings_driver ON driver_ratings(driver_id);
+```
+
+Note `resetDb()` truncates with `CASCADE`, which does not fire row triggers, so the append-only trigger does not interfere with tests.
+
+- [ ] **Step 4: Implement the state machine**
+
+`prototype/backend/src/modules/trips/state-machine.ts`:
+
+```ts
+import { conflict } from '../../lib/errors.js'
+
+export type TripStatus =
+  | 'REQUESTED' | 'MATCHED' | 'HANDSHAKE_PENDING' | 'IN_TRIP'
+  | 'COMPLETED' | 'CANCELLED' | 'NO_DRIVERS_FOUND' | 'ESCALATED'
+
+/**
+ * The single authority on legal moves. Every guarded transition in the trips
+ * service calls assertTransition before writing.
+ */
+const TRANSITIONS: Record<TripStatus, readonly TripStatus[]> = {
+  REQUESTED:         ['MATCHED', 'CANCELLED', 'NO_DRIVERS_FOUND'],
+  // A declined or expired offer returns the trip to the dispatch pool.
+  MATCHED:           ['HANDSHAKE_PENDING', 'REQUESTED', 'CANCELLED'],
+  HANDSHAKE_PENDING: ['IN_TRIP', 'CANCELLED'],
+  IN_TRIP:           ['COMPLETED', 'ESCALATED'],
+  ESCALATED:         ['COMPLETED'],
+  COMPLETED:         [],
+  CANCELLED:         [],
+  NO_DRIVERS_FOUND:  [],
+}
+
+export const CANCELLABLE_FROM: readonly TripStatus[] = [
+  'REQUESTED', 'MATCHED', 'HANDSHAKE_PENDING',
+]
+
+export const canTransition = (from: TripStatus, to: TripStatus): boolean =>
+  TRANSITIONS[from].includes(to)
+
+export const isTerminal = (status: TripStatus): boolean =>
+  TRANSITIONS[status].length === 0
+
+export function assertTransition(from: TripStatus, to: TripStatus): void {
+  if (!canTransition(from, to)) {
+    throw conflict(
+      'INVALID_TRIP_TRANSITION',
+      `A trip cannot move from ${from} to ${to}`,
+      { from, to },
+    )
+  }
+}
+```
+
+- [ ] **Step 5: Run the test to verify it passes**
+
+```bash
+npm run db:migrate && npm test -- tests/unit/state-machine.test.ts
+```
+
+Expected: PASS — 11 tests.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add trip schema, append-only event ledger, and state machine"
+```
+
+---
+
+### Task 18: Booking
+
+Creates the trip, records the first ledger entry, and is idempotent per rule 10.
+
+**Files:**
+- Create: `prototype/backend/src/modules/trips/service.ts`
+- Modify: `prototype/backend/src/modules/trips/routes.ts`
+- Test: `prototype/backend/tests/integration/trips-book.test.ts`
+
+**Interfaces:**
+- Consumes: `computeFare` (Task 15), `getRateCard` (Task 14), `estimateRoadDistanceKm` (Task 4), `peppered` (Amendment A), `assertTransition` (Task 17).
+- Produces:
+  - `type TripRow` — the full trip record as returned by `selectTrip`
+  - `bookTrip(input: BookInput): Promise<TripView>`
+  - `recordEvent(client, tripId, type, actorId, actorRole, payload): Promise<void>`
+  - `transitionTrip(client, tripId, from, to, patch): Promise<void>`
+  - `getTripForParticipant(tripId, userId): Promise<TripView>`
+  - `HANDSHAKE_OTP_DIGITS = 4`, `HANDSHAKE_MAX_ATTEMPTS = 5`
+
+- [ ] **Step 1: Write the failing test**
+
+`prototype/backend/tests/integration/trips-book.test.ts`:
+
+```ts
+import { describe, expect, it, beforeAll, beforeEach, afterAll } from 'vitest'
+import type { FastifyInstance } from 'fastify'
+import { buildApp } from '../../src/app.js'
+import { pool } from '../../src/db/client.js'
+import { seed } from '../../src/db/seed.js'
+import { resetDb } from '../helpers/db.js'
+import { resetRedis } from '../helpers/redis.js'
+import { bearer, loginAs } from '../helpers/auth.js'
+
+const pickup = { lat: 17.4399, lng: 78.3813 }
+const drop = { lat: 17.4483, lng: 78.3915 }
+
+describe('POST /v1/trips/book', () => {
+  let app: FastifyInstance
+  let token: string
+  let customerId: string
+
+  beforeAll(async () => { app = await buildApp(); await app.ready() })
+  beforeEach(async () => {
+    await resetDb(); await resetRedis(); await seed()
+    const login = await loginAs(app, '+919876543210', 'CUSTOMER')
+    token = login.accessToken
+    customerId = login.userId
+  })
+  afterAll(async () => { await app.close() })
+
+  const validBody = {
+    booking_type: 'POINT_TO_POINT',
+    pickup, drop,
+    required_certification: 'MD-Standard',
+    speed_ceiling_kmh: 60,
+  }
+
+  const book = (payload: unknown, headers: Record<string, string> = {}) =>
+    app.inject({
+      method: 'POST', url: '/v1/trips/book',
+      headers: { ...bearer(token), ...headers }, payload,
+    })
+
+  it('creates a trip in REQUESTED with an estimated fare', async () => {
+    const res = await book(validBody)
+
+    expect(res.statusCode).toBe(201)
+    const body = res.json()
+    expect(body.status).toBe('REQUESTED')
+    expect(body.customer_id).toBe(customerId)
+    expect(body.driver_id).toBeNull()
+    expect(body.speed_ceiling_kmh).toBe(60)
+    expect(body.estimated_fare).toBeGreaterThan(0)
+  })
+
+  it('never returns the handshake OTP to the customer', async () => {
+    const res = await book(validBody)
+    expect(res.payload).not.toContain('pickup_handshake_otp')
+    expect(res.json().handshake_otp).toBeUndefined()
+  })
+
+  it('stores the handshake OTP hashed', async () => {
+    await book(validBody)
+    const { rows } = await pool.query('SELECT pickup_handshake_otp_hash FROM trips')
+    expect(rows[0].pickup_handshake_otp_hash).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('writes a TRIP_REQUESTED ledger entry', async () => {
+    const res = await book(validBody)
+    const { rows } = await pool.query(
+      'SELECT type FROM trip_events WHERE trip_id = $1', [res.json().id],
+    )
+    expect(rows.map((r) => r.type)).toEqual(['TRIP_REQUESTED'])
+  })
+
+  it('is idempotent for a repeated Idempotency-Key', async () => {
+    const first = await book(validBody, { 'idempotency-key': 'abc-123' })
+    const second = await book(validBody, { 'idempotency-key': 'abc-123' })
+
+    expect(second.statusCode).toBe(201)
+    expect(second.json().id).toBe(first.json().id)
+
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM trips')
+    expect(rows[0].n).toBe(1)
+  })
+
+  it('creates two trips for two different keys', async () => {
+    await book(validBody, { 'idempotency-key': 'k1' })
+    await book(validBody, { 'idempotency-key': 'k2' })
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM trips')
+    expect(rows[0].n).toBe(2)
+  })
+
+  it('rejects a booking carrying a VisionCam mode', async () => {
+    const res = await book({ ...validBody, mode: 'MODE_F' })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('rejects a speed ceiling outside 20-120', async () => {
+    expect((await book({ ...validBody, speed_ceiling_kmh: 5 })).statusCode).toBe(400)
+    expect((await book({ ...validBody, speed_ceiling_kmh: 200 })).statusCode).toBe(400)
+  })
+
+  it('refuses a DRIVER token', async () => {
+    const driver = (await loginAs(app, '+919848012345', 'DRIVER')).accessToken
+    const res = await book(validBody, bearer(driver))
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('refuses a customer with no verified phone number', async () => {
+    await pool.query('UPDATE users SET phone_number = NULL, phone_verified_at = NULL WHERE id = $1', [customerId])
+    const res = await book(validBody)
+    expect(res.statusCode).toBe(403)
+    expect(res.json().error.code).toBe('PHONE_VERIFICATION_REQUIRED')
+  })
+})
+```
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/integration/trips-book.test.ts
+```
+
+Expected: FAIL — route 404.
+
+- [ ] **Step 3: Implement the trips service**
+
+`prototype/backend/src/modules/trips/service.ts`:
+
+```ts
+import { randomInt } from 'node:crypto'
+import type { PoolClient } from 'pg'
+import { pool } from '../../db/client.js'
+import { forbidden, notFound } from '../../lib/errors.js'
+import { peppered } from '../../lib/hash.js'
+import { estimateRoadDistanceKm, type LatLng } from '../../lib/geo.js'
+import { computeFare } from './fare.js'
+import { getRateCard } from './rate-cards.js'
+import { assertTransition, type TripStatus } from './state-machine.js'
+import type { Role } from '../auth/otp.js'
+
+export const HANDSHAKE_OTP_DIGITS = 4
+export const HANDSHAKE_MAX_ATTEMPTS = 5
+
+export type BookingType = 'POINT_TO_POINT' | 'HOURLY'
+
+export type TripView = {
+  id: string
+  customer_id: string
+  driver_id: string | null
+  status: TripStatus
+  booking_type: BookingType
+  hourly_package_hours: number | null
+  pickup: LatLng
+  drop: LatLng | null
+  required_certification: string
+  speed_ceiling_kmh: number
+  estimated_distance_km: number | null
+  estimated_fare: number | null
+  distance_km: number | null
+  duration_min: number | null
+  fare_amount: number | null
+  driver_earnings: number | null
+  requested_at: string
+  completed_at: string | null
+}
+
+const TRIP_COLUMNS = `
+  id, customer_id, driver_id, status, booking_type, hourly_package_hours,
+  pickup_lat, pickup_lng, drop_lat, drop_lng,
+  required_certification, speed_ceiling_kmh,
+  estimated_distance_km::float8 AS estimated_distance_km,
+  estimated_fare::float8        AS estimated_fare,
+  distance_km::float8           AS distance_km,
+  duration_min,
+  fare_amount::float8           AS fare_amount,
+  driver_earnings::float8       AS driver_earnings,
+  requested_at, completed_at
+`
+
+type RawTrip = Record<string, unknown>
+
+function toView(row: RawTrip): TripView {
+  const { pickup_lat, pickup_lng, drop_lat, drop_lng, ...rest } = row
+  return {
+    ...(rest as Omit<TripView, 'pickup' | 'drop'>),
+    pickup: { lat: pickup_lat as number, lng: pickup_lng as number },
+    drop: drop_lat === null ? null : { lat: drop_lat as number, lng: drop_lng as number },
+  }
+}
+
+/** Append-only ledger write. Always called with the same client as the status update. */
+export async function recordEvent(
+  client: PoolClient, tripId: string, type: string,
+  actorId: string | null, actorRole: Role | null, payload: unknown = {},
+): Promise<void> {
+  await client.query(
+    `INSERT INTO trip_events (trip_id, type, actor_id, actor_role, payload)
+     VALUES ($1, $2, $3, $4, $5::jsonb)`,
+    [tripId, type, actorId, actorRole, JSON.stringify(payload)],
+  )
+}
+
+/**
+ * Guarded status change. The WHERE clause on the current status makes this a
+ * compare-and-swap: two concurrent callers cannot both win.
+ */
+export async function transitionTrip(
+  client: PoolClient, tripId: string, from: TripStatus, to: TripStatus,
+  patch: Record<string, unknown> = {},
+): Promise<void> {
+  assertTransition(from, to)
+
+  const keys = Object.keys(patch)
+  const assignments = keys.map((k, i) => `${k} = $${i + 4}`).join(', ')
+  const { rowCount } = await client.query(
+    `UPDATE trips SET status = $2${assignments ? ', ' + assignments : ''}
+      WHERE id = $1 AND status = $3`,
+    [tripId, to, from, ...keys.map((k) => patch[k])],
+  )
+
+  if (rowCount === 0) {
+    throw notFound('TRIP_STATE_CHANGED', 'The trip is no longer in the expected state')
+  }
+}
+
+const generateHandshakeOtp = (): string =>
+  String(randomInt(0, 10 ** HANDSHAKE_OTP_DIGITS)).padStart(HANDSHAKE_OTP_DIGITS, '0')
+
+export type BookInput = {
+  customerId: string
+  bookingType: BookingType
+  hours?: number
+  pickup: LatLng
+  pickupAddress?: string
+  drop?: LatLng
+  dropAddress?: string
+  requiredCertification: string
+  speedCeilingKmh: number
+  idempotencyKey?: string
+}
+
+export async function bookTrip(input: BookInput): Promise<TripView> {
+  const { rows: userRows } = await pool.query<{ phone_verified_at: Date | null }>(
+    `SELECT phone_verified_at FROM users WHERE id = $1`, [input.customerId],
+  )
+  if (!userRows[0]?.phone_verified_at) {
+    throw forbidden(
+      'PHONE_VERIFICATION_REQUIRED',
+      'Verify a phone number before booking a trip',
+    )
+  }
+
+  if (input.idempotencyKey) {
+    const existing = await pool.query(
+      `SELECT ${TRIP_COLUMNS} FROM trips WHERE customer_id = $1 AND idempotency_key = $2`,
+      [input.customerId, input.idempotencyKey],
+    )
+    if (existing.rows[0]) return toView(existing.rows[0])
+  }
+
+  const card = await getRateCard(input.requiredCertification)
+  const distanceKm = input.drop ? estimateRoadDistanceKm(input.pickup, input.drop) : 0
+  const fare = computeFare({
+    bookingType: input.bookingType,
+    distanceKm,
+    hours: input.hours,
+    perKmRate: card.per_km_rate,
+    hourlyRate: card.hourly_rate,
+    pickupAt: new Date(),
+  })
+
+  const otp = generateHandshakeOtp()
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rows } = await client.query(
+      `INSERT INTO trips (
+         customer_id, booking_type, hourly_package_hours,
+         pickup_lat, pickup_lng, pickup_address,
+         drop_lat, drop_lng, drop_address,
+         required_certification, speed_ceiling_kmh,
+         pickup_handshake_otp_hash, estimated_distance_km, estimated_fare,
+         idempotency_key
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       RETURNING ${TRIP_COLUMNS}`,
+      [
+        input.customerId, input.bookingType, input.hours ?? null,
+        input.pickup.lat, input.pickup.lng, input.pickupAddress ?? null,
+        input.drop?.lat ?? null, input.drop?.lng ?? null, input.dropAddress ?? null,
+        card.skill_id, input.speedCeilingKmh,
+        peppered(otp), distanceKm.toFixed(2), fare.total.toFixed(2),
+        input.idempotencyKey ?? null,
+      ],
+    )
+    const trip = rows[0]!
+    await recordEvent(client, trip.id as string, 'TRIP_REQUESTED', input.customerId, 'CUSTOMER', {
+      required_certification: card.skill_id,
+      speed_ceiling_kmh: input.speedCeilingKmh,
+      estimated_fare: fare.total,
+    })
+    await client.query('COMMIT')
+    return toView(trip)
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+export async function getTripForParticipant(tripId: string, userId: string): Promise<TripView> {
+  const { rows } = await pool.query(
+    `SELECT ${TRIP_COLUMNS} FROM trips
+      WHERE id = $1 AND (customer_id = $2 OR driver_id = $2)`,
+    [tripId, userId],
+  )
+  if (!rows[0]) throw notFound('TRIP_NOT_FOUND', 'No such trip')
+  return toView(rows[0])
+}
+
+/** The plaintext handshake OTP is delivered only to the customer, on their own trip. */
+export async function issueHandshakeOtpForCustomer(
+  tripId: string, customerId: string,
+): Promise<string> {
+  const { rows } = await pool.query<{ status: TripStatus }>(
+    `SELECT status FROM trips WHERE id = $1 AND customer_id = $2`, [tripId, customerId],
+  )
+  if (!rows[0]) throw notFound('TRIP_NOT_FOUND', 'No such trip')
+
+  // The stored value is a one-way hash, so a fresh code is minted and swapped in.
+  const otp = generateHandshakeOtp()
+  await pool.query(
+    `UPDATE trips SET pickup_handshake_otp_hash = $2, handshake_attempts = 0 WHERE id = $1`,
+    [tripId, peppered(otp)],
+  )
+  return otp
+}
+```
+
+- [ ] **Step 4: Add the booking route**
+
+Append inside `registerTripRoutes`:
+
+```ts
+import { bookTrip } from './service.js'
+
+const TripViewSchema = z.object({
+  id: z.string().uuid(),
+  customer_id: z.string().uuid(),
+  driver_id: z.string().uuid().nullable(),
+  status: z.enum([
+    'REQUESTED', 'MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP',
+    'COMPLETED', 'CANCELLED', 'NO_DRIVERS_FOUND', 'ESCALATED',
+  ]),
+  booking_type: z.enum(['POINT_TO_POINT', 'HOURLY']),
+  hourly_package_hours: z.number().int().nullable(),
+  pickup: LatLngSchema,
+  drop: LatLngSchema.nullable(),
+  required_certification: z.string(),
+  speed_ceiling_kmh: z.number().int(),
+  estimated_distance_km: z.number().nullable(),
+  estimated_fare: z.number().nullable(),
+  distance_km: z.number().nullable(),
+  duration_min: z.number().int().nullable(),
+  fare_amount: z.number().nullable(),
+  driver_earnings: z.number().nullable(),
+  requested_at: z.coerce.string(),
+  completed_at: z.coerce.string().nullable(),
+})
+
+r.post('/v1/trips/book', {
+  preHandler: [requireAuth, requireRole('CUSTOMER')],
+  schema: {
+    headers: z.object({ 'idempotency-key': z.string().min(8).max(128).optional() }),
+    body: QuoteBody.extend({
+      speed_ceiling_kmh: z.number().int().min(20).max(120),
+      pickup_address: z.string().max(240).optional(),
+      drop_address: z.string().max(240).optional(),
+    }).strict(),
+    response: { 201: TripViewSchema },
+  },
+}, async (request, reply) => {
+  const b = request.body
+  if (b.booking_type === 'POINT_TO_POINT' && !b.drop) {
+    throw badRequest('DROP_REQUIRED', 'A drop location is required for a point-to-point trip')
+  }
+
+  const trip = await bookTrip({
+    customerId: request.auth!.userId,
+    bookingType: b.booking_type,
+    hours: b.hours,
+    pickup: b.pickup,
+    pickupAddress: b.pickup_address,
+    drop: b.drop,
+    dropAddress: b.drop_address,
+    requiredCertification: b.required_certification,
+    speedCeilingKmh: b.speed_ceiling_kmh,
+    idempotencyKey: request.headers['idempotency-key'],
+  })
+
+  return reply.status(201).send(trip)
+})
+```
+
+- [ ] **Step 5: Run the test to verify it passes**
+
+```bash
+npm test -- tests/integration/trips-book.test.ts
+```
+
+Expected: PASS — 10 tests.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add idempotent trip booking with hashed handshake OTP"
+```
+
+---
+
+### Task 19: Dispatch engine
+
+Three rounds, 20-second offers, `FOR UPDATE SKIP LOCKED` for the sweeper (rule 11).
+
+**Files:**
+- Create: `prototype/backend/src/modules/trips/matching.ts`
+- Create: `prototype/backend/src/modules/trips/sweeper.ts`
+- Modify: `prototype/backend/src/index.ts` (start the sweeper)
+- Test: `prototype/backend/tests/integration/dispatch.test.ts`
+
+**Interfaces:**
+- Consumes: `findNearbyDrivers` (Task 16), `transitionTrip`, `recordEvent` (Task 18), `getPushProvider` (Task 6).
+- Produces:
+  - `OFFER_TTL_SECONDS = 20`, `MAX_DISPATCH_ROUNDS = 3`
+  - `startDispatch(tripId: string): Promise<void>` — offers to the best candidate, or ends the trip as `NO_DRIVERS_FOUND`
+  - `respondToOffer(tripId, driverId, accept): Promise<TripView>`
+  - `expireStaleOffers(): Promise<number>` — returns how many were swept
+  - `startSweeper(intervalMs?: number): () => void` — returns a stop function
+
+- [ ] **Step 1: Write the failing test**
+
+`prototype/backend/tests/integration/dispatch.test.ts` — assert each of these:
+
+1. `startDispatch` on a trip with one eligible nearby driver creates a `PENDING` offer for that driver, moves the trip to `MATCHED`, and writes a `TRIP_MATCHED` event.
+2. `startDispatch` with no eligible drivers moves the trip to `NO_DRIVERS_FOUND` and writes `TRIP_NO_DRIVERS_FOUND`.
+3. A driver holding the wrong certification is never offered the trip.
+4. `respondToOffer(..., false)` marks the offer `DECLINED`, returns the trip to `REQUESTED`, and dispatches round 2 to the next driver.
+5. After `MAX_DISPATCH_ROUNDS` declines the trip ends as `NO_DRIVERS_FOUND`.
+6. `respondToOffer(..., true)` marks the offer `ACCEPTED`, moves the trip to `HANDSHAKE_PENDING`, sets `driver_id` and `matched_at`, and sets that driver's availability to `ON_TRIP`.
+7. A second driver accepting the same trip gets a 409 — the unique partial index `idx_offers_one_live_per_trip` plus the compare-and-swap in `transitionTrip` make this impossible to race.
+8. `expireStaleOffers()` on an offer past `expires_at` marks it `EXPIRED` and re-dispatches.
+9. A driver responding to an offer that is not theirs gets a 404.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/integration/dispatch.test.ts
+```
+
+Expected: FAIL — module missing.
+
+- [ ] **Step 3: Implement matching**
+
+`prototype/backend/src/modules/trips/matching.ts`:
+
+```ts
+import { pool } from '../../db/client.js'
+import { conflict, notFound } from '../../lib/errors.js'
+import { getPushProvider } from '../../providers/push/index.js'
+import { findNearbyDrivers, SEARCH_RADIUS_KM, setAvailability } from './geo-index.js'
+import { getTripForParticipant, recordEvent, transitionTrip, type TripView } from './service.js'
+import type { TripStatus } from './state-machine.js'
+
+export const OFFER_TTL_SECONDS = 20
+export const MAX_DISPATCH_ROUNDS = 3
+
+type DispatchTrip = {
+  id: string
+  customer_id: string
+  status: TripStatus
+  pickup_lat: number
+  pickup_lng: number
+  required_certification: string
+  dispatch_round: number
+}
+
+async function loadTrip(id: string): Promise<DispatchTrip> {
+  const { rows } = await pool.query<DispatchTrip>(
+    `SELECT id, customer_id, status, pickup_lat, pickup_lng,
+            required_certification, dispatch_round
+       FROM trips WHERE id = $1`,
+    [id],
+  )
+  if (!rows[0]) throw notFound('TRIP_NOT_FOUND', 'No such trip')
+  return rows[0]
+}
+
+async function endWithNoDrivers(trip: DispatchTrip): Promise<void> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await transitionTrip(client, trip.id, trip.status, 'NO_DRIVERS_FOUND')
+    await recordEvent(client, trip.id, 'TRIP_NO_DRIVERS_FOUND', null, null, {
+      rounds_attempted: trip.dispatch_round,
+    })
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+/**
+ * Offer the trip to the best remaining candidate. Drivers already offered this
+ * trip in an earlier round are excluded so a decline is not re-sent.
+ */
+export async function startDispatch(tripId: string): Promise<void> {
+  const trip = await loadTrip(tripId)
+  if (trip.status !== 'REQUESTED') return
+
+  if (trip.dispatch_round >= MAX_DISPATCH_ROUNDS) {
+    return endWithNoDrivers(trip)
+  }
+
+  const candidates = await findNearbyDrivers(
+    { lat: trip.pickup_lat, lng: trip.pickup_lng },
+    SEARCH_RADIUS_KM,
+    trip.required_certification,
+    10,
+  )
+
+  const { rows: alreadyOffered } = await pool.query<{ driver_id: string }>(
+    `SELECT driver_id FROM trip_offers WHERE trip_id = $1`, [tripId],
+  )
+  const seen = new Set(alreadyOffered.map((r) => r.driver_id))
+  const driverId = candidates.find((id) => !seen.has(id))
+
+  if (!driverId) return endWithNoDrivers(trip)
+
+  const round = trip.dispatch_round + 1
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(
+      `INSERT INTO trip_offers (trip_id, driver_id, round, expires_at)
+       VALUES ($1, $2, $3, now() + ($4 || ' seconds')::interval)`,
+      [tripId, driverId, round, String(OFFER_TTL_SECONDS)],
+    )
+    await transitionTrip(client, tripId, 'REQUESTED', 'MATCHED', { dispatch_round: round })
+    await recordEvent(client, tripId, 'TRIP_MATCHED', null, null, { driver_id: driverId, round })
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+
+  // Best-effort notification. A failure here must not roll back the offer;
+  // the driver app also receives the offer over its WebSocket (Task 27).
+  await getPushProvider()
+    .send(driverId, {
+      title: 'New trip request',
+      body: 'A customer nearby is requesting a driver',
+      data: { trip_id: tripId, expires_in: String(OFFER_TTL_SECONDS) },
+    })
+    .catch(() => undefined)
+}
+
+export async function respondToOffer(
+  tripId: string, driverId: string, accept: boolean,
+): Promise<TripView> {
+  const client = await pool.connect()
+  let redispatch = false
+  try {
+    await client.query('BEGIN')
+
+    const { rows } = await client.query<{ id: string }>(
+      `SELECT id FROM trip_offers
+        WHERE trip_id = $1 AND driver_id = $2 AND status = 'PENDING' AND expires_at > now()
+        FOR UPDATE`,
+      [tripId, driverId],
+    )
+    if (!rows[0]) {
+      throw notFound('OFFER_NOT_FOUND', 'No live offer for this driver on this trip')
+    }
+
+    await client.query(
+      `UPDATE trip_offers SET status = $2, responded_at = now() WHERE id = $1`,
+      [rows[0].id, accept ? 'ACCEPTED' : 'DECLINED'],
+    )
+
+    if (accept) {
+      await transitionTrip(client, tripId, 'MATCHED', 'HANDSHAKE_PENDING', {
+        driver_id: driverId,
+        matched_at: new Date(),
+      })
+      await recordEvent(client, tripId, 'OFFER_ACCEPTED', driverId, 'DRIVER', {})
+    } else {
+      await transitionTrip(client, tripId, 'MATCHED', 'REQUESTED')
+      await recordEvent(client, tripId, 'OFFER_DECLINED', driverId, 'DRIVER', {})
+      redispatch = true
+    }
+
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    if ((err as { code?: string }).code === '23505') {
+      throw conflict('OFFER_ALREADY_TAKEN', 'This trip has already been accepted')
+    }
+    throw err
+  } finally {
+    client.release()
+  }
+
+  if (accept) await setAvailability(driverId, 'ON_TRIP')
+  else await startDispatch(tripId)
+
+  return getTripForParticipant(tripId, driverId)
+}
+```
+
+- [ ] **Step 4: Implement the sweeper**
+
+`prototype/backend/src/modules/trips/sweeper.ts`:
+
+```ts
+import { pool } from '../../db/client.js'
+import { recordEvent, transitionTrip } from './service.js'
+import { startDispatch } from './matching.js'
+
+/**
+ * Rule 11: SKIP LOCKED means every instance can run this loop concurrently
+ * without contending for the same rows. Without it, N instances serialise.
+ */
+export async function expireStaleOffers(): Promise<number> {
+  const client = await pool.connect()
+  const expiredTripIds: string[] = []
+  try {
+    await client.query('BEGIN')
+    const { rows } = await client.query<{ id: string; trip_id: string }>(
+      `SELECT id, trip_id FROM trip_offers
+        WHERE status = 'PENDING' AND expires_at <= now()
+        ORDER BY expires_at
+        LIMIT 200
+        FOR UPDATE SKIP LOCKED`,
+    )
+
+    for (const offer of rows) {
+      await client.query(
+        `UPDATE trip_offers SET status = 'EXPIRED', responded_at = now() WHERE id = $1`,
+        [offer.id],
+      )
+      const { rows: tripRows } = await client.query<{ status: string }>(
+        `SELECT status FROM trips WHERE id = $1 FOR UPDATE`, [offer.trip_id],
+      )
+      if (tripRows[0]?.status === 'MATCHED') {
+        await transitionTrip(client, offer.trip_id, 'MATCHED', 'REQUESTED')
+        await recordEvent(client, offer.trip_id, 'OFFER_EXPIRED', null, null, {})
+        expiredTripIds.push(offer.trip_id)
+      }
+    }
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+
+  for (const tripId of expiredTripIds) {
+    await startDispatch(tripId).catch(() => undefined)
+  }
+  return expiredTripIds.length
+}
+
+export function startSweeper(intervalMs = 5_000): () => void {
+  const timer = setInterval(() => {
+    void expireStaleOffers().catch((err) => console.error('sweeper failed', err))
+  }, intervalMs)
+  timer.unref()
+  return () => clearInterval(timer)
+}
+```
+
+Start it in `src/index.ts` after `buildApp()`, and call the returned stop function during shutdown.
+
+- [ ] **Step 5: Run the test to verify it passes**
+
+```bash
+npm test -- tests/integration/dispatch.test.ts
+```
+
+Expected: PASS — 9 tests.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add dispatch engine with offer rounds and SKIP LOCKED sweeper"
+```
+
+---
+
+### Task 20: Offer response, handshake OTP issuance, and storage providers
+
+**Files:**
+- Create: `prototype/backend/src/providers/storage/index.ts`
+- Create: `prototype/backend/src/providers/storage/s3.ts`
+- Create: `prototype/backend/src/providers/liveness/index.ts`
+- Modify: `prototype/backend/src/modules/trips/routes.ts`
+- Test: `prototype/backend/tests/integration/offer-respond.test.ts`
+- Test: `prototype/backend/tests/integration/storage.test.ts`
+
+**Interfaces:**
+- Consumes: `respondToOffer` (Task 19), `issueHandshakeOtpForCustomer` (Task 18).
+- Produces:
+  - `interface StorageProvider { put(key: string, body: Buffer, contentType: string): Promise<string>; signedUrl(key: string, ttlSeconds?: number): Promise<string> }`
+  - `getStorageProvider(): StorageProvider`, `setStorageProvider(p): void`
+  - `interface LivenessProvider { verify(selfie: Buffer, referenceKey: string | null): Promise<{ match: boolean; confidence: number }> }`
+  - `getLivenessProvider(): LivenessProvider`, `setLivenessProvider(p): void`
+  - Routes: `POST /v1/trips/:id/offer/respond`, `POST /v1/trips/:id/handshake-otp`
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/integration/offer-respond.test.ts` asserts: a driver accepting moves the trip to `HANDSHAKE_PENDING`; declining returns `REQUESTED`; a driver with no offer gets 404; a `CUSTOMER` token gets 403; the customer can fetch a 4-digit handshake OTP for their own trip via `POST /v1/trips/:id/handshake-otp` and another customer gets 404.
+
+`tests/integration/storage.test.ts` asserts: `put` then `signedUrl` returns a URL containing the key; the mock liveness provider returns `match: true` with the configured confidence; and setting `LIVENESS_MOCK_CONFIDENCE` below `LIVENESS_MIN_CONFIDENCE` yields `match: false`.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+```bash
+npm test -- tests/integration/offer-respond.test.ts tests/integration/storage.test.ts
+```
+
+Expected: FAIL — modules and routes missing.
+
+- [ ] **Step 3: Implement the storage provider**
+
+`prototype/backend/src/providers/storage/index.ts`:
+
+```ts
+import { env } from '../../config/env.js'
+
+export interface StorageProvider {
+  put(key: string, body: Buffer, contentType: string): Promise<string>
+  signedUrl(key: string, ttlSeconds?: number): Promise<string>
+}
+
+export class MemoryStorageProvider implements StorageProvider {
+  readonly objects = new Map<string, { body: Buffer; contentType: string }>()
+
+  async put(key: string, body: Buffer, contentType: string): Promise<string> {
+    this.objects.set(key, { body, contentType })
+    return key
+  }
+
+  async signedUrl(key: string): Promise<string> {
+    return `memory://${key}`
+  }
+}
+
+let instance: StorageProvider | undefined
+
+export function getStorageProvider(): StorageProvider {
+  if (!instance) {
+    instance =
+      env.NODE_ENV === 'test'
+        ? new MemoryStorageProvider()
+        : new (require('./s3.js').S3StorageProvider)()
+  }
+  return instance
+}
+
+export function setStorageProvider(p: StorageProvider | undefined): void { instance = p }
+```
+
+`prototype/backend/src/providers/storage/s3.ts`:
+
+```ts
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { env } from '../../config/env.js'
+import type { StorageProvider } from './index.js'
+
+/** Works unchanged against MinIO locally and real S3 in production. */
+export class S3StorageProvider implements StorageProvider {
+  private readonly client = new S3Client({
+    endpoint: env.STORAGE_ENDPOINT,
+    region: env.STORAGE_REGION,
+    forcePathStyle: env.STORAGE_FORCE_PATH_STYLE,
+    credentials: {
+      accessKeyId: env.STORAGE_ACCESS_KEY,
+      secretAccessKey: env.STORAGE_SECRET_KEY,
+    },
+  })
+
+  async put(key: string, body: Buffer, contentType: string): Promise<string> {
+    await this.client.send(new PutObjectCommand({
+      Bucket: env.STORAGE_BUCKET, Key: key, Body: body, ContentType: contentType,
+    }))
+    return key
+  }
+
+  async signedUrl(key: string, ttlSeconds = 300): Promise<string> {
+    return getSignedUrl(
+      this.client,
+      new GetObjectCommand({ Bucket: env.STORAGE_BUCKET, Key: key }),
+      { expiresIn: ttlSeconds },
+    )
+  }
+}
+```
+
+- [ ] **Step 4: Implement the liveness provider**
+
+`prototype/backend/src/providers/liveness/index.ts`:
+
+```ts
+import { env } from '../../config/env.js'
+
+export type LivenessResult = { match: boolean; confidence: number }
+
+export interface LivenessProvider {
+  verify(selfie: Buffer, referenceKey: string | null): Promise<LivenessResult>
+}
+
+/**
+ * Phase 1 ships no face-matching vendor. The mock returns a configurable
+ * confidence so the handshake gate, the threshold check and the failure path
+ * are all exercised for real.
+ */
+export class MockLivenessProvider implements LivenessProvider {
+  constructor(private readonly confidence = env.LIVENESS_MOCK_CONFIDENCE) {}
+
+  async verify(selfie: Buffer): Promise<LivenessResult> {
+    if (selfie.length === 0) return { match: false, confidence: 0 }
+    return {
+      match: this.confidence >= env.LIVENESS_MIN_CONFIDENCE,
+      confidence: this.confidence,
+    }
+  }
+}
+
+let instance: LivenessProvider | undefined
+export function getLivenessProvider(): LivenessProvider {
+  if (!instance) instance = new MockLivenessProvider()
+  return instance
+}
+export function setLivenessProvider(p: LivenessProvider | undefined): void { instance = p }
+```
+
+- [ ] **Step 5: Add the routes**
+
+Append inside `registerTripRoutes`:
+
+```ts
+import { respondToOffer } from './matching.js'
+import { issueHandshakeOtpForCustomer } from './service.js'
+
+r.post('/v1/trips/:id/offer/respond', {
+  preHandler: [requireAuth, requireRole('DRIVER')],
+  schema: {
+    params: z.object({ id: z.string().uuid() }),
+    body: z.object({ accept: z.boolean() }).strict(),
+    response: { 200: TripViewSchema },
+  },
+}, async (request) =>
+  respondToOffer(request.params.id, request.auth!.userId, request.body.accept))
+
+r.post('/v1/trips/:id/handshake-otp', {
+  preHandler: [requireAuth, requireRole('CUSTOMER')],
+  schema: {
+    params: z.object({ id: z.string().uuid() }),
+    response: { 200: z.object({ otp: z.string().length(4) }) },
+  },
+}, async (request) => ({
+  otp: await issueHandshakeOtpForCustomer(request.params.id, request.auth!.userId),
+}))
+```
+
+- [ ] **Step 6: Run the tests to verify they pass**
+
+```bash
+npm test -- tests/integration/offer-respond.test.ts tests/integration/storage.test.ts
+```
+
+Expected: PASS — 9 tests.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add offer response, handshake OTP issuance, storage and liveness providers"
+```
+
+---
+
+### Task 21: Pickup handshake
+
+**Files:**
+- Create: `prototype/backend/src/modules/trips/handshake.ts`
+- Modify: `prototype/backend/src/modules/trips/routes.ts`
+- Test: `prototype/backend/tests/integration/handshake.test.ts`
+
+**Interfaces:**
+- Consumes: `pepperedEquals` (Amendment A), `transitionTrip`, `recordEvent` (Task 18), `getStorageProvider`, `getLivenessProvider` (Task 20).
+- Produces: `performHandshake(input: { tripId; driverId; selfieBase64; otp }): Promise<{ status: 'HANDSHAKE_PASSED'; trip_state: 'IN_TRIP' }>`
+
+- [ ] **Step 1: Write the failing test**
+
+`tests/integration/handshake.test.ts` asserts:
+1. A correct OTP and a passing liveness check move the trip to `IN_TRIP`, set `started_at`, and write a `HANDSHAKE_PASSED` event.
+2. The selfie is written to storage and its key recorded on the event payload, never the base64 itself.
+3. A wrong OTP returns 401 `INVALID_HANDSHAKE_OTP` and increments `handshake_attempts`.
+4. After 5 failed attempts, even the correct OTP returns 423 `HANDSHAKE_LOCKED` and the trip stays in `HANDSHAKE_PENDING`.
+5. A failing liveness check returns 401 `LIVENESS_FAILED` and does not consume an OTP attempt.
+6. A driver who is not `trips.driver_id` returns 404.
+7. A trip not in `HANDSHAKE_PENDING` returns 409.
+8. A `CUSTOMER` token returns 403.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/integration/handshake.test.ts
+```
+
+Expected: FAIL — route 404.
+
+- [ ] **Step 3: Implement the handshake**
+
+`prototype/backend/src/modules/trips/handshake.ts`:
+
+```ts
+import { pool } from '../../db/client.js'
+import { AppError, conflict, notFound, unauthorized } from '../../lib/errors.js'
+import { pepperedEquals } from '../../lib/hash.js'
+import { getLivenessProvider } from '../../providers/liveness/index.js'
+import { getStorageProvider } from '../../providers/storage/index.js'
+import { HANDSHAKE_MAX_ATTEMPTS, recordEvent, transitionTrip } from './service.js'
+import type { TripStatus } from './state-machine.js'
+
+const MAX_SELFIE_BYTES = 4 * 1024 * 1024
+
+function decodeSelfie(base64: string): Buffer {
+  const payload = base64.includes(',') ? base64.slice(base64.indexOf(',') + 1) : base64
+  const buf = Buffer.from(payload, 'base64')
+  if (buf.length === 0) {
+    throw new AppError(400, 'INVALID_SELFIE', 'The selfie could not be decoded')
+  }
+  if (buf.length > MAX_SELFIE_BYTES) {
+    throw new AppError(413, 'SELFIE_TOO_LARGE', 'The selfie exceeds 4 MB')
+  }
+  return buf
+}
+
+export async function performHandshake(input: {
+  tripId: string
+  driverId: string
+  selfieBase64: string
+  otp: string
+}): Promise<{ status: 'HANDSHAKE_PASSED'; trip_state: 'IN_TRIP' }> {
+  const { rows } = await pool.query<{
+    status: TripStatus
+    pickup_handshake_otp_hash: string
+    handshake_attempts: number
+    face_reference_key: string | null
+  }>(
+    `SELECT t.status, t.pickup_handshake_otp_hash, t.handshake_attempts,
+            d.face_reference_key
+       FROM trips t
+       LEFT JOIN driver_profiles d ON d.user_id = t.driver_id
+      WHERE t.id = $1 AND t.driver_id = $2`,
+    [input.tripId, input.driverId],
+  )
+
+  const trip = rows[0]
+  if (!trip) throw notFound('TRIP_NOT_FOUND', 'No such trip for this driver')
+  if (trip.status !== 'HANDSHAKE_PENDING') {
+    throw conflict('INVALID_TRIP_STATE', `Handshake is not available in state ${trip.status}`)
+  }
+  if (trip.handshake_attempts >= HANDSHAKE_MAX_ATTEMPTS) {
+    throw new AppError(
+      423, 'HANDSHAKE_LOCKED',
+      'Too many incorrect codes; this trip can now only be cancelled',
+    )
+  }
+
+  const selfie = decodeSelfie(input.selfieBase64)
+
+  // Liveness runs before the OTP check so a failed camera check does not burn
+  // one of the customer's five code attempts.
+  const liveness = await getLivenessProvider().verify(selfie, trip.face_reference_key)
+  if (!liveness.match) {
+    throw unauthorized('LIVENESS_FAILED', 'Face verification did not pass', {
+      confidence: liveness.confidence,
+    })
+  }
+
+  if (!pepperedEquals(input.otp, trip.pickup_handshake_otp_hash)) {
+    await pool.query(
+      `UPDATE trips SET handshake_attempts = handshake_attempts + 1 WHERE id = $1`,
+      [input.tripId],
+    )
+    throw unauthorized('INVALID_HANDSHAKE_OTP', 'That code does not match')
+  }
+
+  const key = `handshake/${input.tripId}/${Date.now()}.jpg`
+  await getStorageProvider().put(key, selfie, 'image/jpeg')
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await transitionTrip(client, input.tripId, 'HANDSHAKE_PENDING', 'IN_TRIP', {
+      handshake_at: new Date(),
+      started_at: new Date(),
+    })
+    await recordEvent(client, input.tripId, 'HANDSHAKE_PASSED', input.driverId, 'DRIVER', {
+      selfie_key: key,
+      liveness_confidence: liveness.confidence,
+    })
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+
+  return { status: 'HANDSHAKE_PASSED', trip_state: 'IN_TRIP' }
+}
+```
+
+- [ ] **Step 4: Add the route**
+
+```ts
+import { performHandshake } from './handshake.js'
+
+r.post('/v1/trips/:id/handshake', {
+  preHandler: [requireAuth, requireRole('DRIVER')],
+  // 6 MB accommodates a 4 MB image after base64 expansion.
+  bodyLimit: 6 * 1024 * 1024,
+  schema: {
+    params: z.object({ id: z.string().uuid() }),
+    body: z.object({
+      driver_selfie_base64: z.string().min(16),
+      otp: z.string().regex(/^\d{4}$/, 'must be 4 digits'),
+    }).strict(),
+    response: {
+      200: z.object({
+        status: z.literal('HANDSHAKE_PASSED'),
+        trip_state: z.literal('IN_TRIP'),
+      }),
+    },
+  },
+}, async (request) => performHandshake({
+  tripId: request.params.id,
+  driverId: request.auth!.userId,
+  selfieBase64: request.body.driver_selfie_base64,
+  otp: request.body.otp,
+}))
+```
+
+- [ ] **Step 5: Run the test to verify it passes**
+
+```bash
+npm test -- tests/integration/handshake.test.ts
+```
+
+Expected: PASS — 8 tests.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add pickup handshake with liveness gate and attempt lockout"
+```
+
+---
+
+### Task 22: Telematics hypertable and the batched writer
+
+Rule 9. This is the highest-throughput path in the system: ~133,000 rows/second at target scale.
+
+**Files:**
+- Create: `prototype/backend/migrations/0007_telematics.sql`
+- Create: `prototype/backend/src/telemetry/batch-writer.ts`
+- Test: `prototype/backend/tests/integration/telemetry-writer.test.ts`
+
+**Interfaces:**
+- Consumes: `pool` (Task 2).
+- Produces:
+  - `type TelemetryRow = { time: Date; tripId: string; source: 'DRIVER' | 'CUSTOMER'; lat: number; lng: number; speedKmh?: number; heading?: number; accelZ?: number; gyroZ?: number }`
+  - `class TelemetryBatchWriter` with `enqueue(row): void`, `flush(): Promise<number>`, `start(): void`, `stop(): Promise<void>`, and readonly counters `depth`, `dropped`, `written`
+  - `getTelemetryWriter(): TelemetryBatchWriter`
+  - `FLUSH_INTERVAL_MS = 2000`, `FLUSH_ROW_COUNT = 100`, `MAX_BUFFER_ROWS = 10_000`
+  - `readTripTrack(tripId): Promise<LatLng[]>` — ordered driver-source fixes, used by trip completion
+
+- [ ] **Step 1: Write the failing test**
+
+`tests/integration/telemetry-writer.test.ts` asserts:
+1. Enqueuing fewer than `FLUSH_ROW_COUNT` rows writes nothing until `flush()` is called.
+2. Enqueuing `FLUSH_ROW_COUNT` rows triggers an automatic flush and every row lands in `telematics_logs`.
+3. `flush()` returns the number of rows written and empties the buffer.
+4. Enqueuing beyond `MAX_BUFFER_ROWS` drops the oldest rows and increments `dropped` rather than growing without bound.
+5. `readTripTrack` returns only `DRIVER`-source rows, ordered by time ascending.
+6. `stop()` flushes remaining rows rather than discarding them.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/integration/telemetry-writer.test.ts
+```
+
+Expected: FAIL — module missing.
+
+- [ ] **Step 3: Write the migration**
+
+`prototype/backend/migrations/0007_telematics.sql`:
+
+```sql
+DO $$ BEGIN
+  CREATE TYPE telemetry_source AS ENUM ('DRIVER', 'CUSTOMER');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE TABLE IF NOT EXISTS telematics_logs (
+  time      TIMESTAMPTZ NOT NULL,
+  trip_id   UUID NOT NULL,
+  source    telemetry_source NOT NULL,
+  lat       DOUBLE PRECISION NOT NULL,
+  lng       DOUBLE PRECISION NOT NULL,
+  speed_kmh REAL,
+  heading   REAL,
+  accel_z   REAL,
+  gyro_z    REAL
+);
+
+-- No foreign key to trips: at 11.5 billion rows/day the referential check cost
+-- is prohibitive, and orphan telemetry is harmless. Integrity is enforced at
+-- the gateway, which only accepts frames for a trip the sender participates in.
+SELECT create_hypertable(
+  'telematics_logs', 'time',
+  chunk_time_interval => INTERVAL '1 day',
+  if_not_exists => TRUE
+);
+
+CREATE INDEX IF NOT EXISTS idx_telematics_trip
+  ON telematics_logs(trip_id, time DESC);
+
+-- Compression and retention are mandatory at this volume, not optional.
+ALTER TABLE telematics_logs SET (
+  timescaledb.compress,
+  timescaledb.compress_segmentby = 'trip_id',
+  timescaledb.compress_orderby   = 'time DESC'
+);
+
+SELECT add_compression_policy('telematics_logs', INTERVAL '7 days', if_not_exists => TRUE);
+SELECT add_retention_policy('telematics_logs', INTERVAL '90 days', if_not_exists => TRUE);
+```
+
+- [ ] **Step 4: Implement the batch writer**
+
+`prototype/backend/src/telemetry/batch-writer.ts`:
+
+```ts
+import { pool } from '../db/client.js'
+import type { LatLng } from '../lib/geo.js'
+
+export const FLUSH_INTERVAL_MS = 2_000
+export const FLUSH_ROW_COUNT = 100
+export const MAX_BUFFER_ROWS = 10_000
+
+export type TelemetrySource = 'DRIVER' | 'CUSTOMER'
+
+export type TelemetryRow = {
+  time: Date
+  tripId: string
+  source: TelemetrySource
+  lat: number
+  lng: number
+  speedKmh?: number
+  heading?: number
+  accelZ?: number
+  gyroZ?: number
+}
+
+/**
+ * Buffers telemetry and writes it in multi-row INSERTs. Per-row INSERT is
+ * impossible at 133k frames/second; batching turns that into ~1,330
+ * statements/second across the cluster.
+ *
+ * Above roughly 50k rows/second on a single-node TimescaleDB this must be fed
+ * from a durable stream (Kafka / NATS / Redis Streams) instead of an in-process
+ * buffer. The `dropped` counter is the signal that the threshold was crossed.
+ */
+export class TelemetryBatchWriter {
+  private buffer: TelemetryRow[] = []
+  private timer: NodeJS.Timeout | undefined
+  private flushing = false
+
+  private _dropped = 0
+  private _written = 0
+
+  get depth(): number { return this.buffer.length }
+  get dropped(): number { return this._dropped }
+  get written(): number { return this._written }
+
+  enqueue(row: TelemetryRow): void {
+    if (this.buffer.length >= MAX_BUFFER_ROWS) {
+      // Shed load rather than exhaust memory. Newest data is the useful data.
+      this.buffer.shift()
+      this._dropped++
+    }
+    this.buffer.push(row)
+    if (this.buffer.length >= FLUSH_ROW_COUNT) void this.flush()
+  }
+
+  async flush(): Promise<number> {
+    if (this.flushing || this.buffer.length === 0) return 0
+    this.flushing = true
+
+    const batch = this.buffer
+    this.buffer = []
+
+    try {
+      const values: unknown[] = []
+      const tuples = batch.map((r, i) => {
+        const b = i * 9
+        values.push(
+          r.time, r.tripId, r.source, r.lat, r.lng,
+          r.speedKmh ?? null, r.heading ?? null, r.accelZ ?? null, r.gyroZ ?? null,
+        )
+        return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9})`
+      })
+
+      await pool.query(
+        `INSERT INTO telematics_logs
+           (time, trip_id, source, lat, lng, speed_kmh, heading, accel_z, gyro_z)
+         VALUES ${tuples.join(',')}`,
+        values,
+      )
+
+      this._written += batch.length
+      return batch.length
+    } catch (err) {
+      // Put the rows back so a transient database blip does not lose data.
+      this.buffer = batch.concat(this.buffer).slice(-MAX_BUFFER_ROWS)
+      throw err
+    } finally {
+      this.flushing = false
+    }
+  }
+
+  start(): void {
+    if (this.timer) return
+    this.timer = setInterval(() => {
+      void this.flush().catch((err) => console.error('telemetry flush failed', err))
+    }, FLUSH_INTERVAL_MS)
+    this.timer.unref()
+  }
+
+  /** Rule 13: shutdown drains. Never discard buffered rows. */
+  async stop(): Promise<void> {
+    if (this.timer) { clearInterval(this.timer); this.timer = undefined }
+    while (this.buffer.length > 0) await this.flush()
+  }
+}
+
+let writer: TelemetryBatchWriter | undefined
+export function getTelemetryWriter(): TelemetryBatchWriter {
+  if (!writer) { writer = new TelemetryBatchWriter(); writer.start() }
+  return writer
+}
+
+export async function readTripTrack(tripId: string): Promise<LatLng[]> {
+  const { rows } = await pool.query<{ lat: number; lng: number }>(
+    `SELECT lat, lng FROM telematics_logs
+      WHERE trip_id = $1 AND source = 'DRIVER'
+      ORDER BY time ASC`,
+    [tripId],
+  )
+  return rows
+}
+```
+
+- [ ] **Step 5: Run the test to verify it passes**
+
+```bash
+npm run db:migrate && npm test -- tests/integration/telemetry-writer.test.ts
+```
+
+Expected: PASS — 6 tests.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add telematics hypertable with compression and batched writer"
+```
+
+---
+
+### Task 23: WebSocket protocol, tickets, and the fan-out hub
+
+**Files:**
+- Create: `prototype/backend/src/realtime/protocol.ts`
+- Create: `prototype/backend/src/realtime/ticket.ts`
+- Create: `prototype/backend/src/realtime/hub.ts`
+- Modify: `prototype/backend/src/modules/trips/routes.ts` (ticket endpoint)
+- Test: `prototype/backend/tests/unit/protocol.test.ts`
+- Test: `prototype/backend/tests/integration/realtime-ticket.test.ts`
+
+**Interfaces:**
+- Consumes: `redis`, `createSubscriber` (Task 5 / Amendment D).
+- Produces:
+  - `ClientFrame` / `ServerFrame` Zod unions and their inferred types
+  - `parseClientFrame(raw: string): ClientFrame` — throws `AppError` `INVALID_FRAME`
+  - `issueTicket(userId, role): Promise<string>`, `consumeTicket(ticket): Promise<{ userId; role } | null>`, `TICKET_TTL_SECONDS = 60`
+  - `class Hub` with `register(tripId, conn)`, `unregister(tripId, conn)`, `publish(tripId, frame)`, `close()`
+  - `getHub(): Hub`
+  - `tripChannel(tripId: string): string` — returns `` `trip:{${tripId}}` ``
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/unit/protocol.test.ts` asserts: each valid client frame parses; an unknown `type` is rejected; a `DRIVER_TELEMETRY` frame missing `coords` is rejected; out-of-range latitude is rejected; malformed JSON throws `INVALID_FRAME`; and a frame containing an extra unknown key is rejected.
+
+`tests/integration/realtime-ticket.test.ts` asserts: `POST /v1/realtime/ticket` with a bearer token returns a ticket and `expires_in: 60`; `consumeTicket` returns the identity once and `null` on a second call; an unknown ticket returns `null`; and the endpoint requires authentication.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+```bash
+npm test -- tests/unit/protocol.test.ts tests/integration/realtime-ticket.test.ts
+```
+
+Expected: FAIL — modules missing.
+
+- [ ] **Step 3: Implement the protocol**
+
+`prototype/backend/src/realtime/protocol.ts`:
+
+```ts
+import { z } from 'zod'
+import { AppError } from '../lib/errors.js'
+
+const Coords = z.object({
+  lat: z.number().min(-90).max(90),
+  lng: z.number().min(-180).max(180),
+  speed: z.number().min(0).max(400).optional(),
+  heading: z.number().min(0).max(360).optional(),
+}).strict()
+
+const Sensors = z.object({
+  accel_z: z.number().optional(),
+  gyro_z: z.number().optional(),
+}).strict()
+
+export const ClientFrame = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('SUBSCRIBE'), trip_id: z.string().uuid() }).strict(),
+  z.object({ type: z.literal('UNSUBSCRIBE'), trip_id: z.string().uuid() }).strict(),
+  z.object({
+    type: z.literal('DRIVER_TELEMETRY'),
+    trip_id: z.string().uuid(),
+    timestamp: z.number().int().positive(),
+    coords: Coords,
+    sensors: Sensors.optional(),
+  }).strict(),
+  z.object({
+    type: z.literal('CUSTOMER_TELEMETRY'),
+    trip_id: z.string().uuid(),
+    timestamp: z.number().int().positive(),
+    coords: Coords,
+  }).strict(),
+  z.object({ type: z.literal('PONG') }).strict(),
+])
+
+export const ServerFrame = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('SUBSCRIBED'), trip_id: z.string() }),
+  z.object({ type: z.literal('UNSUBSCRIBED'), trip_id: z.string() }),
+  z.object({
+    type: z.literal('TRIP_OFFER'),
+    trip_id: z.string(),
+    expires_at: z.string(),
+    pickup: z.object({ lat: z.number(), lng: z.number() }),
+    fare_estimate: z.number().nullable(),
+  }),
+  z.object({ type: z.literal('TRIP_STATE_CHANGED'), trip_id: z.string(), status: z.string() }),
+  z.object({
+    type: z.literal('DRIVER_LOCATION'),
+    trip_id: z.string(),
+    coords: z.object({
+      lat: z.number(), lng: z.number(),
+      speed: z.number().optional(), heading: z.number().optional(),
+    }),
+  }),
+  z.object({ type: z.literal('PING') }),
+  z.object({ type: z.literal('ERROR'), code: z.string(), message: z.string() }),
+  // Reserved for Phase 2. Documented now so clients can switch on it safely.
+  z.object({
+    type: z.literal('ANOMALY_TRIGGERED'),
+    trip_id: z.string(),
+    level: z.string(),
+    reason: z.string(),
+    deviation_distance_meters: z.number().optional(),
+  }),
+])
+
+export type ClientFrame = z.infer<typeof ClientFrame>
+export type ServerFrame = z.infer<typeof ServerFrame>
+
+export function parseClientFrame(raw: string): ClientFrame {
+  let json: unknown
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    throw new AppError(400, 'INVALID_FRAME', 'Frame is not valid JSON')
+  }
+
+  const parsed = ClientFrame.safeParse(json)
+  if (!parsed.success) {
+    throw new AppError(400, 'INVALID_FRAME', 'Frame did not match any known message type')
+  }
+  return parsed.data
+}
+```
+
+- [ ] **Step 4: Implement tickets**
+
+`prototype/backend/src/realtime/ticket.ts`:
+
+```ts
+import { redis } from '../redis/client.js'
+import { randomToken } from '../lib/hash.js'
+import type { Role } from '../modules/auth/otp.js'
+
+export const TICKET_TTL_SECONDS = 60
+
+/**
+ * A JWT in a WebSocket query string is written into every proxy and access
+ * log. A single-use 60-second ticket is not worth capturing.
+ */
+export async function issueTicket(userId: string, role: Role): Promise<string> {
+  const ticket = randomToken(24)
+  await redis.set(
+    `ticket:${ticket}`, JSON.stringify({ userId, role }), 'EX', TICKET_TTL_SECONDS,
+  )
+  return ticket
+}
+
+export async function consumeTicket(
+  ticket: string,
+): Promise<{ userId: string; role: Role } | null> {
+  // GETDEL is atomic: two connections racing the same ticket cannot both win.
+  const raw = await redis.getdel(`ticket:${ticket}`)
+  if (!raw) return null
+  return JSON.parse(raw) as { userId: string; role: Role }
+}
+```
+
+- [ ] **Step 5: Implement the hub**
+
+`prototype/backend/src/realtime/hub.ts`:
+
+```ts
+import type { WebSocket } from 'ws'
+import { createSubscriber, redis } from '../redis/client.js'
+import type { ServerFrame } from './protocol.js'
+
+/**
+ * The hash tag braces are load-bearing: in Redis Cluster, `trip:{id}` and any
+ * other key using the same tag hash to the same slot, so a trip's channel and
+ * its cached state live on one shard (rule 7).
+ */
+export const tripChannel = (tripId: string): string => `trip:{${tripId}}`
+
+const MAX_OUTBOUND_BUFFER_BYTES = 1_048_576 // 1 MB
+
+export class Hub {
+  /** Process-local only. Cross-instance delivery always goes via Redis. */
+  private readonly rooms = new Map<string, Set<WebSocket>>()
+  private readonly subscriber = createSubscriber()
+  private started = false
+
+  private async ensureStarted(): Promise<void> {
+    if (this.started) return
+    this.started = true
+    this.subscriber.on('message', (channel: string, message: string) => {
+      const sockets = this.rooms.get(channel)
+      if (!sockets) return
+      for (const socket of sockets) this.deliver(socket, message)
+    })
+  }
+
+  /** Rule 8: a slow consumer is disconnected, never buffered indefinitely. */
+  private deliver(socket: WebSocket, message: string): void {
+    if (socket.bufferedAmount > MAX_OUTBOUND_BUFFER_BYTES) {
+      socket.close(1013, 'Client too slow')
+      return
+    }
+    if (socket.readyState === socket.OPEN) socket.send(message)
+  }
+
+  async register(tripId: string, socket: WebSocket): Promise<void> {
+    await this.ensureStarted()
+    const channel = tripChannel(tripId)
+
+    let room = this.rooms.get(channel)
+    if (!room) {
+      room = new Set()
+      this.rooms.set(channel, room)
+      await this.subscriber.subscribe(channel)
+    }
+    room.add(socket)
+  }
+
+  async unregister(tripId: string, socket: WebSocket): Promise<void> {
+    const channel = tripChannel(tripId)
+    const room = this.rooms.get(channel)
+    if (!room) return
+
+    room.delete(socket)
+    if (room.size === 0) {
+      this.rooms.delete(channel)
+      await this.subscriber.unsubscribe(channel)
+    }
+  }
+
+  /** Delivers to every instance holding a subscriber for this trip. */
+  async publish(tripId: string, frame: ServerFrame): Promise<void> {
+    await redis.publish(tripChannel(tripId), JSON.stringify(frame))
+  }
+
+  localSocketCount(): number {
+    let n = 0
+    for (const room of this.rooms.values()) n += room.size
+    return n
+  }
+
+  async close(): Promise<void> {
+    await this.subscriber.quit()
+    this.rooms.clear()
+  }
+}
+
+let hub: Hub | undefined
+export function getHub(): Hub {
+  if (!hub) hub = new Hub()
+  return hub
+}
+```
+
+- [ ] **Step 6: Add the ticket endpoint**
+
+Append inside `registerTripRoutes`:
+
+```ts
+import { TICKET_TTL_SECONDS, issueTicket } from '../../realtime/ticket.js'
+
+r.post('/v1/realtime/ticket', {
+  preHandler: [requireAuth],
+  schema: {
+    response: {
+      200: z.object({ ticket: z.string(), expires_in: z.number().int() }),
+    },
+  },
+}, async (request) => ({
+  ticket: await issueTicket(request.auth!.userId, request.auth!.role),
+  expires_in: TICKET_TTL_SECONDS,
+}))
+```
+
+- [ ] **Step 7: Run the tests to verify they pass**
+
+```bash
+npm test -- tests/unit/protocol.test.ts tests/integration/realtime-ticket.test.ts
+```
+
+Expected: PASS — 10 tests.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add realtime protocol, single-use tickets, and Redis fan-out hub"
+```
+
+---
+
+### Task 24: WebSocket gateway
+
+**Files:**
+- Create: `prototype/backend/src/realtime/gateway.ts`
+- Modify: `prototype/backend/src/app.ts`
+- Create: `prototype/backend/tests/helpers/ws.ts`
+- Test: `prototype/backend/tests/realtime/gateway.test.ts`
+
+**Interfaces:**
+- Consumes: `consumeTicket` (Task 23), `parseClientFrame` (Task 23), `getHub` (Task 23), `getTelemetryWriter` (Task 22), `upsertDriverLocation` (Task 16).
+- Produces:
+  - `registerRealtimeGateway(app: FastifyInstance): Promise<void>`
+  - `HEARTBEAT_INTERVAL_MS = 30_000`, `MAX_MISSED_PONGS = 2`, `MAX_FRAMES_PER_SECOND = 1`
+  - `connectWs(app, ticket): Promise<WebSocket>` and `nextFrame(ws): Promise<ServerFrame>` from `tests/helpers/ws.ts`
+
+- [ ] **Step 1: Write the failing test**
+
+`tests/realtime/gateway.test.ts` asserts:
+1. Connecting with a valid ticket succeeds; connecting with no ticket, an unknown ticket, or a reused ticket closes the socket.
+2. `SUBSCRIBE` to a trip the caller participates in returns `SUBSCRIBED`; to a trip they do not participate in returns an `ERROR` frame with code `FORBIDDEN_TRIP`.
+3. A `DRIVER_TELEMETRY` frame from the customer's connection is rejected with `ERROR` code `WRONG_TELEMETRY_SOURCE`.
+4. A `DRIVER_TELEMETRY` frame for a trip not in `IN_TRIP` is rejected with `TRIP_NOT_ACTIVE`.
+5. A valid driver frame is persisted by the telemetry writer and fanned out to the subscribed customer connection as `DRIVER_LOCATION`.
+6. Sending more than one telemetry frame per second drops the excess without closing the socket.
+7. A malformed frame yields `ERROR` code `INVALID_FRAME` and the socket stays open.
+8. The server sends `PING`, and a connection that never replies `PONG` is closed after two intervals.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/realtime/gateway.test.ts
+```
+
+Expected: FAIL — no WebSocket route.
+
+- [ ] **Step 3: Implement the gateway**
+
+`prototype/backend/src/realtime/gateway.ts`:
+
+```ts
+import fastifyWebsocket from '@fastify/websocket'
+import type { FastifyInstance } from 'fastify'
+import type { WebSocket } from 'ws'
+import { pool } from '../db/client.js'
+import { getTelemetryWriter } from '../telemetry/batch-writer.js'
+import { upsertDriverLocation } from '../modules/trips/geo-index.js'
+import type { Role } from '../modules/auth/otp.js'
+import { getHub } from './hub.js'
+import { parseClientFrame, type ServerFrame } from './protocol.js'
+import { consumeTicket } from './ticket.js'
+
+export const HEARTBEAT_INTERVAL_MS = 30_000
+export const MAX_MISSED_PONGS = 2
+export const MAX_FRAMES_PER_SECOND = 1
+
+type Conn = {
+  userId: string
+  role: Role
+  subscriptions: Set<string>
+  missedPongs: number
+  lastFrameAt: Map<string, number>
+}
+
+const send = (socket: WebSocket, frame: ServerFrame): void => {
+  if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(frame))
+}
+
+const fail = (socket: WebSocket, code: string, message: string): void =>
+  send(socket, { type: 'ERROR', code, message })
+
+/** Cached for 5 seconds (rule 12): every telemetry frame would otherwise query. */
+async function loadTripRoles(
+  tripId: string,
+): Promise<{ customer_id: string; driver_id: string | null; status: string } | null> {
+  const { redis } = await import('../redis/client.js')
+  const key = `trip:{${tripId}}:roles`
+
+  const cached = await redis.get(key)
+  if (cached) return JSON.parse(cached)
+
+  const { rows } = await pool.query(
+    `SELECT customer_id, driver_id, status FROM trips WHERE id = $1`, [tripId],
+  )
+  if (!rows[0]) return null
+
+  await redis.set(key, JSON.stringify(rows[0]), 'EX', 5)
+  return rows[0] as { customer_id: string; driver_id: string | null; status: string }
+}
+
+export async function registerRealtimeGateway(app: FastifyInstance): Promise<void> {
+  await app.register(fastifyWebsocket, {
+    options: { maxPayload: 16 * 1024 },
+  })
+
+  const hub = getHub()
+  const writer = getTelemetryWriter()
+
+  app.get('/v1/integrity', { websocket: true }, async (socket, request) => {
+    const ticket = (request.query as { ticket?: string }).ticket
+    if (!ticket) return socket.close(4401, 'Missing ticket')
+
+    const identity = await consumeTicket(ticket)
+    if (!identity) return socket.close(4401, 'Invalid or expired ticket')
+
+    const conn: Conn = {
+      userId: identity.userId,
+      role: identity.role,
+      subscriptions: new Set(),
+      missedPongs: 0,
+      lastFrameAt: new Map(),
+    }
+
+    const heartbeat = setInterval(() => {
+      if (conn.missedPongs >= MAX_MISSED_PONGS) {
+        socket.close(4408, 'Heartbeat timeout')
+        return
+      }
+      conn.missedPongs++
+      send(socket, { type: 'PING' })
+    }, HEARTBEAT_INTERVAL_MS)
+    heartbeat.unref()
+
+    socket.on('close', () => {
+      clearInterval(heartbeat)
+      for (const tripId of conn.subscriptions) void hub.unregister(tripId, socket)
+    })
+
+    socket.on('message', (raw: Buffer) => {
+      void handleFrame(raw.toString()).catch((err) => {
+        app.log.error({ err }, 'realtime frame handling failed')
+        fail(socket, 'INTERNAL_ERROR', 'Frame could not be processed')
+      })
+    })
+
+    async function handleFrame(raw: string): Promise<void> {
+      let frame
+      try {
+        frame = parseClientFrame(raw)
+      } catch {
+        return fail(socket, 'INVALID_FRAME', 'Frame could not be parsed')
+      }
+
+      if (frame.type === 'PONG') { conn.missedPongs = 0; return }
+
+      const trip = await loadTripRoles(frame.trip_id)
+      if (!trip) return fail(socket, 'TRIP_NOT_FOUND', 'No such trip')
+
+      const isCustomer = trip.customer_id === conn.userId
+      const isDriver = trip.driver_id === conn.userId
+      if (!isCustomer && !isDriver) {
+        return fail(socket, 'FORBIDDEN_TRIP', 'You are not a participant on this trip')
+      }
+
+      if (frame.type === 'SUBSCRIBE') {
+        await hub.register(frame.trip_id, socket)
+        conn.subscriptions.add(frame.trip_id)
+        return send(socket, { type: 'SUBSCRIBED', trip_id: frame.trip_id })
+      }
+
+      if (frame.type === 'UNSUBSCRIBE') {
+        await hub.unregister(frame.trip_id, socket)
+        conn.subscriptions.delete(frame.trip_id)
+        return send(socket, { type: 'UNSUBSCRIBED', trip_id: frame.trip_id })
+      }
+
+      // Telemetry from here down.
+      if (trip.status !== 'IN_TRIP' && trip.status !== 'HANDSHAKE_PENDING') {
+        return fail(socket, 'TRIP_NOT_ACTIVE', 'Telemetry is only accepted on an active trip')
+      }
+
+      const wantsDriver = frame.type === 'DRIVER_TELEMETRY'
+      if ((wantsDriver && !isDriver) || (!wantsDriver && !isCustomer)) {
+        return fail(socket, 'WRONG_TELEMETRY_SOURCE', 'Frame type does not match your role')
+      }
+
+      // Rule 8: drop excess frames silently rather than queue or disconnect.
+      const now = Date.now()
+      const last = conn.lastFrameAt.get(frame.trip_id) ?? 0
+      if (now - last < 1000 / MAX_FRAMES_PER_SECOND) return
+      conn.lastFrameAt.set(frame.trip_id, now)
+
+      writer.enqueue({
+        time: new Date(frame.timestamp),
+        tripId: frame.trip_id,
+        source: wantsDriver ? 'DRIVER' : 'CUSTOMER',
+        lat: frame.coords.lat,
+        lng: frame.coords.lng,
+        speedKmh: frame.coords.speed,
+        heading: frame.coords.heading,
+        accelZ: wantsDriver ? frame.sensors?.accel_z : undefined,
+        gyroZ: wantsDriver ? frame.sensors?.gyro_z : undefined,
+      })
+
+      if (wantsDriver) {
+        // Throttled to once per 10s inside upsertDriverLocation (rule 6).
+        await upsertDriverLocation(conn.userId, frame.coords)
+        await hub.publish(frame.trip_id, {
+          type: 'DRIVER_LOCATION',
+          trip_id: frame.trip_id,
+          coords: {
+            lat: frame.coords.lat,
+            lng: frame.coords.lng,
+            speed: frame.coords.speed,
+            heading: frame.coords.heading,
+          },
+        })
+      }
+    }
+  })
+}
+```
+
+Register it in `src/app.ts` before the route modules:
+
+```ts
+import { registerRealtimeGateway } from './realtime/gateway.js'
+
+await registerRealtimeGateway(app)
+```
+
+- [ ] **Step 4: Implement the WebSocket test helper**
+
+`prototype/backend/tests/helpers/ws.ts`:
+
+```ts
+import WebSocket from 'ws'
+import type { FastifyInstance } from 'fastify'
+import type { ServerFrame } from '../../src/realtime/protocol.js'
+
+export async function connectWs(app: FastifyInstance, ticket: string): Promise<WebSocket> {
+  const address = app.server.address()
+  if (!address || typeof address === 'string') throw new Error('app is not listening')
+
+  const ws = new WebSocket(`ws://127.0.0.1:${address.port}/v1/integrity?ticket=${ticket}`)
+  await new Promise<void>((resolve, reject) => {
+    ws.once('open', resolve)
+    ws.once('error', reject)
+    ws.once('close', (code) => reject(new Error(`closed before open: ${code}`)))
+  })
+  return ws
+}
+
+/** Resolve with the next frame, ignoring server heartbeats. */
+export function nextFrame(ws: WebSocket, timeoutMs = 5_000): Promise<ServerFrame> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      ws.off('message', onMessage)
+      reject(new Error('timed out waiting for a frame'))
+    }, timeoutMs)
+
+    function onMessage(raw: Buffer): void {
+      const frame = JSON.parse(raw.toString()) as ServerFrame
+      if (frame.type === 'PING') { ws.send(JSON.stringify({ type: 'PONG' })); return }
+      clearTimeout(timer)
+      ws.off('message', onMessage)
+      resolve(frame)
+    }
+
+    ws.on('message', onMessage)
+  })
+}
+
+export const sendFrame = (ws: WebSocket, frame: unknown): void =>
+  ws.send(JSON.stringify(frame))
+```
+
+Realtime tests need a real listening socket, so they must call `await app.listen({ port: 0, host: '127.0.0.1' })` in `beforeAll` rather than only `app.ready()`.
+
+- [ ] **Step 5: Run the test to verify it passes**
+
+```bash
+npm test -- tests/realtime/gateway.test.ts
+```
+
+Expected: PASS — 8 tests.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add WebSocket gateway with ticket auth, heartbeat, and backpressure"
+```
+
+---
+
+### Task 25: Lifecycle broadcast
+
+Every trip status change reaches connected clients without polling.
+
+**Files:**
+- Create: `prototype/backend/src/modules/trips/broadcast.ts`
+- Modify: `prototype/backend/src/modules/trips/service.ts`, `matching.ts`, `handshake.ts`
+- Test: `prototype/backend/tests/realtime/lifecycle-broadcast.test.ts`
+
+**Interfaces:**
+- Consumes: `getHub` (Task 23).
+- Produces:
+  - `broadcastStateChange(tripId: string, status: TripStatus): Promise<void>`
+  - `broadcastOffer(tripId, driverId, expiresAt, pickup, fareEstimate): Promise<void>`
+  - `invalidateTripCache(tripId: string): Promise<void>`
+
+- [ ] **Step 1: Write the failing test**
+
+`tests/realtime/lifecycle-broadcast.test.ts` asserts: a customer subscribed to their trip receives `TRIP_STATE_CHANGED` with `status: "MATCHED"` when dispatch runs; receives `HANDSHAKE_PENDING` when the driver accepts; receives `IN_TRIP` after a successful handshake; and receives `COMPLETED` when the driver completes. Also asserts a driver socket subscribed to the trip receives `TRIP_OFFER` with the pickup coordinates and an ISO `expires_at`.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/realtime/lifecycle-broadcast.test.ts
+```
+
+Expected: FAIL — module missing.
+
+- [ ] **Step 3: Implement broadcast**
+
+`prototype/backend/src/modules/trips/broadcast.ts`:
+
+```ts
+import { redis } from '../../redis/client.js'
+import { getHub } from '../../realtime/hub.js'
+import type { LatLng } from '../../lib/geo.js'
+import type { TripStatus } from './state-machine.js'
+
+/**
+ * The gateway caches trip participants and status for 5 seconds. Any status
+ * change must drop that cache or telemetry authorisation reads stale state.
+ */
+export async function invalidateTripCache(tripId: string): Promise<void> {
+  await redis.del(`trip:{${tripId}}:roles`)
+}
+
+export async function broadcastStateChange(
+  tripId: string, status: TripStatus,
+): Promise<void> {
+  await invalidateTripCache(tripId)
+  await getHub().publish(tripId, {
+    type: 'TRIP_STATE_CHANGED', trip_id: tripId, status,
+  })
+}
+
+export async function broadcastOffer(
+  tripId: string, expiresAt: Date, pickup: LatLng, fareEstimate: number | null,
+): Promise<void> {
+  await getHub().publish(tripId, {
+    type: 'TRIP_OFFER',
+    trip_id: tripId,
+    expires_at: expiresAt.toISOString(),
+    pickup,
+    fare_estimate: fareEstimate,
+  })
+}
+```
+
+- [ ] **Step 4: Wire broadcast into every transition**
+
+Call `broadcastStateChange` **after** the transaction commits, never inside it — publishing inside a transaction announces a state that may still roll back. Add a call at the end of each of: `startDispatch` (`MATCHED` or `NO_DRIVERS_FOUND`), `respondToOffer` (`HANDSHAKE_PENDING` or `REQUESTED`), `performHandshake` (`IN_TRIP`), `completeTrip` (`COMPLETED`), `cancelTrip` (`CANCELLED`), and `expireStaleOffers` (`REQUESTED`). In `startDispatch`, also call `broadcastOffer` with the offer's `expires_at` and the trip pickup.
+
+- [ ] **Step 5: Run the test to verify it passes**
+
+```bash
+npm test -- tests/realtime/lifecycle-broadcast.test.ts
+```
+
+Expected: PASS — 5 tests.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): broadcast trip lifecycle changes over WebSocket"
+```
+
+---
+
+### Task 26: Trip completion, cancellation, and history
+
+**Files:**
+- Modify: `prototype/backend/src/modules/trips/service.ts`
+- Modify: `prototype/backend/src/modules/trips/routes.ts`
+- Test: `prototype/backend/tests/integration/trips-complete.test.ts`
+- Test: `prototype/backend/tests/integration/trips-history.test.ts`
+
+**Interfaces:**
+- Consumes: `readTripTrack` (Task 22), `polylineDistanceKm` (Task 4), `computeFare` (Task 15), `getRateCard` (Task 14).
+- Produces:
+  - `completeTrip(tripId, driverId): Promise<TripView>`
+  - `cancelTrip(tripId, userId, role, reason): Promise<TripView>`
+  - `listTrips(userId, role, cursor?, limit?): Promise<{ items: TripView[]; next_cursor: string | null }>`
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/integration/trips-complete.test.ts` asserts:
+1. Completion sets `status: COMPLETED`, `completed_at`, `distance_km` from the recorded driver track, `duration_min` from `started_at`, `fare_amount`, `platform_fee`, `night_fee` and `driver_earnings`.
+2. `driver_earnings` equals `fare_amount − 19`.
+3. `distance_km` reflects the telemetry polyline, not the booking estimate.
+4. A trip with no recorded telemetry falls back to `estimated_distance_km` rather than charging zero.
+5. The driver's availability returns to `ONLINE` and `total_trips` increments.
+6. A `TRIP_COMPLETED` ledger entry is written.
+7. Completing a trip not in `IN_TRIP` returns 409.
+8. A driver who is not on the trip returns 404.
+
+`tests/integration/trips-history.test.ts` asserts:
+1. `GET /v1/trips` returns the caller's trips newest first.
+2. A customer never sees another customer's trips.
+3. Keyset pagination: `limit=2` returns a `next_cursor`, and passing it returns the next page with no overlap and no gap.
+4. A `next_cursor` of `null` marks the last page.
+5. `GET /v1/trips/:id` returns the trip for either participant and 404 for anyone else.
+6. Cancellation from `REQUESTED`, `MATCHED` and `HANDSHAKE_PENDING` succeeds and records a reason; from `IN_TRIP` returns 409.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+```bash
+npm test -- tests/integration/trips-complete.test.ts tests/integration/trips-history.test.ts
+```
+
+Expected: FAIL — routes missing.
+
+- [ ] **Step 3: Implement completion, cancellation, and history**
+
+Append to `src/modules/trips/service.ts`:
+
+```ts
+import { polylineDistanceKm } from '../../lib/geo.js'
+import { readTripTrack } from '../../telemetry/batch-writer.js'
+import { getTelemetryWriter } from '../../telemetry/batch-writer.js'
+import { setAvailability } from './geo-index.js'
+import { broadcastStateChange } from './broadcast.js'
+import { CANCELLABLE_FROM } from './state-machine.js'
+
+export async function completeTrip(tripId: string, driverId: string): Promise<TripView> {
+  const { rows } = await pool.query<{
+    status: TripStatus; booking_type: BookingType; hourly_package_hours: number | null
+    required_certification: string; started_at: Date | null
+    estimated_distance_km: string | null; requested_at: Date
+  }>(
+    `SELECT status, booking_type, hourly_package_hours, required_certification,
+            started_at, estimated_distance_km, requested_at
+       FROM trips WHERE id = $1 AND driver_id = $2`,
+    [tripId, driverId],
+  )
+  const trip = rows[0]
+  if (!trip) throw notFound('TRIP_NOT_FOUND', 'No such trip for this driver')
+
+  // Flush buffered telemetry first, or the final fixes are missing from the
+  // distance calculation and the customer is under-charged.
+  await getTelemetryWriter().flush()
+
+  const track = await readTripTrack(tripId)
+  const trackedKm = polylineDistanceKm(track)
+  const distanceKm = trackedKm > 0 ? trackedKm : Number(trip.estimated_distance_km ?? 0)
+
+  const startedAt = trip.started_at ?? trip.requested_at
+  const durationMin = Math.max(1, Math.round((Date.now() - startedAt.getTime()) / 60_000))
+
+  const card = await getRateCard(trip.required_certification)
+  const fare = computeFare({
+    bookingType: trip.booking_type,
+    distanceKm,
+    hours: trip.hourly_package_hours ?? undefined,
+    perKmRate: card.per_km_rate,
+    hourlyRate: card.hourly_rate,
+    pickupAt: startedAt,
+  })
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await transitionTrip(client, tripId, 'IN_TRIP', 'COMPLETED', {
+      completed_at: new Date(),
+      distance_km: distanceKm.toFixed(2),
+      duration_min: durationMin,
+      fare_amount: fare.total.toFixed(2),
+      platform_fee: fare.platform_fee.toFixed(2),
+      night_fee: fare.night_fee.toFixed(2),
+      driver_earnings: fare.driver_earnings.toFixed(2),
+    })
+    await client.query(
+      `UPDATE driver_profiles SET total_trips = total_trips + 1, updated_at = now()
+        WHERE user_id = $1`,
+      [driverId],
+    )
+    await recordEvent(client, tripId, 'TRIP_COMPLETED', driverId, 'DRIVER', {
+      distance_km: distanceKm, duration_min: durationMin, fare: fare.total,
+    })
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+
+  await setAvailability(driverId, 'ONLINE')
+  await broadcastStateChange(tripId, 'COMPLETED')
+  return getTripForParticipant(tripId, driverId)
+}
+
+export async function cancelTrip(
+  tripId: string, userId: string, role: Role, reason: string,
+): Promise<TripView> {
+  const { rows } = await pool.query<{ status: TripStatus; driver_id: string | null }>(
+    `SELECT status, driver_id FROM trips
+      WHERE id = $1 AND (customer_id = $2 OR driver_id = $2)`,
+    [tripId, userId],
+  )
+  const trip = rows[0]
+  if (!trip) throw notFound('TRIP_NOT_FOUND', 'No such trip')
+
+  if (!CANCELLABLE_FROM.includes(trip.status)) {
+    throw conflict('TRIP_NOT_CANCELLABLE', `A trip in ${trip.status} cannot be cancelled`)
+  }
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await transitionTrip(client, tripId, trip.status, 'CANCELLED', {
+      cancelled_at: new Date(), cancellation_reason: reason, cancelled_by: userId,
+    })
+    await client.query(
+      `UPDATE trip_offers SET status = 'EXPIRED', responded_at = now()
+        WHERE trip_id = $1 AND status = 'PENDING'`,
+      [tripId],
+    )
+    await recordEvent(client, tripId, 'TRIP_CANCELLED', userId, role, { reason })
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+
+  if (trip.driver_id) await setAvailability(trip.driver_id, 'ONLINE')
+  await broadcastStateChange(tripId, 'CANCELLED')
+  return getTripForParticipant(tripId, userId)
+}
+
+/**
+ * Rule 3: keyset pagination. The cursor encodes (requested_at, id), which is
+ * exactly the index order, so page 10,000 costs the same as page 1.
+ */
+const encodeCursor = (requestedAt: Date, id: string): string =>
+  Buffer.from(`${requestedAt.toISOString()}|${id}`).toString('base64url')
+
+function decodeCursor(cursor: string): { at: string; id: string } {
+  const [at, id] = Buffer.from(cursor, 'base64url').toString('utf8').split('|')
+  if (!at || !id) throw badRequest('INVALID_CURSOR', 'The pagination cursor is malformed')
+  return { at, id }
+}
+
+export async function listTrips(
+  userId: string, role: Role, cursor?: string, limit = 20,
+): Promise<{ items: TripView[]; next_cursor: string | null }> {
+  const column = role === 'DRIVER' ? 'driver_id' : 'customer_id'
+  const params: unknown[] = [userId, limit + 1]
+
+  let keyset = ''
+  if (cursor) {
+    const { at, id } = decodeCursor(cursor)
+    keyset = `AND (requested_at, id) < ($3::timestamptz, $4::uuid)`
+    params.push(at, id)
+  }
+
+  const { rows } = await pool.query(
+    `SELECT ${TRIP_COLUMNS} FROM trips
+      WHERE ${column} = $1 ${keyset}
+      ORDER BY requested_at DESC, id DESC
+      LIMIT $2`,
+    params,
+  )
+
+  const hasMore = rows.length > limit
+  const page = hasMore ? rows.slice(0, limit) : rows
+  const last = page.at(-1)
+
+  return {
+    items: page.map(toView),
+    next_cursor: hasMore && last
+      ? encodeCursor(new Date(last.requested_at as string), last.id as string)
+      : null,
+  }
+}
+```
+
+Add `badRequest` and `conflict` to the imports at the top of `service.ts`.
+
+- [ ] **Step 4: Add the routes**
+
+```ts
+import { cancelTrip, completeTrip, getTripForParticipant, listTrips } from './service.js'
+
+r.post('/v1/trips/:id/complete', {
+  preHandler: [requireAuth, requireRole('DRIVER')],
+  schema: { params: z.object({ id: z.string().uuid() }), response: { 200: TripViewSchema } },
+}, async (request) => completeTrip(request.params.id, request.auth!.userId))
+
+r.post('/v1/trips/:id/cancel', {
+  preHandler: [requireAuth],
+  schema: {
+    params: z.object({ id: z.string().uuid() }),
+    body: z.object({ reason: z.string().min(1).max(240) }).strict(),
+    response: { 200: TripViewSchema },
+  },
+}, async (request) => cancelTrip(
+  request.params.id, request.auth!.userId, request.auth!.role, request.body.reason,
+))
+
+r.get('/v1/trips/:id', {
+  preHandler: [requireAuth],
+  schema: { params: z.object({ id: z.string().uuid() }), response: { 200: TripViewSchema } },
+}, async (request) => getTripForParticipant(request.params.id, request.auth!.userId))
+
+r.get('/v1/trips', {
+  preHandler: [requireAuth],
+  schema: {
+    querystring: z.object({
+      cursor: z.string().optional(),
+      limit: z.coerce.number().int().min(1).max(50).default(20),
+    }),
+    response: {
+      200: z.object({
+        items: z.array(TripViewSchema),
+        next_cursor: z.string().nullable(),
+      }),
+    },
+  },
+}, async (request) => listTrips(
+  request.auth!.userId, request.auth!.role, request.query.cursor, request.query.limit,
+))
+```
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+```bash
+npm test -- tests/integration/trips-complete.test.ts tests/integration/trips-history.test.ts
+```
+
+Expected: PASS — 14 tests.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add trip completion, cancellation, and keyset-paginated history"
+```
+
+---
+
+### Task 27: Ratings, driver score, and driver summary
+
+**Files:**
+- Modify: `prototype/backend/src/modules/trips/service.ts`
+- Modify: `prototype/backend/src/modules/trips/routes.ts`
+- Test: `prototype/backend/tests/integration/ratings.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `rateTrip(tripId, customerId, rating, comment?): Promise<{ rating: number; driver_rating: number }>`
+  - `getDriverSummary(driverId): Promise<DriverSummary>` where `DriverSummary = { mydriver_score: number; rating: number | null; total_trips: number; trips_today: number; earnings_today: number; availability: Availability }`
+
+- [ ] **Step 1: Write the failing test**
+
+`tests/integration/ratings.test.ts` asserts: a customer can rate their own completed trip 1–5; the driver's rolling `rating` and `rating_count` update; a second rating on the same trip returns 409; rating a trip that is not `COMPLETED` returns 409; a non-participant returns 404; a rating of 0 or 6 returns 400; `GET /v1/driver/summary` returns today's completed trip count and summed `driver_earnings`, and excludes another driver's trips.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/integration/ratings.test.ts
+```
+
+Expected: FAIL — routes missing.
+
+- [ ] **Step 3: Implement ratings and the summary**
+
+Append to `src/modules/trips/service.ts`:
+
+```ts
+export async function rateTrip(
+  tripId: string, customerId: string, rating: number, comment?: string,
+): Promise<{ rating: number; driver_rating: number }> {
+  const { rows } = await pool.query<{ status: TripStatus; driver_id: string | null }>(
+    `SELECT status, driver_id FROM trips WHERE id = $1 AND customer_id = $2`,
+    [tripId, customerId],
+  )
+  const trip = rows[0]
+  if (!trip || !trip.driver_id) throw notFound('TRIP_NOT_FOUND', 'No such trip')
+  if (trip.status !== 'COMPLETED') {
+    throw conflict('TRIP_NOT_COMPLETED', 'Only a completed trip can be rated')
+  }
+
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const inserted = await client.query(
+      `INSERT INTO driver_ratings (trip_id, driver_id, rating, comment)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (trip_id) DO NOTHING
+       RETURNING trip_id`,
+      [tripId, trip.driver_id, rating, comment ?? null],
+    )
+    if (inserted.rowCount === 0) {
+      throw conflict('ALREADY_RATED', 'This trip has already been rated')
+    }
+
+    // Incremental mean: no scan of the driver's whole rating history.
+    const { rows: profile } = await client.query<{ rating: string }>(
+      `UPDATE driver_profiles
+          SET rating_count = rating_count + 1,
+              rating = ROUND(
+                ((COALESCE(rating, 0) * rating_count) + $2) / (rating_count + 1), 2
+              ),
+              mydriver_score = LEAST(100, GREATEST(0,
+                ROUND(mydriver_score * 0.9 + ($2 * 20) * 0.1, 2)
+              )),
+              updated_at = now()
+        WHERE user_id = $1
+        RETURNING rating::float8 AS rating`,
+      [trip.driver_id, rating],
+    )
+
+    await recordEvent(client, tripId, 'TRIP_RATED', customerId, 'CUSTOMER', { rating })
+    await client.query('COMMIT')
+
+    return { rating, driver_rating: Number(profile[0]?.rating ?? rating) }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+}
+
+export type DriverSummary = {
+  mydriver_score: number
+  rating: number | null
+  total_trips: number
+  trips_today: number
+  earnings_today: number
+  availability: 'OFFLINE' | 'ONLINE' | 'ON_TRIP'
+}
+
+export async function getDriverSummary(driverId: string): Promise<DriverSummary> {
+  const { rows } = await pool.query<DriverSummary>(
+    `SELECT
+       p.mydriver_score::float8 AS mydriver_score,
+       p.rating::float8         AS rating,
+       p.total_trips,
+       p.availability,
+       COALESCE(t.trips_today, 0)::int      AS trips_today,
+       COALESCE(t.earnings_today, 0)::float8 AS earnings_today
+     FROM driver_profiles p
+     LEFT JOIN LATERAL (
+       SELECT count(*) AS trips_today, sum(driver_earnings) AS earnings_today
+         FROM trips
+        WHERE driver_id = p.user_id
+          AND status = 'COMPLETED'
+          AND completed_at >= date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata')
+     ) t ON true
+     WHERE p.user_id = $1`,
+    [driverId],
+  )
+  if (!rows[0]) throw notFound('DRIVER_NOT_FOUND', 'No driver profile')
+  return rows[0]
+}
+```
+
+- [ ] **Step 4: Add the routes**
+
+```ts
+import { getDriverSummary, rateTrip } from './service.js'
+
+r.post('/v1/trips/:id/rate', {
+  preHandler: [requireAuth, requireRole('CUSTOMER')],
+  schema: {
+    params: z.object({ id: z.string().uuid() }),
+    body: z.object({
+      rating: z.number().int().min(1).max(5),
+      comment: z.string().max(500).optional(),
+    }).strict(),
+    response: { 200: z.object({ rating: z.number(), driver_rating: z.number() }) },
+  },
+}, async (request) => rateTrip(
+  request.params.id, request.auth!.userId, request.body.rating, request.body.comment,
+))
+
+r.get('/v1/driver/summary', {
+  preHandler: [requireAuth, requireRole('DRIVER')],
+  schema: {
+    response: {
+      200: z.object({
+        mydriver_score: z.number(),
+        rating: z.number().nullable(),
+        total_trips: z.number().int(),
+        trips_today: z.number().int(),
+        earnings_today: z.number(),
+        availability: z.enum(['OFFLINE', 'ONLINE', 'ON_TRIP']),
+      }),
+    },
+  },
+}, async (request) => getDriverSummary(request.auth!.userId))
+```
+
+- [ ] **Step 5: Run the test to verify it passes**
+
+```bash
+npm test -- tests/integration/ratings.test.ts
+```
+
+Expected: PASS — 7 tests.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add trip ratings, rolling driver score, and driver summary"
+```
+
+---
+
+### Task 28: Metrics and graceful shutdown
+
+Rules 13 and 14.
+
+**Files:**
+- Create: `prototype/backend/src/lib/metrics.ts`
+- Modify: `prototype/backend/src/app.ts`, `prototype/backend/src/index.ts`
+- Test: `prototype/backend/tests/integration/metrics.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `counter(name: string, value?: number): void`, `gauge(name: string, value: number): void`
+  - `renderMetrics(): string` — Prometheus text format
+  - `GET /metrics`
+
+- [ ] **Step 1: Write the failing test**
+
+`tests/integration/metrics.test.ts` asserts: `GET /metrics` returns 200 with content type `text/plain`; the body contains `mydriver_ws_connections`, `mydriver_telemetry_buffer_depth`, `mydriver_telemetry_dropped_total`, `mydriver_telemetry_written_total` and `mydriver_db_pool_total`; and a counter incremented twice renders the value `2`.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+```bash
+npm test -- tests/integration/metrics.test.ts
+```
+
+Expected: FAIL — `/metrics` returns 404.
+
+- [ ] **Step 3: Implement metrics**
+
+`prototype/backend/src/lib/metrics.ts`:
+
+```ts
+const counters = new Map<string, number>()
+const gauges = new Map<string, () => number>()
+
+export const counter = (name: string, value = 1): void => {
+  counters.set(name, (counters.get(name) ?? 0) + value)
+}
+
+/** Registers a live reader; evaluated at scrape time, never cached. */
+export const gauge = (name: string, read: () => number): void => {
+  gauges.set(name, read)
+}
+
+export function renderMetrics(): string {
+  const lines: string[] = []
+  for (const [name, value] of counters) {
+    lines.push(`# TYPE ${name} counter`, `${name} ${value}`)
+  }
+  for (const [name, read] of gauges) {
+    let value = 0
+    try { value = read() } catch { value = -1 }
+    lines.push(`# TYPE ${name} gauge`, `${name} ${value}`)
+  }
+  return lines.join('\n') + '\n'
+}
+```
+
+- [ ] **Step 4: Register the gauges and the route**
+
+In `src/app.ts`:
+
+```ts
+import { gauge, renderMetrics } from './lib/metrics.js'
+import { getHub } from './realtime/hub.js'
+import { getTelemetryWriter } from './telemetry/batch-writer.js'
+
+gauge('mydriver_ws_connections', () => getHub().localSocketCount())
+gauge('mydriver_telemetry_buffer_depth', () => getTelemetryWriter().depth)
+gauge('mydriver_telemetry_dropped_total', () => getTelemetryWriter().dropped)
+gauge('mydriver_telemetry_written_total', () => getTelemetryWriter().written)
+gauge('mydriver_db_pool_total', () => pool.totalCount)
+gauge('mydriver_db_pool_idle', () => pool.idleCount)
+gauge('mydriver_db_pool_waiting', () => pool.waitingCount)
+
+app.get('/metrics', async (_request, reply) =>
+  reply.type('text/plain; version=0.0.4').send(renderMetrics()))
+```
+
+- [ ] **Step 5: Implement draining shutdown**
+
+Replace the shutdown handler in `src/index.ts`:
+
+```ts
+import { setReady } from './app.js'
+import { getHub } from './realtime/hub.js'
+import { getTelemetryWriter } from './telemetry/batch-writer.js'
+import { startSweeper } from './modules/trips/sweeper.js'
+import { closeDb } from './db/client.js'
+import { closeRedis } from './redis/client.js'
+
+const app = await buildApp()
+const stopSweeper = startSweeper()
+
+let shuttingDown = false
+
+async function shutdown(signal: string): Promise<void> {
+  if (shuttingDown) return
+  shuttingDown = true
+  app.log.info({ signal }, 'draining')
+
+  // 1. Fail readiness so the load balancer stops sending new traffic.
+  setReady(false)
+  await new Promise((r) => setTimeout(r, 2_000))
+
+  try {
+    stopSweeper()
+    // 2. Stop accepting connections and let in-flight requests finish.
+    await app.close()
+    // 3. Never drop buffered telemetry.
+    await getTelemetryWriter().stop()
+    await getHub().close()
+    await closeRedis()
+    await closeDb()
+    process.exit(0)
+  } catch (err) {
+    app.log.error({ err }, 'shutdown failed')
+    process.exit(1)
+  }
+}
+
+process.on('SIGINT', () => void shutdown('SIGINT'))
+process.on('SIGTERM', () => void shutdown('SIGTERM'))
+
+await app.listen({ port: env.PORT, host: '0.0.0.0' })
+```
+
+`app.close()` closes WebSocket connections; `@fastify/websocket` sends close code 1001, which is what clients should treat as "reconnect elsewhere".
+
+- [ ] **Step 6: Run the test to verify it passes**
+
+```bash
+npm test -- tests/integration/metrics.test.ts
+```
+
+Expected: PASS — 3 tests.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "feat(backend): add Prometheus metrics and draining shutdown"
+```
+
+---
+
+### Task 29: End-to-end lifecycle test
+
+The single test that proves the whole spine works together.
+
+**Files:**
+- Test: `prototype/backend/tests/integration/lifecycle.e2e.test.ts`
+
+- [ ] **Step 1: Write the test**
+
+One test walking the full path, asserting state after every step:
+
+1. Customer logs in by OTP; driver logs in by OTP.
+2. Driver goes `ONLINE` and is placed in the geo index at the pickup point.
+3. Customer books — trip is `REQUESTED`.
+4. Dispatch runs — trip is `MATCHED`, a `PENDING` offer exists for the driver.
+5. Driver accepts — trip is `HANDSHAKE_PENDING`, driver availability is `ON_TRIP`.
+6. Customer fetches the 4-digit handshake OTP.
+7. Driver submits a selfie and that OTP — trip is `IN_TRIP`.
+8. Both connect over WebSocket, subscribe, and stream telemetry along a known route.
+9. Driver completes — trip is `COMPLETED`, `distance_km` matches the streamed route within 5%, `driver_earnings === fare_amount − 19`.
+10. Customer rates 5 — the driver's rating updates.
+11. **The `trip_events` ledger contains exactly**, in order: `TRIP_REQUESTED`, `TRIP_MATCHED`, `OFFER_ACCEPTED`, `HANDSHAKE_PASSED`, `TRIP_COMPLETED`, `TRIP_RATED`.
+
+Assertion 11 is the point of the test. The ledger is the evidence trail the Phase 3 Trip Vault seals, and a missing or out-of-order entry is a real defect even when every status is correct.
+
+- [ ] **Step 2: Run it**
+
+```bash
+npm test -- tests/integration/lifecycle.e2e.test.ts
+```
+
+Expected: PASS.
+
+- [ ] **Step 3: Run the whole suite**
+
+```bash
+npm test
+```
+
+Expected: every test passes. Fix anything that regressed before committing.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add prototype/backend
+git commit -m "test(backend): add end-to-end trip lifecycle test"
+```
+
+---
+
+### Task 30: Shared typed API client
+
+The deliverable that lets the four client apps be wired later without guessing at contracts.
+
+**Files:**
+- Create: `prototype/backend/packages/api-client/package.json`
+- Create: `prototype/backend/packages/api-client/src/types.ts`
+- Create: `prototype/backend/packages/api-client/src/http.ts`
+- Create: `prototype/backend/packages/api-client/src/ws.ts`
+- Create: `prototype/backend/packages/api-client/src/index.ts`
+- Create: `prototype/backend/packages/api-client/INTEGRATION.md`
+
+**Interfaces:**
+- Produces:
+  - `createClient({ baseUrl, onTokens? }): MyDriverClient`
+  - `client.auth.requestOtp / verifyOtp / google / refresh / logout`
+  - `client.me.get / update / guardians.* / consents.*`
+  - `client.trips.quote / book / get / list / cancel / complete / rate / handshakeOtp`
+  - `client.driver.setAvailability / summary / respondToOffer / handshake`
+  - `client.realtime.connect(): Promise<RealtimeConnection>` with `subscribe(tripId)`, `sendDriverTelemetry(...)`, `sendCustomerTelemetry(...)`, `on(type, handler)`, `close()`
+
+- [ ] **Step 1: Implement the HTTP client**
+
+The client stores the access and refresh tokens, retries a single time on a 401 by calling `/v1/auth/refresh`, and surfaces the error envelope as a typed `ApiError { code, message, details, status }`. It must not depend on any Node-only API — React Native and the browser both use the global `fetch`.
+
+- [ ] **Step 2: Implement the realtime client**
+
+`connect()` calls `POST /v1/realtime/ticket`, opens `wss://<host>/v1/integrity?ticket=…`, answers every `PING` with `PONG`, and reconnects on close with exponential backoff (1s, 2s, 4s, 8s, capped at 30s, plus up to 1s of jitter) — re-fetching a fresh ticket on each attempt, since tickets are single-use. Re-subscribes to every previously subscribed trip after reconnecting.
+
+- [ ] **Step 3: Write INTEGRATION.md**
+
+A table mapping each mock in the prototypes to the call that replaces it, covering at minimum:
+
+| Client file | Mock replaced | Replacement |
+| :--- | :--- | :--- |
+| `mobile/user/src/screens/auth/LoginScreen.jsx` | `setTimeout` in `handleSendOtp` | `client.auth.requestOtp({ phone_number, role: 'CUSTOMER' })` |
+| `mobile/user/src/screens/auth/LoginScreen.jsx` | `setTimeout` in `handleVerifyOtp` | `client.auth.verifyOtp({ phone_number, otp, role: 'CUSTOMER' })` |
+| `mobile/driver/src/screens/auth/LoginScreen.jsx` | same two | same, with `role: 'DRIVER'` |
+| `mobile/*/src/screens/auth/LoginScreen.jsx` | `handleGoogleLogin` alert | `client.auth.google({ id_token, role })` after `expo-auth-session` |
+| `website/src/context/AuthContext.jsx` | mock auth state | `client.auth.*` plus token persistence |
+| `website/src/context/TripContext.jsx` | `tripStore` mock state | `client.trips.*` plus `client.realtime` |
+| `website/src/data/mock.js` `SKILLS` | hardcoded rates | `client.trips.quote` per selected skill |
+| `website/src/data/mock.js` `PAST_TRIPS` | hardcoded array | `client.trips.list()` |
+| `website/src/data/mock.js` `DEFAULT_GUARDIANS` | hardcoded array | `client.me.guardians.list()` |
+| `app/src/screens/driver/HandshakeScreen.jsx` | demo OTP `4821` | `client.driver.handshake({ trip_id, driver_selfie_base64, otp })` |
+
+The document must also state, prominently, the two client-side changes this backend forces:
+
+1. **The booking payload must not include `mode`.** The backend rejects it with a 400. Any VisionCam interface element routes out to the app website instead.
+2. **The login OTP is 6 digits** — already what the mobile screens render, but `docs/backend_api_spec.md` says 4 and should be corrected.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add prototype/backend/packages
+git commit -m "feat(backend): add shared typed API client and integration guide"
+```
+
+---
+
+### Task 31: Load verification
+
+The scale claims in this plan are unproven until this task runs. Do not report the system as handling one million concurrent users before it does.
+
+**Files:**
+- Create: `prototype/backend/loadtest/README.md`
+- Create: `prototype/backend/loadtest/ws-soak.ts`
+- Create: `prototype/backend/loadtest/http-book.js` (k6 script)
+
+- [ ] **Step 1: Write the WebSocket soak harness**
+
+`ws-soak.ts` opens N concurrent WebSocket connections against a running instance, each streaming one telemetry frame per second on a real trip, and reports: connections established, frames sent, frames acknowledged by fan-out, p50/p95/p99 fan-out latency, and any close codes observed. Default N = 10,000.
+
+- [ ] **Step 2: Write the HTTP load script**
+
+`http-book.js` drives k6 through login → quote → book → cancel at a configurable arrival rate, reporting p95 latency per endpoint and the error rate.
+
+- [ ] **Step 3: Establish the single-instance baseline**
+
+```bash
+npm run infra:up
+npm run db:migrate && npm run db:seed
+npm run dev &
+npx tsx loadtest/ws-soak.ts --connections 10000
+```
+
+Record in `loadtest/README.md`: sockets held per instance before latency degrades, memory per socket, telemetry buffer depth under load, and the rate at which `mydriver_telemetry_dropped_total` starts climbing.
+
+- [ ] **Step 4: Extrapolate honestly**
+
+From the measured per-instance ceiling, state in `loadtest/README.md`:
+- Instances required for 1,000,000 concurrent sockets.
+- The measured rows/second at which the in-process telemetry buffer starts dropping, and therefore the point at which the durable stream buffer becomes mandatory.
+- Postgres and Redis headroom at that load.
+
+Write down what was measured, not what was hoped for. If the numbers say a single-node TimescaleDB tops out well below the target, that belongs in the document as the next piece of work — it is the most valuable output of this task.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add prototype/backend/loadtest
+git commit -m "test(backend): add WebSocket soak and HTTP load harnesses with measured baselines"
+```
+
+---
+
+## Plan Self-Review
+
+**Spec coverage.** Every section of the design document maps to a task: §3 service layout → Tasks 1–3; §4 data model → Tasks 2, 7, 8, 13, 14, 17, 22; §5 lifecycle → Tasks 17–21, 26; §6 API surface → Tasks 7–13, 15, 18, 20, 21, 26, 27; §7 realtime → Tasks 23–25; §8 providers → Tasks 6, 20; §9 dashcam exclusion → enforced by `.strict()` Zod schemas with explicit tests in Tasks 15 and 18; §10 deviations → all nine implemented; §11 testing → every task is TDD, Task 29 is the end-to-end check; §12 out-of-scope → nothing in this plan implements escalation, integrity evaluation, or the Trip Vault.
+
+**Known gaps, stated rather than hidden.**
+- The **push provider has no device-token storage**, so `getPushProvider().send()` cannot reach a real device. Trip offers reach drivers over WebSocket, which is the path Phase 1 actually depends on. Device tokens belong with the Phase 2 escalation work.
+- The **`AGENT` role is defined and grantable but has no endpoints.** The agent field-recruitment app is out of scope; the enum value exists so the schema does not need changing later.
+- **`face_reference_key` is never populated** in Phase 1 — driver onboarding is not built — so the mock liveness provider is what the handshake actually gates on. This is why the provider is an interface with a real threshold check rather than a hardcoded `true`.
+- **Rule 4 (`EXPLAIN` verification) has no automated enforcement.** It is a manual step per query. Consider a CI check that fails on a sequential scan over a seeded dataset.
+
+**Consistency check.** `TripView`, `TripStatus`, `Role`, `LatLng`, `TripView.pickup`/`drop`, `peppered`/`pepperedEquals`, `transitionTrip`, `recordEvent`, `getHub`, `tripChannel`, and `getTelemetryWriter` are used with the same names and signatures in every task that consumes them. `TRIP_COLUMNS` is defined once in `service.ts` and reused by every query returning a `TripView`.
