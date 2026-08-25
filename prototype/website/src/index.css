@@ -1,0 +1,133 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  /* MyDriver brand scale. Red is the only chromatic colour in the system —
+     see docs/superpowers/specs/2026-08-21-mydriver-mobile-design.md. */
+  --color-brand-50: #FEF6F6;
+  --color-brand-100: #FDECEC;
+  --color-brand-200: #F9CFD1;
+  --color-brand-300: #F3A5A8;
+  --color-brand-400: #EC5C62;
+  --color-brand-500: #E01E26;
+  --color-brand-600: #C71A21;
+  --color-brand-700: #B0161C;
+  --color-brand-800: #8A1015;
+  --color-brand-900: #630B0F;
+  --color-brand-950: #3D0709;
+
+  /* Neutral ramp. Overrides Tailwind's default `slate` so every existing
+     `slate-*` utility picks up the softer greys without a class rename. */
+  --color-slate-50: #F9FAFB;
+  --color-slate-100: #F2F4F7;
+  --color-slate-200: #EAECF0;
+  --color-slate-300: #D0D5DD;
+  --color-slate-400: #98A2B3;
+  --color-slate-500: #667085;
+  --color-slate-600: #475467;
+  --color-slate-700: #344054;
+  --color-slate-800: #1D2939;
+  --color-slate-900: #101828;
+  --color-slate-950: #0C111D;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-white text-slate-900 antialiased;
+}
+
+section[id] {
+  scroll-margin-top: 5rem;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  70% { transform: scale(1.6); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+.pulse-ring::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 2px solid currentColor;
+  animation: pulse-ring 1.8s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
+
+@keyframes dash-move {
+  to { stroke-dashoffset: -24; }
+}
+.route-dash {
+  animation: dash-move 1.2s linear infinite;
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(0.75rem); }
+  to { opacity: 1; transform: none; }
+}
+.rise-in {
+  animation: rise-in 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Scroll reveal, driven by IntersectionObserver in Reveal.jsx. */
+.reveal {
+  opacity: 0;
+  transform: translateY(1.5rem);
+  transition:
+    opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  transition-delay: var(--reveal-delay, 0ms);
+}
+.reveal[data-revealed="true"] {
+  opacity: 1;
+  transform: none;
+}
+
+/* Kinetic headline. Words share one grid cell and are staggered by a quarter
+   of the cycle. Base opacity is 0 so they never render stacked before the
+   animation starts. */
+@keyframes word-cycle {
+  0% { opacity: 0; transform: translateY(0.55em); }
+  3%, 22% { opacity: 1; transform: none; }
+  25%, 100% { opacity: 0; transform: translateY(-0.55em); }
+}
+.word-cycle-item {
+  opacity: 0;
+  animation: word-cycle 8s cubic-bezier(0.16, 1, 0.3, 1) infinite both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .rise-in,
+  .pulse-ring::after,
+  .route-dash,
+  .word-cycle-item {
+    animation: none;
+  }
+  .word-cycle-item {
+    opacity: 0;
+  }
+  .word-cycle-item:first-of-type {
+    opacity: 1;
+    transform: none;
+  }
+}

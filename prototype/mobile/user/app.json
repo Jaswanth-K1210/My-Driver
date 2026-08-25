@@ -1,0 +1,21 @@
+{
+  "expo": {
+    "name": "MyDriver",
+    "slug": "mydriver-user",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FFFFFF",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mydriver.user"
+    },
+    "android": {
+      "package": "com.mydriver.user",
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF"
+      }
+    }
+  }
+}

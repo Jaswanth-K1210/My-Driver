@@ -1,0 +1,206 @@
+@import "tailwindcss";
+
+@theme {
+  /* MyDriver brand scale — mirrors prototype/mobile/src/theme/tokens.js. */
+  --color-brand-50: #FEF6F6;
+  --color-brand-100: #FDECEC;
+  --color-brand-200: #F9CFD1;
+  --color-brand-300: #F3A5A8;
+  --color-brand-400: #EC5C62;
+  --color-brand-500: #E01E26;
+  --color-brand-600: #C71A21;
+  --color-brand-700: #B0161C;
+  --color-brand-800: #8A1015;
+  --color-brand-900: #630B0F;
+}
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300;0,14..32,400;0,14..32,500;0,14..32,600;0,14..32,700;0,14..32,800;0,14..32,900;1,14..32,400;1,14..32,700&display=swap');
+
+/* ─── Design Tokens ─────────────────────────────────────── */
+:root {
+  --bg:        #FFFFFF;
+  --surface:   #F6F6F8;
+  --border:    rgba(12, 12, 16, 0.10);
+  --border-hi: rgba(12, 12, 16, 0.20);
+
+  --txt-primary:  #0C0C10;
+  --txt-secondary:#62626E;
+  --txt-muted:    #8A8A96;
+
+  /* Red is the only chromatic colour in the system. The former multi-hue
+     accents collapse onto one red ramp plus graphite, so slides stay
+     legible without inventing new meanings for colour. */
+  --accent:   #E01E26;   /* brand red */
+  --sky:      #16161C;   /* was informational blue -> graphite */
+  --emerald:  #E01E26;   /* was "good" green -> brand red */
+  --amber:    #C71A21;
+  --rose:     #8A1015;   /* deepest red carries severity */
+  --purple:   #16161C;
+}
+
+/* ─── Reset ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--txt-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Slide Shell ────────────────────────────────────────── */
+/* Every slide fills the viewport. Content is always inside
+   a .deck-inner that centres the max-width column.         */
+.slide {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  /* NO justify-content here — inner content sets its own   */
+}
+
+/* Centred content column — max 1440px, full-height flex   */
+.deck-inner {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  height: 100%;
+  padding: 4rem 6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+}
+
+/* ─── Subtle dot-grid background ────────────────────────── */
+.grid-bg-subtle {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(rgba(12,12,16,0.07) 1px, transparent 1px);
+  background-size: 36px 36px;
+  pointer-events: none;
+  mask-image: radial-gradient(ellipse 80% 80% at 50% 50%, black 60%, transparent 100%);
+}
+
+/* ─── Section Header (badge + headline + sub) ────────────── */
+.deck-header {}
+
+.deck-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: rgba(12,12,16,0.04);
+  border: 1px solid var(--border-hi);
+  color: var(--txt-secondary);
+  margin-bottom: 1rem;
+}
+
+.deck-title {
+  font-size: clamp(2.4rem, 4.5vw, 4rem);
+  font-weight: 900;
+  color: var(--txt-primary);
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+  margin-bottom: 0.75rem;
+}
+
+.deck-subtitle {
+  font-size: clamp(0.95rem, 1.4vw, 1.2rem);
+  color: var(--txt-secondary);
+  line-height: 1.7;
+  font-weight: 400;
+  max-width: 660px;
+}
+
+/* ─── Divider ────────────────────────────────────────────── */
+.deck-divider {
+  height: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+/* ─── Generic body text sizes ────────────────────────────── */
+.body-lg  { font-size: 1.1rem;  line-height: 1.7; color: var(--txt-secondary); }
+.body-md  { font-size: 0.975rem; line-height: 1.65; color: var(--txt-secondary); }
+.label-sm { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--txt-muted); }
+
+/* ─── Data Row (horizontal key/value pairs) ──────────────── */
+.data-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 1rem;
+}
+.data-row:last-child { border-bottom: none; }
+
+/* ─── Accent colours as utility classes ─────────────────── */
+.c-sky     { color: var(--sky); }
+.c-emerald { color: var(--emerald); }
+.c-amber   { color: var(--amber); }
+.c-rose    { color: var(--rose); }
+.c-purple  { color: var(--purple); }
+.c-blue    { color: var(--accent); }
+
+/* ─── Pill tag ───────────────────────────────────────────── */
+.pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.pill-sky    { background: rgba(22,22,28,0.06);  color: var(--sky);     border: 1px solid rgba(22,22,28,0.18); }
+.pill-emerald{ background: rgba(224,30,38,0.08); color: var(--emerald); border: 1px solid rgba(224,30,38,0.22); }
+.pill-amber  { background: rgba(199,26,33,0.08); color: var(--amber);   border: 1px solid rgba(199,26,33,0.22); }
+.pill-rose   { background: rgba(138,16,21,0.08); color: var(--rose);    border: 1px solid rgba(138,16,21,0.22); }
+.pill-purple { background: rgba(22,22,28,0.06);  color: var(--purple);  border: 1px solid rgba(22,22,28,0.18); }
+
+/* ─── Image panel ────────────────────────────────────────── */
+.img-panel {
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  border: 1px solid var(--border);
+}
+.img-panel img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.6s ease;
+}
+.img-panel:hover img { transform: scale(1.03); }
+
+/* clean-badge kept for legacy compat */
+.clean-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  background: rgba(12,12,16,0.04);
+  border: 1px solid var(--border-hi);
+  color: var(--txt-secondary);
+}

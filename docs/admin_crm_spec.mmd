@@ -1,0 +1,18 @@
+flowchart LR
+    subgraph Admin CRM Dashboard [Web Command Center - React 19]
+        Direction[Mapbox GL JS Live Map Board]
+        EscalationQueue[L0-L5 Incident Queue Engine]
+        DriverQueue[Driver Verification & Certification]
+        Analytics[Corporate Billing & Trip Vault Audit]
+    end
+
+    subgraph Safety Desk Workflow
+        L0[L0: Soft Alert] --> L1[L1: Guardian Alert]
+        L1 --> L2[L2: Safety Desk Active - IVR Call]
+        L2 --> L3[L3: Human Agent Call < 3 min SLA]
+        L3 --> L4[L4: Emergency Broadcast]
+        L4 --> L5[L5: Police Dial 112 / T-Safe Release]
+    end
+
+    EscalationQueue --> Safety Desk Workflow
+    Direction --> EscalationQueue

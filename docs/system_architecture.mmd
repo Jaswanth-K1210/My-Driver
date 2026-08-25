@@ -1,0 +1,57 @@
+graph TD
+    subgraph Client Applications
+        CA[Customer Mobile App - iOS/Android]
+        DA[Driver Mobile App - iOS/Android]
+        AA[Agent Mobile App - Android]
+        CRM[Admin CRM & Safety Desk - Web]
+    end
+
+    subgraph API & Gateway Layer
+        GW[API Gateway & Load Balancer]
+        WSG[WebSocket Gateway - WSS]
+    end
+
+    subgraph Core Microservices
+        Auth[Identity & Auth Service]
+        TripEngine[Trip Lifecycle Engine]
+        GPSEngine[Dual-GPS Integrity Engine]
+        Escalation[Safety Desk & Escalation Service]
+        Vault[Trip Vault Ledger Service]
+    end
+
+    subgraph Data & Persistence Layer
+        PostgreSQL[(PostgreSQL Primary DB)]
+        Timescale[(TimescaleDB Telematics)]
+        Redis[(Redis Cluster - GeoSpatial)]
+        S3[(AWS S3 - Condition Photos & Logs)]
+    end
+
+    subgraph External Gateways
+        FCM[FCM / APNS Push Notifications]
+        Twilio[Twilio / Exotel Voice & SMS]
+        Police[Official Emergency 112 Channels]
+    end
+
+    CA -->|REST/HTTPS| GW
+    CA -->|WebSocket| WSG
+    DA -->|REST/HTTPS| GW
+    DA -->|WebSocket| WSG
+    AA -->|REST/HTTPS| GW
+    CRM -->|REST/HTTPS| GW
+    CRM -->|WebSocket| WSG
+
+    GW --> Auth
+    GW --> TripEngine
+    GW --> Escalation
+    GW --> Vault
+    WSG --> GPSEngine
+
+    Auth --> PostgreSQL
+    TripEngine --> PostgreSQL
+    GPSEngine --> Redis
+    GPSEngine --> Timescale
+    Vault --> S3
+    Vault --> PostgreSQL
+    Escalation --> FCM
+    Escalation --> Twilio
+    Escalation --> Police

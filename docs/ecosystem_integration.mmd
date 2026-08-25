@@ -1,0 +1,64 @@
+graph TB
+    subgraph Mobile Clients [iOS & Android Apps]
+        CA[Customer Mobile App]
+        DA[Driver Mobile App]
+        AA[Agent Field Recruitment App]
+    end
+
+    subgraph Web Clients [Control Room]
+        CRM[Admin CRM & 24x7 Safety Desk Dashboard]
+    end
+
+    subgraph Hardware Layer [Phase 2]
+        VC[VisionCam 4K Dual-Lens Unit]
+    end
+
+    subgraph Shared Backend Services
+        GW[API Gateway & WebSocket Manager]
+        Auth[Auth & Liveness Service]
+        Trip[Trip Lifecycle Controller]
+        GPS[Dual-GPS Integrity Engine]
+        Esc[L0-L5 Escalation Manager]
+        Vault[Trip Vault Storage Engine]
+    end
+
+    subgraph Data Stores
+        PG[(PostgreSQL Primary DB)]
+        TS[(TimescaleDB Telematics)]
+        RD[(Redis Geospatial Cache)]
+        S3[(AWS S3 Photo/Video Vault)]
+    end
+
+    subgraph External Networks
+        SMS[Twilio / Exotel Voice & SMS]
+        PUSH[FCM / APNS Push Notifications]
+        POLICE[Dial 112 / T-Safe Police Dispatch]
+    end
+
+    %% Client Interactions
+    CA -->|Book Trip / Guardian Link / SOS| GW
+    DA -->|Selfie Match / 8-Point Photos / Location Stream| GW
+    AA -->|Driver Document Onboarding| GW
+    CRM -->|Live Map Oversight / Incident Response| GW
+    VC -.->|Mode R/D/F Adaptive Video Stream| GW
+
+    %% Backend Service Flow
+    GW --> Auth
+    GW --> Trip
+    GW --> GPS
+    GW --> Esc
+    GW --> Vault
+
+    %% Data Pipeline
+    Auth --> PG
+    Trip --> PG
+    GPS --> RD
+    GPS --> TS
+    Vault --> S3
+    Vault --> PG
+
+    %% Escalation Pathways
+    Esc --> PUSH
+    Esc --> SMS
+    Esc --> POLICE
+    CRM <-->|Realtime Incident Action| Esc

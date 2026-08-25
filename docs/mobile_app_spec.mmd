@@ -1,0 +1,27 @@
+flowchart TD
+    subgraph Customer App [Customer Mobile App - React Native]
+        C1[Search & Book Driver] --> C2[Set Speed Ceiling & VisionCam Mode]
+        C2 --> C3[Live Map & Guardian Link Share]
+        C3 --> C4[Silent Volume SOS Trigger]
+        C4 --> C5[Trip Vault & Rating]
+    end
+
+    subgraph Driver App [Driver Mobile App - React Native]
+        D1[Receive Booking Request] --> D2[Pickup Handshake: Selfie Liveness + OTP]
+        D2 --> D3[8-Point Car Condition Photo Capture]
+        D3 --> D4[Background Telematics Engine - 50Hz Accel/Gyro]
+        D4 --> D5[Night Shield Check-in Ping Response]
+    end
+
+    subgraph Shared Native Modules
+        N1[CoreLocation / Android Foreground Location Service]
+        N2[Hardware Volume Button Listener - Silent SOS]
+        N3[CameraX / MLKit Liveness Verification]
+        N4[WatermelonDB Local Offline Buffer]
+    end
+
+    C3 -.-> N1
+    C4 -.-> N2
+    D2 -.-> N3
+    D4 -.-> N1
+    D4 -.-> N4

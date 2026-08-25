@@ -1,0 +1,30 @@
+sequenceDiagram
+    autonumber
+    actor Customer as Customer App
+    actor Driver as Driver App
+    participant API as API Gateway / Backend
+    participant Redis as Redis Pub/Sub & Geo
+    participant SafetyDesk as Safety Desk Dashboard
+    actor Guardian as Guardian Contact
+
+    Customer->>API: POST /v1/trips/book (Speed Ceiling, Guardian Contacts)
+    API-->>Driver: Dispatch Trip Request
+    Driver->>API: POST /v1/trips/:id/handshake (Selfie + OTP)
+    API-->>Customer: Handshake Passed -> IN_TRIP
+    API-->>Guardian: SMS/WhatsApp Push: Guardian Link Active
+
+    par Dual-GPS Stream Loop (Every 3s)
+        Driver->>API: WSS Stream (GPS_driver, Sensors)
+        Customer->>API: WSS Stream (GPS_customer)
+        API->>Redis: Compute Spatial Delta (Haversine)
+    end
+
+    alt Route Anomaly > 150m for > 60s
+        API->>SafetyDesk: Trigger L1 Anomaly Event
+        API->>Guardian: Push Alert: Route Deviation Detected
+    end
+
+    Customer->>API: Hardware Silent SOS (3x Volume Press)
+    API->>SafetyDesk: Trigger L4 Emergency Escalation
+    SafetyDesk->>Driver: IVR / Direct Call Attempt (< 3 min SLA)
+    SafetyDesk->>API: Release Trip Vault Packet to Dial 112
