@@ -122,20 +122,32 @@ What that required, concretely:
 - **Draining shutdown**: `/ready` fails first, then connections close, then
   buffered telemetry is flushed. Buffered rows are never discarded.
 
-### The honest limit
+### The honest limit — now measured
 
-At the target load the telemetry path is roughly **133,000 rows/second**. A
-single-node TimescaleDB sustains around **50,000**. Above that, the in-process
+Full results and method: **[`loadtest/README.md`](loadtest/README.md)**.
+
+| Measured | Result |
+| --- | --- |
+| Concurrent WebSockets | **15,000 on one process, zero failures**, 13 KB marginal RSS each |
+| Telemetry write path | **20–30k rows/s** single writer, **60–100k rows/s** with 4 parallel writers |
+| HTTP hot paths | 2,000–3,000 req/s at p95 < 55 ms |
+
+At the target load the telemetry path needs roughly **133,000 rows/second**,
+which is beyond a single TimescaleDB node on hardware like the test machine. So
+the conclusion stands and now has evidence: above that threshold the in-process
 buffer must be replaced by a durable stream (Kafka, NATS JetStream or Redis
-Streams) between the gateway and the writer. `TelemetryBatchWriter` is isolated
-behind one interface so that swap does not touch the gateway, and
+Streams), or the hypertable sharded. `TelemetryBatchWriter` is isolated behind
+one interface so that swap does not touch the gateway, and
 `mydriver_telemetry_dropped_total` is the metric that says the threshold was
 crossed.
 
-**None of these numbers have been load-tested.** Task 31 of the implementation
-plan defines the soak harness that would establish the real per-instance
-ceiling. Until it runs, treat the instance count above as arithmetic, not as a
-measured result.
+**Caveats that matter.** The load generator shared a laptop with the server, and
+Docker Desktop's virtualised disk made write throughput vary ±40% between
+identical runs. The socket ceiling was never found — the client exhausted
+macOS's 16,384 ephemeral ports first. And **CPU per socket under real telemetry
+was not measured**, which is the actual binding constraint on instance count.
+The 16–24 instance estimate is consistent with what was measured but remains
+unvalidated on the CPU axis.
 
 ## Testing
 

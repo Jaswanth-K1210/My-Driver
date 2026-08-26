@@ -30,9 +30,6 @@ const nearestDropName = (drop) => {
 /**
  * Adapts a server TripView into the shape the existing screens render, so the
  * UI did not have to be rewritten around a new field set.
- *
- * `visionMode` comes from local config only — the backend has no dashcam
- * concept and never returns one.
  */
 export function toViewTrip(trip, config) {
   if (!trip) return null
@@ -47,7 +44,6 @@ export function toViewTrip(trip, config) {
     to: hourly ? `${trip.hourly_package_hours}-hour hire` : nearestDropName(trip.drop),
     skill: trip.required_certification,
     ceiling: trip.speed_ceiling_kmh,
-    visionMode: config?.visionMode ?? 'R',
     fare: Math.round(trip.fare_amount ?? trip.estimated_fare ?? 0),
     distanceKm: trip.distance_km ?? trip.estimated_distance_km ?? 0,
     durationMin: trip.duration_min,
@@ -89,8 +85,9 @@ const HOURS_BY_PACKAGE = { h2: 2, h4: 4, h8: 8, h12: 12 }
 
 /**
  * Turns the booking config into the exact body POST /v1/trips/book accepts.
- * `visionMode` is deliberately NOT included — the backend rejects an unknown
- * field outright, so sending it would fail the whole booking.
+ * There is deliberately no VisionCam `mode` field: the backend has no dashcam
+ * concept and rejects an unknown field outright, so sending one would fail the
+ * whole booking.
  */
 export function bookingPayloadFor(config) {
   const pickup = { lat: PICKUP.lat, lng: PICKUP.lng }

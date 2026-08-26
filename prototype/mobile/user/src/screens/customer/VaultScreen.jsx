@@ -8,7 +8,6 @@ import Card from '../../components/Card'
 import DemoBadge from '../../components/DemoBadge'
 import { useTrip } from '../../context/TripContext'
 import { useToast } from '../../components/Toast'
-import { VISION_MODES } from '../../data/mock'
 import { formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 
@@ -16,8 +15,6 @@ const ZONES = ['Front', 'Rear', 'Left', 'Right', 'Dash', 'Seats', 'Fuel', 'Boot'
 
 function TripDetail({ trip }) {
   const { toast } = useToast()
-  const mode = VISION_MODES.find((m) => m.id === trip.visionMode)
-
   const stats = [
     { label: 'Distance', value: `${Number(trip.distanceKm).toFixed(1)} km`, alert: false },
     { label: 'Ceiling', value: `${trip.ceiling} km/h`, alert: false },

@@ -3,11 +3,14 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { BadgeCheck, Check, IndianRupee } from 'lucide-react-native'
 import Button from '../../components/Button'
 import Card from '../../components/Card'
-import { DRIVER_PROFILE } from '../../data/mock'
+import { useDriver } from '../../context/DriverContext'
 import { formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 
 export default function TripSummaryScreen({ request, result, onDone }) {
+  // The server recomputes the score on completion; refreshSummary() already
+  // ran in completeTrip(), so this is the post-trip figure.
+  const { summary } = useDriver()
   const minutes = Math.max(1, Math.round(result.durationSec / 60))
   // The server froze this at completion: fare minus the ₹19 platform fee.
   const payout = Math.round(request.earnings ?? result.earnings ?? request.fare)
@@ -66,7 +69,7 @@ export default function TripSummaryScreen({ request, result, onDone }) {
             <Text style={{ ...type.body, color: colors.text }}>Score impact</Text>
             <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 17 }}>
               {result.events === 0
-                ? `Clean run — score holds at ${DRIVER_PROFILE.score}.`
+                ? `Clean run — score holds at ${Math.round(summary?.mydriver_score ?? 100)}.`
                 : `${result.events} event${result.events > 1 ? 's' : ''} logged — minor review, no deduction.`}
             </Text>
           </View>

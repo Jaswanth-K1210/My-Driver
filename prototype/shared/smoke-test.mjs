@@ -182,7 +182,22 @@ try {
   check('dispatch offers the trip to the online driver', matched.status === 'MATCHED',
     `status=${matched.status}`)
 
-  await driver.driver.respondToOffer(booked.id, true)
+  // Discover the offer the way the driver app must: the driver never sees the
+  // booking response, and cannot SUBSCRIBE to the trip channel that carries
+  // TRIP_OFFER until they are already a participant. Polling is the only path.
+  const pending = await waitFor(
+    () => driver.driver.offers(),
+    (list) => list.length > 0,
+  )
+  const theOffer = pending[0]
+  check('driver discovers the pending offer without knowing the trip id',
+    theOffer?.trip_id === booked.id, `got ${theOffer?.trip_id}`)
+  check('offer carries the pickup address for the offer card',
+    typeof theOffer.pickup_address === 'string' && theOffer.pickup_address.length > 0)
+  check('offer carries the driver take-home estimate',
+    typeof theOffer.driver_earnings_estimate === 'number')
+
+  await driver.driver.respondToOffer(theOffer.trip_id, true)
   const accepted = await customer.trips.get(booked.id)
   check('acceptance moves the trip to HANDSHAKE_PENDING', accepted.status === 'HANDSHAKE_PENDING')
   check('driver details reach the customer', accepted.driver?.id === (await driver.me.get()).id)

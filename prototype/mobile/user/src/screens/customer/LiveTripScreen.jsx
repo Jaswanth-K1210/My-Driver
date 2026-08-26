@@ -184,7 +184,7 @@ export default function LiveTripScreen({ trip, onCancel }) {
         <View style={{ alignItems: 'center' }}>
           <Text style={{ ...type.caption, color: colors.text }}>Trip {trip.id}</Text>
           <Text style={{ ...type.micro, color: colors.textMuted }}>
-            {trip.skill} · VisionCam Mode {trip.visionMode}
+            {trip.skill} · ceiling {trip.ceiling} km/h
           </Text>
         </View>
         <View

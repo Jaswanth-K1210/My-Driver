@@ -19,6 +19,27 @@ export const DEFAULT_ORIGIN = { lat: 17.4399, lng: 78.3813 }
 
 const shortId = (id) => `TRP-${String(id).replace(/-/g, '').slice(0, 6).toUpperCase()}`
 
+/** Adapts a pending offer into the shape the offer card already renders. */
+function toOffer(pending) {
+  if (!pending) return null
+  const km = Number(pending.estimated_distance_km ?? 0)
+  return {
+    id: shortId(pending.trip_id),
+    serverId: pending.trip_id,
+    expiresAt: pending.expires_at,
+    customer: pending.customer?.name ?? 'MyDriver customer',
+    pickup: pending.pickup_address ?? 'Customer pickup point',
+    drop: pending.drop_address ?? 'Destination',
+    skill: pending.required_certification,
+    ceiling: pending.speed_ceiling_kmh,
+    distanceKm: km,
+    fare: Math.round(pending.estimated_fare ?? 0),
+    earnings: pending.driver_earnings_estimate,
+    pickupCoords: pending.pickup,
+    dropCoords: pending.drop,
+  }
+}
+
 /** Adapts a server trip into the shape the driver screens already render. */
 function toRequest(trip) {
   if (!trip) return null
@@ -69,6 +90,27 @@ export function DriverProvider({ children }) {
     }
   }, [])
 
+  /**
+   * Pending offers are only reachable by polling — see the note on
+   * api.driver.offers(). An offer lives 20 seconds, so this runs every 2.5s
+   * while online and idle, which is well inside that window.
+   */
+  const refreshOffers = useCallback(async () => {
+    if (tripIdRef.current) return
+    try {
+      const pending = await api.driver.offers()
+      setOffer((current) => {
+        const next = pending[0]
+        if (!next) return null
+        // Don't churn the card (and its countdown) on every poll tick.
+        if (current && current.serverId === next.trip_id) return current
+        return toOffer(next)
+      })
+    } catch {
+      // A failed poll is not an error worth showing; the next tick retries.
+    }
+  }, [])
+
   /* ── Socket: offers and trip state ───────────────────────────────────── */
   const ensureRealtime = useCallback(async () => {
     if (realtimeRef.current) return realtimeRef.current
@@ -76,23 +118,12 @@ export function DriverProvider({ children }) {
     const conn = api.realtime({ onState: setConnection })
     realtimeRef.current = conn
 
-    conn.on('TRIP_OFFER', async (frame) => {
-      // The offer arrives before this driver is a participant, so the trip is
-      // not yet readable; the frame itself carries what the card needs.
-      setOffer({
-        id: shortId(frame.trip_id),
-        serverId: frame.trip_id,
-        expiresAt: frame.expires_at,
-        customer: 'MyDriver customer',
-        rating: 4.9,
-        pickup: 'Customer pickup point',
-        drop: 'Destination',
-        skill: '—',
-        ceiling: 60,
-        distanceKm: 0,
-        fare: Math.round(frame.fare_estimate ?? 0),
-        pickupCoords: frame.pickup,
-      })
+    // Kept as a fast path only. In Phase 1 this frame does not actually reach
+    // the offered driver: TRIP_OFFER is published to the trip channel, and
+    // the gateway only lets trip participants subscribe — trips.driver_id is
+    // still NULL while the offer is pending. Polling below is what works.
+    conn.on('TRIP_OFFER', () => {
+      void refreshOffers()
     })
 
     conn.on('TRIP_STATE_CHANGED', async (frame) => {
@@ -106,7 +137,7 @@ export function DriverProvider({ children }) {
 
     await conn.connect()
     return conn
-  }, [])
+  }, [refreshOffers])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -117,6 +148,29 @@ export function DriverProvider({ children }) {
     void ensureRealtime()
     void refreshSummary()
   }, [isAuthenticated, ensureRealtime, refreshSummary])
+
+  /* ── Offer polling ───────────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!isAuthenticated || !online || trip) {
+      if (!online) setOffer(null)
+      return undefined
+    }
+    void refreshOffers()
+    const timer = setInterval(() => void refreshOffers(), 2500)
+    return () => clearInterval(timer)
+  }, [isAuthenticated, online, trip, refreshOffers])
+
+  /* ── Expire the offer card when its 20s window closes ─────────────────── */
+  useEffect(() => {
+    if (!offer?.expiresAt) return undefined
+    const ms = new Date(offer.expiresAt).getTime() - Date.now()
+    if (ms <= 0) {
+      setOffer(null)
+      return undefined
+    }
+    const timer = setTimeout(() => setOffer(null), ms)
+    return () => clearTimeout(timer)
+  }, [offer])
 
   /* ── Resume an in-flight trip after a restart ────────────────────────── */
   useEffect(() => {
@@ -175,7 +229,12 @@ export function DriverProvider({ children }) {
         if (!accept) return null
 
         tripIdRef.current = accepted.id
-        setTrip(toRequest(accepted))
+        setTrip({
+          ...toRequest(accepted),
+          customer: pending.customer,
+          pickup: pending.pickup,
+          drop: pending.drop,
+        })
         const conn = await ensureRealtime()
         conn.subscribe(accepted.id)
         return toRequest(accepted)
@@ -230,11 +289,12 @@ export function DriverProvider({ children }) {
       completeTrip,
       clearTrip,
       refreshSummary,
+      refreshOffers,
     }),
     [
       online, busy, summary, offer, trip, connection,
       goOnline, respondToOffer, submitHandshake, sendTelemetry, completeTrip, clearTrip,
-      refreshSummary,
+      refreshSummary, refreshOffers,
     ],
   )
 

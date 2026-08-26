@@ -555,3 +555,73 @@ export async function getDriverSummary(driverId: string): Promise<DriverSummary>
   if (!rows[0]) throw notFound('DRIVER_NOT_FOUND', 'No driver profile')
   return rows[0]
 }
+
+export type PendingOffer = {
+  trip_id: string
+  expires_at: string
+  pickup: LatLng
+  drop: LatLng | null
+  pickup_address: string | null
+  drop_address: string | null
+  required_certification: string
+  speed_ceiling_kmh: number
+  estimated_distance_km: number | null
+  estimated_fare: number | null
+  driver_earnings_estimate: number | null
+  // Phase 1 rates drivers only (driver_ratings) — there is no customer
+  // rating to show on the offer card.
+  customer: { name: string | null }
+}
+
+/**
+ * Offers a driver can still accept.
+ *
+ * A driver is not a trip participant until they accept — `trips.driver_id` is
+ * NULL while the offer is pending — so they cannot SUBSCRIBE to the trip
+ * channel that carries TRIP_OFFER, and `listTrips` (which filters on
+ * driver_id) cannot see it either. Without this endpoint a pending offer is
+ * unreachable from any client. The driver app polls it while ONLINE.
+ */
+export async function listPendingOffers(driverId: string): Promise<PendingOffer[]> {
+  const { rows } = await pool.query(
+    `SELECT o.trip_id,
+            o.expires_at,
+            t.pickup_lat::float8              AS pickup_lat,
+            t.pickup_lng::float8              AS pickup_lng,
+            t.drop_lat::float8                AS drop_lat,
+            t.drop_lng::float8                AS drop_lng,
+            t.pickup_address,
+            t.drop_address,
+            t.required_certification,
+            t.speed_ceiling_kmh,
+            t.estimated_distance_km::float8   AS estimated_distance_km,
+            t.estimated_fare::float8          AS estimated_fare,
+            u.full_name                       AS customer_name
+       FROM trip_offers o
+       JOIN trips t  ON t.id = o.trip_id
+       JOIN users u  ON u.id = t.customer_id
+      WHERE o.driver_id = $1
+        AND o.status = 'PENDING'
+        AND o.expires_at > now()
+        AND t.status = 'MATCHED'
+      ORDER BY o.sent_at DESC`,
+    [driverId],
+  )
+
+  return rows.map((r) => ({
+    trip_id: r.trip_id,
+    expires_at: new Date(r.expires_at).toISOString(),
+    pickup: { lat: r.pickup_lat, lng: r.pickup_lng },
+    drop: r.drop_lat === null ? null : { lat: r.drop_lat, lng: r.drop_lng },
+    pickup_address: r.pickup_address,
+    drop_address: r.drop_address,
+    required_certification: r.required_certification,
+    speed_ceiling_kmh: r.speed_ceiling_kmh,
+    estimated_distance_km: r.estimated_distance_km,
+    estimated_fare: r.estimated_fare,
+    // The same 80% split computeFare() applies, so the driver sees take-home.
+    driver_earnings_estimate:
+      r.estimated_fare === null ? null : Math.round(r.estimated_fare * 0.8 * 100) / 100,
+    customer: { name: r.customer_name },
+  }))
+}

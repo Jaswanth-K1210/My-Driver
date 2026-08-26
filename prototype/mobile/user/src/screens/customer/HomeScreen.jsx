@@ -3,7 +3,7 @@ import { Pressable, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Slider from '@react-native-community/slider'
 import { Bell, ChevronDown, Gauge, MapPin, Navigation, Search } from 'lucide-react-native'
-import { CUSTOMER, DROPS, PICKUP, SKILLS, VISION_MODES } from '../../data/mock'
+import { CUSTOMER, DROPS, PICKUP, SKILLS } from '../../data/mock'
 import { useTrip } from '../../context/TripContext'
 import DemoBadge from '../../components/DemoBadge'
 import { clamp, formatINR } from '../../lib/utils'
@@ -237,40 +237,6 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
             Breaches alert you, your guardians and the Safety Desk instantly.
           </Text>
         </Card>
-
-        <View>
-          <SectionLabel>VisionCam mode</SectionLabel>
-          <View style={{ flexDirection: 'row', gap: space.sm }}>
-            {VISION_MODES.map((mode) => {
-              const selected = config.visionMode === mode.id
-              return (
-                <Pressable
-                  key={mode.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => onChange({ ...config, visionMode: mode.id })}
-                  style={{
-                    flex: 1,
-                    alignItems: 'center',
-                    borderRadius: radius.md,
-                    borderWidth: 1,
-                    borderColor: selected ? colors.red : colors.border,
-                    backgroundColor: selected ? colors.redSoft : colors.surface,
-                    padding: 10,
-                  }}
-                >
-                  <Text style={{ ...type.body, color: selected ? colors.redPressed : colors.text }}>
-                    Mode {mode.id}
-                  </Text>
-                  <Text style={{ ...type.micro, color: colors.textMuted }}>{mode.name}</Text>
-                </Pressable>
-              )
-            })}
-          </View>
-          <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 6 }}>
-            {VISION_MODES.find((m) => m.id === config.visionMode)?.desc} · sealed into Trip Vault
-          </Text>
-        </View>
 
         <Card>
           <SectionLabel>Fare estimate</SectionLabel>

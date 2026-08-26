@@ -11,35 +11,58 @@ import {
   ScrollView,
 } from 'react-native';
 import { colors, radius } from '../../theme/tokens';
+import { useAuth } from '../../context/AuthContext';
+import { GOOGLE_ENABLED } from '../../lib/config';
+import { toE164, isValidLocal } from '../../lib/phone';
 
 export default function LoginScreen({ navigation }) {
-  const [method, setMethod] = useState('google');
+  const { requestOtp, verifyOtp } = useAuth();
+  // Phone OTP is the working path; Google needs an OAuth client ID.
+  const [method, setMethod] = useState(GOOGLE_ENABLED ? 'google' : 'phone');
+  const [loading, setLoading] = useState(false);
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [otpSent, setOtpSent] = useState(false);
 
   const handleGoogleSignIn = useCallback(() => {
-    Alert.alert('Google Sign In', 'Google Sign In would open here.', [
-      { text: 'OK', onPress: () => navigation.replace('Main') },
-    ]);
-  }, [navigation]);
+    Alert.alert(
+      'Google sign-in not configured',
+      "Set EXPO_PUBLIC_GOOGLE_CLIENT_ID (and add the same ID to the backend's GOOGLE_CLIENT_IDS) to enable this. Use your mobile number in the meantime.",
+    );
+  }, []);
 
-  const handleSendOtp = useCallback(() => {
-    if (phone.length < 10) {
-      Alert.alert('Invalid Number', 'Please enter a valid phone number.');
+  const handleSendOtp = useCallback(async () => {
+    if (!isValidLocal(phone)) {
+      Alert.alert('Invalid Number', 'Please enter a valid 10-digit mobile number.');
       return;
     }
-    Alert.alert('OTP Sent', 'A verification code has been sent to your phone.');
-    setOtpSent(true);
-  }, [phone]);
+    setLoading(true);
+    try {
+      await requestOtp(toE164(phone));
+      setOtpSent(true);
+      Alert.alert('OTP Sent', 'A verification code has been sent to your phone.');
+    } catch (err) {
+      Alert.alert('Could not send code', err?.message ?? 'Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [phone, requestOtp]);
 
-  const handleVerifyOtp = useCallback(() => {
+  const handleVerifyOtp = useCallback(async () => {
     if (otp.length !== 6) {
       Alert.alert('Invalid OTP', 'Please enter the 6-digit code.');
       return;
     }
-    navigation.replace('Main');
-  }, [otp, navigation]);
+    setLoading(true);
+    try {
+      await verifyOtp(toE164(phone), otp);
+      navigation.replace('Main');
+    } catch (err) {
+      Alert.alert('Verification failed', err?.message ?? 'That code is not valid.');
+    } finally {
+      setLoading(false);
+    }
+  }, [otp, phone, verifyOtp, navigation]);
 
   return (
     <KeyboardAvoidingView
@@ -112,11 +135,12 @@ export default function LoginScreen({ navigation }) {
                   />
                 </View>
                 <TouchableOpacity
-                  style={styles.primaryBtn}
+                  style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
                   onPress={handleSendOtp}
+                  disabled={loading}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.primaryBtnText}>Send OTP</Text>
+                  <Text style={styles.primaryBtnText}>{loading ? 'Sending…' : 'Send OTP'}</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -134,11 +158,12 @@ export default function LoginScreen({ navigation }) {
                   textAlign="center"
                 />
                 <TouchableOpacity
-                  style={styles.primaryBtn}
+                  style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
                   onPress={handleVerifyOtp}
+                  disabled={loading}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.primaryBtnText}>Verify</Text>
+                  <Text style={styles.primaryBtnText}>{loading ? 'Verifying…' : 'Verify'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.linkBtn}
@@ -348,6 +373,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     shadowColor: colors.red,
     shadowOffset: { width: 0, height: 2 },
+  primaryBtnDisabled: {
+    opacity: 0.6,
+  },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 3,

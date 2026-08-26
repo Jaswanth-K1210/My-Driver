@@ -18,7 +18,6 @@ const DEFAULT_CONFIG = {
   packageId: 'h4',
   skillId: 'MD-Standard',
   ceiling: 60,
-  visionMode: 'R',
 }
 
 /**

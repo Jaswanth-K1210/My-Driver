@@ -379,6 +379,17 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
 
       summary: () => request('/v1/driver/summary'),
 
+      /**
+       * Offers this driver can still accept.
+       *
+       * TRIP_OFFER is published to the *trip* channel, but a driver is not a
+       * trip participant until they accept — trips.driver_id stays NULL while
+       * the offer is pending — so the gateway refuses their SUBSCRIBE and the
+       * frame never reaches them. GET /v1/trips filters on driver_id too.
+       * Polling this is the only way a pending offer reaches the driver app.
+       */
+      offers: () => request('/v1/driver/offers'),
+
       respondToOffer: (tripId, accept) =>
         request(`/v1/trips/${tripId}/offer/respond`, { method: 'POST', body: { accept } }),
 

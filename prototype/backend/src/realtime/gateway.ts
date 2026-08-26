@@ -11,6 +11,10 @@ import { getHub } from './hub.js'
 import { parseClientFrame, type ServerFrame } from './protocol.js'
 import { consumeTicket } from './ticket.js'
 
+/** Live count of open sockets on THIS instance. */
+let openSockets = 0
+export const openSocketCount = (): number => openSockets
+
 export const HEARTBEAT_INTERVAL_MS = 30_000
 export const MAX_MISSED_PONGS = 2
 export const MAX_FRAMES_PER_SECOND = 1
@@ -83,7 +87,10 @@ export async function registerRealtimeGateway(app: FastifyInstance): Promise<voi
       })
     })
 
+    openSockets++
+
     socket.on('close', () => {
+      openSockets--
       if (heartbeat) clearInterval(heartbeat)
       if (conn) {
         for (const tripId of conn.subscriptions) void hub.unregister(tripId, socket)

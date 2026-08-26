@@ -18,6 +18,7 @@ import {
   getDriverSummary,
   getTripForParticipant,
   issueHandshakeOtpForCustomer,
+  listPendingOffers,
   listTrips,
   rateTrip,
 } from './service.js'
@@ -382,6 +383,42 @@ export function registerTripRoutes(app: FastifyInstance): void {
       },
     },
     async (request) => getDriverSummary(request.auth!.userId),
+  )
+
+  /**
+   * Offers this driver can still accept.
+   *
+   * TRIP_OFFER is published to the trip channel, but a driver is not a trip
+   * participant until they accept (trips.driver_id is NULL while pending), so
+   * they cannot subscribe to it and GET /v1/trips cannot see it either. The
+   * driver app polls this while ONLINE.
+   */
+  r.get(
+    '/v1/driver/offers',
+    {
+      onRequest: [requireAuth, requireRole('DRIVER')],
+      schema: {
+        response: {
+          200: z.array(
+            z.object({
+              trip_id: z.string().uuid(),
+              expires_at: z.string(),
+              pickup: LatLngSchema,
+              drop: LatLngSchema.nullable(),
+              pickup_address: z.string().nullable(),
+              drop_address: z.string().nullable(),
+              required_certification: z.string(),
+              speed_ceiling_kmh: z.number().int(),
+              estimated_distance_km: z.number().nullable(),
+              estimated_fare: z.number().nullable(),
+              driver_earnings_estimate: z.number().nullable(),
+              customer: z.object({ name: z.string().nullable() }),
+            }),
+          ),
+        },
+      },
+    },
+    async (request) => listPendingOffers(request.auth!.userId),
   )
 
   r.post(

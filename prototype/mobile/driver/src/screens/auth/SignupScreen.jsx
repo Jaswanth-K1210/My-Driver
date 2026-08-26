@@ -11,9 +11,13 @@ import {
   ScrollView,
 } from 'react-native';
 import { colors, radius } from '../../theme/tokens';
+import { useAuth } from '../../context/AuthContext';
+import { GOOGLE_ENABLED } from '../../lib/config';
+import { toE164, isValidLocal } from '../../lib/phone';
 
 export default function SignupScreen({ navigation }) {
-  const { requestOtp, verifyOtp } = useAuth()
+  const { requestOtp, verifyOtp } = useAuth();
+  const [loading, setLoading] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -22,27 +26,48 @@ export default function SignupScreen({ navigation }) {
   const [otpSent, setOtpSent] = useState(false);
 
   const handleGoogleSignUp = useCallback(() => {
-    Alert.alert('Google Sign Up', 'Google Sign Up would open here.', [
-      { text: 'OK', onPress: () => navigation.replace('Main') },
-    ]);
-  }, [navigation]);
+    Alert.alert(
+      'Google sign-up not configured',
+      "Set EXPO_PUBLIC_GOOGLE_CLIENT_ID (and add the same ID to the backend's GOOGLE_CLIENT_IDS) to enable this. Use your mobile number in the meantime.",
+    );
+  }, []);
 
-  const handleSendOtp = useCallback(() => {
-    if (phone.length < 10) {
-      Alert.alert('Invalid Number', 'Please enter a valid phone number.');
+  const handleSendOtp = useCallback(async () => {
+    if (!name.trim()) {
+      Alert.alert('Invalid Name', 'Please enter your full name.');
       return;
     }
-    Alert.alert('OTP Sent', 'A verification code has been sent to your phone.');
-    setOtpSent(true);
-  }, [phone]);
+    if (!isValidLocal(phone)) {
+      Alert.alert('Invalid Number', 'Please enter a valid 10-digit mobile number.');
+      return;
+    }
+    setLoading(true);
+    try {
+      await requestOtp(toE164(phone));
+      setOtpSent(true);
+      Alert.alert('OTP Sent', 'A verification code has been sent to your phone.');
+    } catch (err) {
+      Alert.alert('Could not send code', err?.message ?? 'Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, [name, phone, requestOtp]);
 
-  const handleVerifyOtp = useCallback(() => {
+  const handleVerifyOtp = useCallback(async () => {
     if (otp.length !== 6) {
       Alert.alert('Invalid OTP', 'Please enter the 6-digit code.');
       return;
     }
-    navigation.replace('Main');
-  }, [otp, navigation]);
+    setLoading(true);
+    try {
+      await verifyOtp(toE164(phone), otp, { name: name.trim(), email: email.trim() });
+      navigation.replace('Main');
+    } catch (err) {
+      Alert.alert('Verification failed', err?.message ?? 'That code is not valid.');
+    } finally {
+      setLoading(false);
+    }
+  }, [otp, phone, name, email, verifyOtp, navigation]);
 
   return (
     <KeyboardAvoidingView
@@ -138,11 +163,12 @@ export default function SignupScreen({ navigation }) {
           <View style={styles.body}>
             {!otpSent ? (
               <TouchableOpacity
-                style={styles.primaryBtn}
+                style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
                 onPress={handleSendOtp}
+                disabled={loading}
                 activeOpacity={0.7}
               >
-                <Text style={styles.primaryBtnText}>Send OTP</Text>
+                <Text style={styles.primaryBtnText}>{loading ? 'Sending…' : 'Send OTP'}</Text>
               </TouchableOpacity>
             ) : (
               <>
@@ -158,11 +184,12 @@ export default function SignupScreen({ navigation }) {
                   textAlign="center"
                 />
                 <TouchableOpacity
-                  style={styles.primaryBtn}
+                  style={[styles.primaryBtn, loading && styles.primaryBtnDisabled]}
                   onPress={handleVerifyOtp}
+                  disabled={loading}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.primaryBtnText}>Verify & Create Account</Text>
+                  <Text style={styles.primaryBtnText}>{loading ? 'Verifying…' : 'Verify & Create Account'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.linkBtn}
@@ -385,6 +412,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     shadowColor: colors.red,
     shadowOffset: { width: 0, height: 2 },
+  primaryBtnDisabled: {
+    opacity: 0.6,
+  },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 3,

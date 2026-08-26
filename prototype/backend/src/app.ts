@@ -13,7 +13,7 @@ import { gauge, renderMetrics } from './lib/metrics.js'
 import { registerAuthRoutes } from './modules/auth/routes.js'
 import { registerTripRoutes } from './modules/trips/routes.js'
 import { registerUserRoutes } from './modules/users/routes.js'
-import { registerRealtimeGateway } from './realtime/gateway.js'
+import { openSocketCount, registerRealtimeGateway } from './realtime/gateway.js'
 import { getHub } from './realtime/hub.js'
 import { redis } from './redis/client.js'
 import { getTelemetryWriter } from './telemetry/batch-writer.js'
@@ -86,10 +86,18 @@ export async function buildApp(): Promise<FastifyInstance> {
   return app
 }
 
-gauge('mydriver_ws_connections', () => getHub().localSocketCount())
+// Every open socket, subscribed or not. The hub only knows about sockets that
+// joined a trip room, which is a different (and much smaller) number.
+gauge('mydriver_ws_connections', () => openSocketCount())
+gauge('mydriver_ws_subscribed', () => getHub().localSocketCount())
 gauge('mydriver_telemetry_buffer_depth', () => getTelemetryWriter().depth)
 gauge('mydriver_telemetry_dropped_total', () => getTelemetryWriter().dropped)
 gauge('mydriver_telemetry_written_total', () => getTelemetryWriter().written)
+// Reported by the process about itself: far more reliable than an external
+// sampler, and the number an operator actually wants next to the socket count.
+gauge('mydriver_process_rss_bytes', () => process.memoryUsage.rss())
+gauge('mydriver_process_heap_used_bytes', () => process.memoryUsage().heapUsed)
+
 gauge('mydriver_db_pool_total', () => pool.totalCount)
 gauge('mydriver_db_pool_idle', () => pool.idleCount)
 gauge('mydriver_db_pool_waiting', () => pool.waitingCount)
