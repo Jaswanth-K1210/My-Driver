@@ -3,6 +3,7 @@ import { notFound } from '../../lib/errors.js'
 import { getVoiceProvider } from '../../providers/voice/index.js'
 import type { Role } from '../auth/otp.js'
 import { getEscalation, notifyGuardians } from '../escalation/service.js'
+import { evidenceBundle } from '../vault/service.js'
 import type { EscalationLevel } from '../escalation/levels.js'
 
 /**
@@ -154,10 +155,10 @@ export async function dispatchGuardians(
 /**
  * L5 evidence release.
  *
- * The packet is assembled from what Phase 1 already records: the immutable trip
- * ledger and the telemetry track. The 8-point inspection photos and the signed
- * certificate belong to the Trip Vault (Phase 3) and are listed as pending
- * rather than silently omitted.
+ * The packet is assembled from the immutable trip ledger, the telemetry track
+ * and — since Phase 3 — the Trip Vault's watermarked inspection photos and
+ * signed certificate. `pending` now lists only what genuinely is not there for
+ * this particular trip, rather than a fixed apology.
  */
 export async function releaseEvidence(
   escalationId: string,
@@ -169,6 +170,8 @@ export async function releaseEvidence(
   released_to: string
   ledger_entries: number
   telemetry_points: number
+  inspection_photos: number
+  certificate: { cert_id: string; sha256: string } | null
   pending: string[]
 }> {
   const escalation = await getEscalation(escalationId)
@@ -182,12 +185,20 @@ export async function releaseEvidence(
     ]),
   ])
 
+  const vault = await evidenceBundle(escalation.trip_id)
+
+  const pending: string[] = []
+  if (vault.inspection_photos === 0) pending.push('inspection_photos')
+  if (!vault.certificate) pending.push('signed_certificate')
+
   const packet = {
     trip_id: escalation.trip_id,
     released_to: recipient,
     ledger_entries: Number(ledger[0]!.n),
     telemetry_points: Number(telemetry[0]!.n),
-    pending: ['inspection_photos', 'signed_certificate'],
+    inspection_photos: vault.inspection_photos,
+    certificate: vault.certificate,
+    pending,
   }
 
   await pool.query(

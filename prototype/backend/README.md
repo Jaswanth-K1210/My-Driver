@@ -1,12 +1,18 @@
-# MyDriver Unified Backend — Phases 1 & 2
+# MyDriver Unified Backend — complete
 
 One Fastify + TypeScript service that all four MyDriver clients talk to:
 `mobile/user`, `mobile/driver`, `website/` and `app/`.
 
-**Phase 1** — Auth, the Trip lifecycle, Realtime telemetry.
-**Phase 2** — Dual-GPS integrity, the L0–L5 escalation engine, guardian links,
-silent SOS and the Safety Desk API.
-**Phase 3** — the Trip Vault. Not built; see "Not built yet" below.
+**All three phases are built.**
+
+| | | |
+| --- | --- | --- |
+| **Phase 1** | Auth, the Trip lifecycle, Realtime telemetry | ✅ |
+| **Phase 2** | Dual-GPS integrity, L0–L5 escalation, guardian links, silent SOS, Safety Desk API | ✅ |
+| **Phase 3** | Trip Vault — 8-point inspection, watermarking, immutable archival, PDF certificates | ✅ |
+
+What remains is listed honestly under "Not built yet" — chiefly the Safety Desk
+**web client** (the API is done) and wiring the apps to Phases 2 and 3.
 
 Design: `docs/superpowers/specs/2026-08-25-mydriver-unified-backend-design.md`
 Plan: `docs/backend-implementation-plan.md`
@@ -78,6 +84,10 @@ services mechanical.
 | POST | `/v1/admin/escalations/:id/acknowledge` · `/promote` · `/resolve` | Safety Desk |
 | POST | `/v1/admin/escalations/:id/call` · `/notify-guardians` | Safety Desk |
 | POST | `/v1/admin/escalations/:id/release-evidence` | OPS_MANAGER, SUPER_ADMIN |
+| POST | `/v1/trips/:id/inspections/:phase` | DRIVER |
+| POST | `/v1/trips/:id/inspections/:phase/photos` · `/complete` | DRIVER |
+| GET | `/v1/trips/:id/inspections` · `/v1/trips/:id/vault/photos` | participant |
+| POST | `/v1/trips/:id/certificate` | participant |
 | GET | `/health` · `/ready` · `/metrics` | — |
 
 Errors are always `{ "error": { "code", "message", "details"? } }`.
@@ -155,6 +165,39 @@ npm run grant-role -- +919000000001 SAFETY_DESK_AGENT
 
 Every grant is written to the append-only `audit_log`.
 
+## Phase 3 — the Trip Vault
+
+### 8-point inspection
+
+`FRONT, REAR, LEFT, RIGHT, DASHBOARD, SEATS, FUEL_ODOMETER, BOOT`, captured
+`PRE` and `POST` trip. A zone can be photographed once; an inspection seals only
+when all eight are present, because a partial inspection evidences nothing.
+Once sealed it accepts nothing further, and `inspection_photos` is append-only
+at the database level.
+
+### Watermarking is real, not metadata
+
+Each upload is re-encoded with the trip reference, zone, IST timestamp and
+coordinates **burned into the pixels** (via `sharp`), then hashed. The stored
+SHA-256 is of the *watermarked* bytes, so altering either the photograph or its
+caption changes the digest — and the digest is what the certificate publishes.
+A unit test verifies the burn-in by measuring that the caption band is
+measurably darker than the original image, rather than trusting a flag.
+
+### Trip certificate
+
+`POST /v1/trips/:id/certificate` renders a real PDF (via `pdfkit`) covering the
+route, parties, journey, fare, telemetry and ledger counts, any safety events,
+and the SHA-256 of every inspection photo. It states plainly what it evidences
+and what it does not. Certificates are **immutable**: re-requesting returns the
+document already issued, and the table is append-only.
+
+### Evidence release is now complete
+
+The L5 packet includes the vault contents. `pending` used to be a fixed
+apology; it now lists only what is genuinely absent for that particular trip,
+and is empty when the vault is populated.
+
 ## Dashcam / VisionCam
 
 **Excluded by design.** There is no `mode` column, no video endpoint, and no
@@ -223,7 +266,7 @@ unvalidated on the CPU axis.
 
 ## Testing
 
-222 tests: pure-function unit tests plus integration tests that run against real
+255 tests: pure-function unit tests plus integration tests that run against real
 Postgres and Redis via `fastify.inject`, and realtime tests that drive a real
 `ws` client against a listening server.
 

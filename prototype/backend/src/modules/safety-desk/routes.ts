@@ -391,6 +391,10 @@ export function registerSafetyRoutes(app: FastifyInstance): void {
             released_to: z.string(),
             ledger_entries: z.number().int(),
             telemetry_points: z.number().int(),
+            inspection_photos: z.number().int(),
+            certificate: z
+              .object({ cert_id: z.string(), sha256: z.string() })
+              .nullable(),
             pending: z.array(z.string()),
           }),
         },

@@ -230,6 +230,41 @@ try {
     `frames seen: ${[...new Set(seen)].join(', ') || 'none'}`)
   check('customer receives TRIP_STATE_CHANGED frames', seen.includes('TRIP_STATE_CHANGED'))
 
+  /* ── Phase 3: 8-point inspection ───────────────────────────────────── */
+  const ZONES = ['FRONT', 'REAR', 'LEFT', 'RIGHT', 'DASHBOARD', 'SEATS', 'FUEL_ODOMETER', 'BOOT']
+  // A 1x1 JPEG is enough: the server watermarks whatever it is given.
+  const TINY_JPEG =
+    '/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q=='
+
+  const started = await driver.driver.startInspection(booked.id, 'PRE')
+  check('inspection starts with all 8 zones outstanding', started.remaining.length === 8)
+
+  let lastPhoto
+  for (const zone of ZONES) {
+    lastPhoto = await driver.driver.capturePhoto(booked.id, 'PRE', zone, TINY_JPEG, HITEC)
+  }
+  check('every zone is captured', lastPhoto.complete === true)
+  check('each photo returns a content digest', /^[0-9a-f]{64}$/.test(lastPhoto.sha256))
+
+  let partialRejected = false
+  try {
+    await driver.driver.capturePhoto(booked.id, 'PRE', 'FRONT', TINY_JPEG, HITEC)
+  } catch (err) {
+    partialRejected = err.code === 'ZONE_ALREADY_CAPTURED'
+  }
+  check('a zone cannot be photographed twice', partialRejected)
+
+  const sealed = await driver.driver.completeInspection(booked.id, 'PRE')
+  check('the inspection seals with 8 photos', sealed.photos === 8)
+
+  const record = await customer.trips.inspections(booked.id)
+  check('the customer can read the sealed record',
+    record.phases.some((p) => p.phase === 'PRE' && p.photos.length === 8))
+
+  const photos = await customer.trips.vaultPhotos(booked.id)
+  check('vault photos come back with signed URLs',
+    photos.length === 8 && photos.every((p) => Boolean(p.url)))
+
   /* ── Completion ────────────────────────────────────────────────────── */
   const done = await driver.driver.complete(booked.id)
   check('trip completes', done.status === 'COMPLETED')
@@ -244,6 +279,15 @@ try {
   check('driver earnings counted today', summaryAfter.earnings_today > 0,
     `earnings_today=${summaryAfter.earnings_today}`)
   check('driver returns to ONLINE', summaryAfter.availability === 'ONLINE')
+
+  /* ── Phase 3: certificate ──────────────────────────────────────────── */
+  const cert = await customer.trips.certificate(booked.id)
+  check('a trip certificate is issued', /^MV-\d{4}-[A-Z0-9]{6}$/.test(cert.cert_id))
+  check('the certificate carries a content digest', /^[0-9a-f]{64}$/.test(cert.sha256))
+  check('the certificate is downloadable', Boolean(cert.url))
+
+  const reissued = await customer.trips.certificate(booked.id)
+  check('the certificate is immutable', reissued.sha256 === cert.sha256)
 
   /* ── Phase 2: guardian link ────────────────────────────────────────── */
   // Re-book, because the trip above is finished and links die with the trip.

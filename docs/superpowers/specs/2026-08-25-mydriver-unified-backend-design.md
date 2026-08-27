@@ -504,8 +504,9 @@ Deferred, with their seams built:
   ladder was undefined in the source documents; the definition used is recorded in
   `prototype/backend/README.md` and implemented in `src/modules/escalation/levels.ts`.
   No Safety Desk **web client** was built — API only.
-- **Phase 3** — Trip Vault: 8-point inspection capture, watermarking, immutable archival,
-  exportable trip certificate PDFs, evidence release.
+- **Phase 3 — SHIPPED (2026-08-28).** Trip Vault: 8-point inspection capture, watermarking
+  burned into the pixels, immutable archival with tamper-evident SHA-256 digests, exportable
+  trip certificate PDFs, and the completed L5 evidence release.
 - **Unscheduled** — Agent field-recruitment onboarding API, corporate accounts, financial
   reconciliation, payment gateway and driver settlement, VisionCam (permanently excluded
   from this service).

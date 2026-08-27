@@ -418,6 +418,15 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
       revokeGuardianLink: (id) =>
         request(`/v1/trips/${id}/guardian-link`, { method: 'DELETE' }),
 
+      /** Trip Vault: read the sealed inspection record. */
+      inspections: (id) => request(`/v1/trips/${id}/inspections`),
+
+      /** Signed, short-lived URLs for the watermarked inspection photos. */
+      vaultPhotos: (id) => request(`/v1/trips/${id}/vault/photos`),
+
+      /** Issues (or returns) the immutable PDF trip certificate. */
+      certificate: (id) => request(`/v1/trips/${id}/certificate`, { method: 'POST' }),
+
       rate: (id, rating, comment) =>
         request(`/v1/trips/${id}/rate`, {
           method: 'POST',
@@ -459,6 +468,29 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
         }),
 
       complete: (tripId) => request(`/v1/trips/${tripId}/complete`, { method: 'POST' }),
+
+      /* ── 8-point inspection ─────────────────────────────────────────── */
+
+      startInspection: (tripId, phase) =>
+        request(`/v1/trips/${tripId}/inspections/${phase}`, { method: 'POST' }),
+
+      /**
+       * Uploads one zone. The server burns the trip reference, zone, timestamp
+       * and coordinates into the image and returns its SHA-256.
+       */
+      capturePhoto: (tripId, phase, zone, photoBase64, coords) =>
+        request(`/v1/trips/${tripId}/inspections/${phase}/photos`, {
+          method: 'POST',
+          body: {
+            zone,
+            photo_base64: photoBase64,
+            ...(coords ? { lat: coords.lat, lng: coords.lng } : {}),
+          },
+        }),
+
+      /** Seals the inspection. Rejected unless all 8 zones are captured. */
+      completeInspection: (tripId, phase) =>
+        request(`/v1/trips/${tripId}/inspections/${phase}/complete`, { method: 'POST' }),
     },
 
     realtime: createRealtime,

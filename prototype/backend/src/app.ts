@@ -15,6 +15,7 @@ import { registerTripRoutes } from './modules/trips/routes.js'
 import { getIntegrityEngine } from './modules/integrity/engine.js'
 import { registerSafetyRoutes } from './modules/safety-desk/routes.js'
 import { registerUserRoutes } from './modules/users/routes.js'
+import { registerVaultRoutes } from './modules/vault/routes.js'
 import { openSocketCount, registerRealtimeGateway } from './realtime/gateway.js'
 import { getHub } from './realtime/hub.js'
 import { redis } from './redis/client.js'
@@ -60,6 +61,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerUserRoutes(app)
   registerTripRoutes(app)
   registerSafetyRoutes(app)
+  registerVaultRoutes(app)
 
   // "Is this process alive" — for the container runtime.
   app.get('/health', async () => ({ status: 'ok', service: 'mydriver-backend' }))

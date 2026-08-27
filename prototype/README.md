@@ -56,13 +56,13 @@ editing. Override with `EXPO_PUBLIC_API_URL` if you need a tunnel.
 ## Verifying the whole stack
 
 ```bash
-cd prototype/backend && npm test          # 222 tests
-node prototype/shared/smoke-test.mjs      # 54 checks, end to end through the real client
+cd prototype/backend && npm test          # 255 tests
+node prototype/shared/smoke-test.mjs      # 65 checks, end to end through the real client
 ```
 
 The smoke test drives login → booking → dispatch → handshake → telemetry →
-completion → rating → guardian link → silent SOS → Safety Desk triage →
-resolution → history, using the same client the apps use.
+completion → 8-point inspection → certificate → guardian link → silent SOS →
+Safety Desk triage → resolution → history, using the same client the apps use.
 
 ## Google sign-in
 
@@ -88,20 +88,26 @@ completion, ratings, guardians and trip history.
 These screens carry a visible **Demo** badge because their backend is not built
 yet — nothing is deleted, and Phase 2/3 drops in behind them:
 
-| Feature | Waiting on |
-| ------- | ---------- |
-| 8-point inspection capture | Trip Vault — Phase 3 |
-| Trip certificate export | Trip Vault — Phase 3 |
-| Silent SOS, guardian link dispatch | **Backend built (Phase 2)** — clients not wired yet |
-| Speed-breach / anomaly alerts | **Backend built (Phase 2)** — clients not wired yet |
+| Feature | Status |
+| ------- | ------ |
+| 8-point inspection capture | **Backend built (Phase 3)** — client not wired yet |
+| Trip certificate export | **Backend built (Phase 3)** — client not wired yet |
+| Silent SOS, guardian link dispatch | **Backend built (Phase 2)** — client not wired yet |
+| Speed-breach / anomaly alerts | **Backend built (Phase 2)** — client not wired yet |
 | VisionCam mode picker | **Permanently excluded** from this backend |
 
-Phase 2 shipped the safety subsystem on the backend: dual-GPS integrity
-evaluation, the L0–L5 escalation ladder, guardian tracking links, silent SOS and
-the Safety Desk API. The shared client exposes all of it (`client.trips.sos`,
-`client.trips.guardianLink`, `client.track`, `client.admin.*`), but the app
-screens still run their local simulations, so those badges stay until the
-clients are wired.
+**The backend is complete — all three phases.** Phase 2 shipped dual-GPS
+integrity, the L0–L5 escalation ladder, guardian tracking links, silent SOS and
+the Safety Desk API. Phase 3 shipped the Trip Vault: the 8-point inspection with
+watermarks burned into the pixels, tamper-evident digests, and immutable PDF
+certificates.
+
+The shared client exposes all of it — `client.trips.sos`,
+`client.trips.guardianLink`, `client.track`, `client.trips.certificate`,
+`client.driver.startInspection`, `client.admin.*` — but the app screens still
+run their local simulations, so the Demo badges stay until the clients are
+wired. That is the remaining gap between what the system can do and what a user
+can reach.
 
 The VisionCam exclusion is enforced, not merely documented: the backend rejects
 a booking carrying a `mode` field rather than ignoring it.
