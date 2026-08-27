@@ -12,6 +12,8 @@ import { registerErrorHandler } from './lib/errors.js'
 import { gauge, renderMetrics } from './lib/metrics.js'
 import { registerAuthRoutes } from './modules/auth/routes.js'
 import { registerTripRoutes } from './modules/trips/routes.js'
+import { getIntegrityEngine } from './modules/integrity/engine.js'
+import { registerSafetyRoutes } from './modules/safety-desk/routes.js'
 import { registerUserRoutes } from './modules/users/routes.js'
 import { openSocketCount, registerRealtimeGateway } from './realtime/gateway.js'
 import { getHub } from './realtime/hub.js'
@@ -57,6 +59,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerAuthRoutes(app)
   registerUserRoutes(app)
   registerTripRoutes(app)
+  registerSafetyRoutes(app)
 
   // "Is this process alive" — for the container runtime.
   app.get('/health', async () => ({ status: 'ok', service: 'mydriver-backend' }))
@@ -95,6 +98,8 @@ gauge('mydriver_telemetry_dropped_total', () => getTelemetryWriter().dropped)
 gauge('mydriver_telemetry_written_total', () => getTelemetryWriter().written)
 // Reported by the process about itself: far more reliable than an external
 // sampler, and the number an operator actually wants next to the socket count.
+gauge('mydriver_integrity_tracked_trips', () => getIntegrityEngine().trackedTrips)
+
 gauge('mydriver_process_rss_bytes', () => process.memoryUsage.rss())
 gauge('mydriver_process_heap_used_bytes', () => process.memoryUsage().heapUsed)
 

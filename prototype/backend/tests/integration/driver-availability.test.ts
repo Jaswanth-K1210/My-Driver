@@ -64,6 +64,27 @@ describe('driver availability and dispatchability', () => {
     expect(await findNearbyDrivers(HITEC, 5, 'MD-Standard', 10)).not.toContain(driverId)
   })
 
+  it('keeps a driver dispatchable across consecutive trips', async () => {
+    // Regression: going ON_TRIP used to drop the driver from the geo index, and
+    // completing a trip restores ONLINE without a position - so every driver
+    // became permanently undispatchable after their very first ride.
+    await setAvailability({ availability: 'ONLINE', location: HITEC })
+    expect(await findNearbyDrivers(HITEC, 5, 'MD-Standard', 10)).toContain(driverId)
+
+    await setAvailability({ availability: 'ON_TRIP' })
+    await setAvailability({ availability: 'ONLINE' })
+
+    expect(await findNearbyDrivers(HITEC, 5, 'MD-Standard', 10)).toContain(driverId)
+  })
+
+  it('is not offered a second trip while already on one', async () => {
+    await setAvailability({ availability: 'ONLINE', location: HITEC })
+    await setAvailability({ availability: 'ON_TRIP' })
+
+    // Still in the geo index, but SQL filters them out as a candidate.
+    expect(await findNearbyDrivers(HITEC, 5, 'MD-Standard', 10)).not.toContain(driverId)
+  })
+
   it('rejects an unknown availability value', async () => {
     expect((await setAvailability({ availability: 'NAPPING' })).statusCode).toBe(400)
   })

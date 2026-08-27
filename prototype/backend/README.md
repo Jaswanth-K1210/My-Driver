@@ -1,11 +1,12 @@
-# MyDriver Unified Backend — Phase 1
+# MyDriver Unified Backend — Phases 1 & 2
 
 One Fastify + TypeScript service that all four MyDriver clients talk to:
 `mobile/user`, `mobile/driver`, `website/` and `app/`.
 
-**Phase 1 covers Auth, the Trip lifecycle, and Realtime telemetry.**
-Integrity evaluation, L0–L5 escalation and the Trip Vault are Phase 2 and 3 —
-see "Not built yet" below.
+**Phase 1** — Auth, the Trip lifecycle, Realtime telemetry.
+**Phase 2** — Dual-GPS integrity, the L0–L5 escalation engine, guardian links,
+silent SOS and the Safety Desk API.
+**Phase 3** — the Trip Vault. Not built; see "Not built yet" below.
 
 Design: `docs/superpowers/specs/2026-08-25-mydriver-unified-backend-design.md`
 Plan: `docs/backend-implementation-plan.md`
@@ -65,8 +66,18 @@ services mechanical.
 | POST | `/v1/trips/:id/handshake-otp` · `/v1/trips/:id/rate` | CUSTOMER |
 | POST | `/v1/trips/:id/offer/respond` · `/handshake` · `/complete` | DRIVER |
 | POST | `/v1/driver/availability` · GET `/v1/driver/summary` | DRIVER |
+| GET | `/v1/driver/offers` | DRIVER |
 | POST | `/v1/realtime/ticket` | any |
 | WS | `/v1/integrity?ticket=…` | any |
+| POST | `/v1/trips/:id/sos` | participant |
+| POST/DELETE | `/v1/trips/:id/guardian-link` | CUSTOMER |
+| GET | `/v1/track/:token` | **public** |
+| POST | `/v1/me/devices` | any |
+| GET | `/v1/admin/stats` · `/v1/admin/trips/active` · `/v1/admin/escalations` | Safety Desk |
+| GET | `/v1/admin/escalations/:id` | Safety Desk |
+| POST | `/v1/admin/escalations/:id/acknowledge` · `/promote` · `/resolve` | Safety Desk |
+| POST | `/v1/admin/escalations/:id/call` · `/notify-guardians` | Safety Desk |
+| POST | `/v1/admin/escalations/:id/release-evidence` | OPS_MANAGER, SUPER_ADMIN |
 | GET | `/health` · `/ready` · `/metrics` | — |
 
 Errors are always `{ "error": { "code", "message", "details"? } }`.
@@ -82,6 +93,67 @@ REQUESTED --match--> MATCHED --accept--> HANDSHAKE_PENDING --selfie+OTP--> IN_TR
 `canTransition()` is the single authority on legal moves. Every transition
 writes its `trip_events` row in the same transaction as the status update, and
 a database trigger makes `trip_events` physically append-only.
+
+## Phase 2 — the safety subsystem
+
+### The L0–L5 ladder
+
+The source specs reference L0–L5 throughout but never define it. This is the
+reading consistent with every concrete mention across the documents:
+
+| | Meaning | Raised by |
+| --- | --- | --- |
+| **L0** | Nominal | — |
+| **L1** | Automated anomaly; guardians notified, event logged | Integrity engine |
+| **L2** | Anomaly unacknowledged for 120 s; queued to the desk, **SLA clock starts** | Sweeper |
+| **L3** | Human agent engaged, direct contact attempted | Agent |
+| **L4** | Emergency — silent SOS or confirmed danger | Customer, driver, or agent |
+| **L5** | Law enforcement handoff, evidence packet released | OPS_MANAGER / SUPER_ADMIN |
+
+**Levels only ever rise.** Lowering one would let a mistaken all-clear bury a
+real emergency; the way out is to *resolve* the incident, which is a named,
+audited act. A trip carries at most one live incident — a second anomaly is more
+evidence about one situation, not a competing case. L3 and above mark the trip
+itself `ESCALATED`; resolving releases it back to `IN_TRIP`.
+
+The `<3 minutes from L2 to human agent contact` SLA from `admin_crm_spec.md` is
+enforced: `sla_deadline` is set at L2 and above, the queue sorts by urgency, and
+`mydriver_sla_met_total` / `mydriver_sla_missed_total` record the outcome.
+
+### Dual-GPS integrity
+
+Every instance runs an evaluator over the trips it holds telemetry for, on the
+documented 3-second cycle: within 150 m is verified; beyond 150 m for more than
+60 s raises `ROUTE_DEVIATION_EXCEEDED`. Speed against the customer's ceiling is
+judged from the driver stream alone.
+
+There is **no leader election** — two instances reaching the same conclusion is
+fine and deliberate, because that removes the single point of failure from the
+safety path. Duplicates are collapsed at the moment of raising by an atomic
+Redis claim, with a unique constraint on `anomalies` as the backstop.
+
+A missing customer stream is treated as *unevaluable*, never as a deviation: a
+passenger with a dead phone must not be reported as an abduction.
+
+### Guardian links
+
+`POST /v1/trips/:id/guardian-link` issues a signed, expiring, revocable token
+resolving to a **public** read-only view: position, speed against the ceiling,
+status, and the driver's *first name* and vehicle. No surnames, no phone
+numbers, no fare. Views are counted, so who watched a trip is auditable. The
+link dies automatically when the trip ends.
+
+### Provisioning a Safety Desk agent
+
+There is deliberately **no API** to grant a privileged role — that would be a
+privilege-escalation surface. The person signs in once by OTP, then an operator
+runs:
+
+```bash
+npm run grant-role -- +919000000001 SAFETY_DESK_AGENT
+```
+
+Every grant is written to the append-only `audit_log`.
 
 ## Dashcam / VisionCam
 
@@ -151,7 +223,7 @@ unvalidated on the CPU axis.
 
 ## Testing
 
-148 tests: pure-function unit tests plus integration tests that run against real
+222 tests: pure-function unit tests plus integration tests that run against real
 Postgres and Redis via `fastify.inject`, and realtime tests that drive a real
 `ws` client against a listening server.
 
@@ -176,8 +248,13 @@ archival, exportable trip certificates.
 Known gaps in Phase 1, stated rather than hidden:
 
 - **Push has no device-token storage**, so `getPushProvider().send()` cannot
-  reach a real device. Trip offers reach drivers over the WebSocket, which is
-  the path Phase 1 actually depends on.
+  reach a real device.
+- **`TRIP_OFFER` does not reach the offered driver over the WebSocket.** It is
+  published to the trip channel, but the gateway only admits trip participants
+  and `trips.driver_id` stays NULL until the offer is accepted — so the driver
+  cannot subscribe, and would not know the trip id if they could. Drivers
+  discover offers by polling `GET /v1/driver/offers` instead. The frame is
+  still published, so a future per-driver channel needs no client change.
 - **The `AGENT` role is grantable but has no endpoints.** The agent
   field-recruitment app is out of scope; the enum value exists so the schema
   does not change later.

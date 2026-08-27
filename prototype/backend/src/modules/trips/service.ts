@@ -6,6 +6,7 @@ import { estimateRoadDistanceKm, polylineDistanceKm, type LatLng } from '../../l
 import { peppered } from '../../lib/hash.js'
 import { getTelemetryWriter, readTripTrack } from '../../telemetry/batch-writer.js'
 import type { Role } from '../auth/otp.js'
+import { revokeLinksForEndedTrip } from '../guardian/service.js'
 import { broadcastStateChange } from './broadcast.js'
 import { computeFare } from './fare.js'
 import { setAvailability } from './geo-index.js'
@@ -362,6 +363,7 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
   }
 
   await setAvailability(driverId, 'ONLINE')
+  await revokeLinksForEndedTrip(tripId).catch(() => undefined)
   await broadcastStateChange(tripId, 'COMPLETED')
   return getTripForParticipant(tripId, driverId)
 }
@@ -407,6 +409,7 @@ export async function cancelTrip(
   }
 
   if (trip.driver_id) await setAvailability(trip.driver_id, 'ONLINE')
+  await revokeLinksForEndedTrip(tripId).catch(() => undefined)
   await broadcastStateChange(tripId, 'CANCELLED')
   return getTripForParticipant(tripId, userId)
 }

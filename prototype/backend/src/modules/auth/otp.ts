@@ -5,7 +5,12 @@ import { peppered, pepperedEquals } from '../../lib/hash.js'
 import { consumeQuota } from '../../lib/rate-limit.js'
 import { getSmsProvider } from '../../providers/sms/index.js'
 
-export type Role = 'CUSTOMER' | 'DRIVER' | 'AGENT' | 'ADMIN'
+// Re-exported so existing imports keep working; the definitions live in a
+// side-effect-free module (see roles.ts).
+import type { Role } from './roles.js'
+
+export { ROLES, DESK_ROLES } from './roles.js'
+export type { Role } from './roles.js'
 
 export const OTP_DIGITS = 6
 export const OTP_TTL_SECONDS = 300

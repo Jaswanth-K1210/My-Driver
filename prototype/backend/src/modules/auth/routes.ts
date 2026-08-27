@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { signInWithGoogle } from './google.js'
-import { requestOtp } from './otp.js'
+import { requestOtp, ROLES } from './otp.js'
 import { verifyOtp } from './service.js'
 import { revokeRefreshToken, rotateRefreshToken } from './tokens.js'
 
@@ -11,7 +11,7 @@ export const PhoneNumber = z
   .string()
   .regex(/^\+[1-9]\d{7,14}$/, 'must be E.164, e.g. +919876543210')
 
-export const RoleSchema = z.enum(['CUSTOMER', 'DRIVER', 'AGENT', 'ADMIN'])
+export const RoleSchema = z.enum(ROLES)
 
 const PublicUserSchema = z.object({
   id: z.string().uuid(),

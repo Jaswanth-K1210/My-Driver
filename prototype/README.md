@@ -56,12 +56,13 @@ editing. Override with `EXPO_PUBLIC_API_URL` if you need a tunnel.
 ## Verifying the whole stack
 
 ```bash
-cd prototype/backend && npm test          # 157 tests
-node prototype/shared/smoke-test.mjs      # 32 checks, end to end through the real client
+cd prototype/backend && npm test          # 222 tests
+node prototype/shared/smoke-test.mjs      # 54 checks, end to end through the real client
 ```
 
 The smoke test drives login → booking → dispatch → handshake → telemetry →
-completion → rating → history using the same client the apps use.
+completion → rating → guardian link → silent SOS → Safety Desk triage →
+resolution → history, using the same client the apps use.
 
 ## Google sign-in
 
@@ -91,9 +92,16 @@ yet — nothing is deleted, and Phase 2/3 drops in behind them:
 | ------- | ---------- |
 | 8-point inspection capture | Trip Vault — Phase 3 |
 | Trip certificate export | Trip Vault — Phase 3 |
-| Silent SOS, guardian link dispatch | Escalation engine — Phase 2 |
-| Speed-breach / anomaly alerts | Integrity engine — Phase 2 |
+| Silent SOS, guardian link dispatch | **Backend built (Phase 2)** — clients not wired yet |
+| Speed-breach / anomaly alerts | **Backend built (Phase 2)** — clients not wired yet |
 | VisionCam mode picker | **Permanently excluded** from this backend |
+
+Phase 2 shipped the safety subsystem on the backend: dual-GPS integrity
+evaluation, the L0–L5 escalation ladder, guardian tracking links, silent SOS and
+the Safety Desk API. The shared client exposes all of it (`client.trips.sos`,
+`client.trips.guardianLink`, `client.track`, `client.admin.*`), but the app
+screens still run their local simulations, so those badges stay until the
+clients are wired.
 
 The VisionCam exclusion is enforced, not merely documented: the backend rejects
 a booking carrying a `mode` field rather than ignoring it.

@@ -152,6 +152,22 @@ export async function registerRealtimeGateway(app: FastifyInstance): Promise<voi
       }
       conn.lastFrameAt.set(frame.trip_id, now)
 
+      // Last-known position, read by the integrity engine on its 3-second
+      // pass. Kept in Redis rather than queried from the hypertable so
+      // evaluation costs nothing on the ingest path. TTL exceeds the
+      // staleness window so a dead stream expires rather than lingering.
+      await redis.set(
+        `trip:{${frame.trip_id}}:last:${isDriverFrame ? 'driver' : 'customer'}`,
+        JSON.stringify({
+          lat: frame.coords.lat,
+          lng: frame.coords.lng,
+          speed: frame.coords.speed,
+          at: Date.now(),
+        }),
+        'EX',
+        120,
+      )
+
       writer.enqueue({
         time: new Date(frame.timestamp),
         tripId: frame.trip_id,

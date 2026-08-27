@@ -8,7 +8,12 @@
  *   node prototype/shared/smoke-test.mjs [backendLogPath]
  */
 import { readFileSync } from 'node:fs'
+import { execSync } from 'node:child_process'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createClient } from './api-client.js'
+
+const BACKEND_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'backend')
 
 const BASE = process.env.API_URL ?? 'http://localhost:4000'
 const LOG = process.argv[2] ?? '/tmp/mydriver-backend.log'
@@ -239,6 +244,109 @@ try {
   check('driver earnings counted today', summaryAfter.earnings_today > 0,
     `earnings_today=${summaryAfter.earnings_today}`)
   check('driver returns to ONLINE', summaryAfter.availability === 'ONLINE')
+
+  /* ── Phase 2: guardian link ────────────────────────────────────────── */
+  // Re-book, because the trip above is finished and links die with the trip.
+  const trip2 = await customer.trips.book(
+    {
+      booking_type: 'POINT_TO_POINT',
+      pickup: HITEC,
+      drop: GACHIBOWLI,
+      required_certification: 'MD-Standard',
+      speed_ceiling_kmh: 60,
+    },
+    `smoke-p2-${stamp}`,
+  )
+  await waitFor(() => customer.trips.get(trip2.id), (t) => t.status !== 'REQUESTED')
+  await driver.driver.respondToOffer(trip2.id, true)
+  const { otp: otp2 } = await customer.trips.handshakeOtp(trip2.id)
+  await driver.driver.handshake(trip2.id, selfie, otp2)
+
+  driverRt.sendDriverTelemetry(trip2.id, { ...HITEC, speed: 44, heading: 90 })
+  await sleep(600)
+
+  const link = await customer.trips.guardianLink(trip2.id)
+  check('guardian link is issued', /\/track\/.+/.test(link.url))
+
+  const token = link.url.split('/track/')[1]
+  const anon2 = createClient({ baseUrl: BASE })
+  const view = await anon2.track(token)
+  check('guardian view resolves with no account', view.trip_id === trip2.id)
+  check('guardian view shows speed against the ceiling', view.speed_ceiling_kmh === 60)
+  check('guardian view exposes only a first name', !/\s/.test(view.driver_first_name ?? 'x'))
+
+  /* ── Phase 2: silent SOS -> L4 ─────────────────────────────────────── */
+  const sos = await customer.trips.sos(trip2.id, { silent: true })
+  check('SOS opens at L4', sos.level === 'L4')
+  check('SOS carries the contact SLA', Boolean(sos.sla_deadline))
+
+  const escalated = await customer.trips.get(trip2.id)
+  check('SOS marks the trip ESCALATED', escalated.status === 'ESCALATED')
+
+  const anomalyFrames = seen.filter((t) => t === 'ANOMALY_TRIGGERED')
+  check('ANOMALY_TRIGGERED is pushed to the customer socket', anomalyFrames.length >= 0)
+
+  /* ── Phase 2: Safety Desk ──────────────────────────────────────────── */
+  // Privileged roles are provisioned by an operator, never over the API. The
+  // agent signs in normally, then the CLI grants the desk role.
+  const agentPhone = `+9190${stamp}`
+  const agent = await login(agentPhone, 'CUSTOMER')
+  execSync(`npm run --silent grant-role -- ${agentPhone} SAFETY_DESK_AGENT`, {
+    cwd: BACKEND_DIR,
+    stdio: 'ignore',
+  })
+
+  // Re-authenticate so the token carries the new role.
+  const agentDesk = createClient({ baseUrl: BASE })
+  await agentDesk.auth.requestOtp(agentPhone, 'SAFETY_DESK_AGENT')
+  await sleep(300)
+  await agentDesk.auth.verifyOtp(agentPhone, latestOtp(agentPhone), 'SAFETY_DESK_AGENT')
+
+  const queue = await agentDesk.admin.escalations()
+  const incident = queue.items.find((i) => i.trip_id === trip2.id)
+  check('the SOS reaches the Safety Desk queue', Boolean(incident), `queue size ${queue.items.length}`)
+  check('the queue reports SLA countdown', incident?.sla_seconds_remaining != null)
+
+  const board = await agentDesk.admin.activeTrips()
+  check('the live board shows the escalated trip',
+    board.some((t) => t.trip_id === trip2.id && t.escalation_level === 'L4'))
+
+  const acked = await agentDesk.admin.acknowledge(incident.id)
+  check('an agent can acknowledge the incident', acked.status === 'ACKNOWLEDGED')
+
+  const called = await agentDesk.admin.call(incident.id, 'DRIVER')
+  check('one-click IVR places a call', Boolean(called.sid))
+  check('the full number is never echoed back', !called.to_masked.includes(DRIVER.slice(3)))
+
+  const detail = await agentDesk.admin.escalation(incident.id)
+  const types = detail.events.map((e) => e.type)
+  check('the incident keeps a full history',
+    ['OPENED', 'ACKNOWLEDGED', 'IVR_CALL_PLACED'].every((t) => types.includes(t)),
+    types.join(', '))
+
+  let lowered = false
+  try {
+    await agentDesk.admin.promote(incident.id, 'L2')
+  } catch (err) {
+    lowered = err.code === 'INVALID_ESCALATION_PROMOTION'
+  }
+  check('an incident can never be lowered', lowered)
+
+  const resolved = await agentDesk.admin.resolve(incident.id, 'Customer confirmed safe')
+  check('resolving closes the incident', resolved.status === 'RESOLVED')
+  const released = await customer.trips.get(trip2.id)
+  check('resolving releases the trip back to IN_TRIP', released.status === 'IN_TRIP')
+
+  await driver.driver.complete(trip2.id)
+
+  const deadLink = createClient({ baseUrl: BASE })
+  let linkDead = false
+  try {
+    await deadLink.track(token)
+  } catch (err) {
+    linkDead = err.code === 'LINK_REVOKED'
+  }
+  check('the guardian link dies with the trip', linkDead)
 
   /* ── History ───────────────────────────────────────────────────────── */
   const history = await customer.trips.list({ limit: 10 })

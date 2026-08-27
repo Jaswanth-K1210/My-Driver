@@ -498,9 +498,12 @@ client, heartbeat timeout, and reconnect.
 
 Deferred, with their seams built:
 
-- **Phase 2** — Dual-GPS integrity evaluation (3s haversine loop, 150 m / 60 s threshold),
-  L0–L5 escalation engine, guardian link dispatch, silent SOS, `ESCALATED` state,
-  `ANOMALY_TRIGGERED` emission, Admin CRM and Safety Desk endpoints.
+- **Phase 2 — SHIPPED (2026-08-27).** Dual-GPS integrity evaluation (3s haversine loop,
+  150 m / 60 s threshold), L0–L5 escalation engine, guardian link dispatch, silent SOS,
+  `ESCALATED` state, `ANOMALY_TRIGGERED` emission, and the Safety Desk API. The L0–L5
+  ladder was undefined in the source documents; the definition used is recorded in
+  `prototype/backend/README.md` and implemented in `src/modules/escalation/levels.ts`.
+  No Safety Desk **web client** was built — API only.
 - **Phase 3** — Trip Vault: 8-point inspection capture, watermarking, immutable archival,
   exportable trip certificate PDFs, evidence release.
 - **Unscheduled** — Agent field-recruitment onboarding API, corporate accounts, financial

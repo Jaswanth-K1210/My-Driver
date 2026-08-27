@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify'
 import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 import { z } from 'zod'
+import { ROLES } from '../auth/otp.js'
 import { requireAuth } from '../auth/rbac.js'
 import { listConsents, recordConsent } from './consents.js'
 import { addGuardian, deleteGuardian, listGuardians, updateGuardian } from './guardians.js'
 import { getMe, updateMe } from './service.js'
 
-const RoleSchema = z.enum(['CUSTOMER', 'DRIVER', 'AGENT', 'ADMIN'])
+const RoleSchema = z.enum(ROLES)
 const PhoneNumber = z.string().regex(/^\+[1-9]\d{7,14}$/, 'must be E.164')
 
 const MeSchema = z.object({

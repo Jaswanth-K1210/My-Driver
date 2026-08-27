@@ -332,6 +332,48 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
       rateCards: () => request('/v1/rate-cards', { auth: false }),
     },
 
+    /** Public guardian view. No account, no token — the link is the audience. */
+    track: (token) => request(`/v1/track/${encodeURIComponent(token)}`, { auth: false }),
+
+    devices: {
+      register: (platform, token) =>
+        request('/v1/me/devices', { method: 'POST', body: { platform, token } }),
+    },
+
+    /** Safety Desk. Requires SAFETY_DESK_AGENT, OPS_MANAGER or SUPER_ADMIN. */
+    admin: {
+      stats: () => request('/v1/admin/stats'),
+      activeTrips: () => request('/v1/admin/trips/active'),
+
+      escalations: (includeResolved = false) =>
+        request(`/v1/admin/escalations?include_resolved=${includeResolved}`),
+
+      escalation: (id) => request(`/v1/admin/escalations/${id}`),
+
+      acknowledge: (id) => request(`/v1/admin/escalations/${id}/acknowledge`, { method: 'POST' }),
+
+      promote: (id, level, note) =>
+        request(`/v1/admin/escalations/${id}/promote`, {
+          method: 'POST',
+          body: { level, ...(note ? { note } : {}) },
+        }),
+
+      resolve: (id, resolution) =>
+        request(`/v1/admin/escalations/${id}/resolve`, { method: 'POST', body: { resolution } }),
+
+      call: (id, party) =>
+        request(`/v1/admin/escalations/${id}/call`, { method: 'POST', body: { party } }),
+
+      notifyGuardians: (id) =>
+        request(`/v1/admin/escalations/${id}/notify-guardians`, { method: 'POST' }),
+
+      releaseEvidence: (id, recipient) =>
+        request(`/v1/admin/escalations/${id}/release-evidence`, {
+          method: 'POST',
+          body: { recipient },
+        }),
+    },
+
     trips: {
       quote: (input) => request('/v1/trips/quote', { method: 'POST', body: input }),
 
@@ -358,6 +400,23 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
         request(`/v1/trips/${id}/cancel`, { method: 'POST', body: { reason } }),
 
       handshakeOtp: (id) => request(`/v1/trips/${id}/handshake-otp`, { method: 'POST' }),
+
+      /** Silent SOS. Goes straight to L4 — an SOS is never a maybe. */
+      sos: (id, { silent = true, note } = {}) =>
+        request(`/v1/trips/${id}/sos`, {
+          method: 'POST',
+          body: { silent, ...(note ? { note } : {}) },
+        }),
+
+      /** Creates a shareable live-tracking link, optionally texting guardians. */
+      guardianLink: (id, shareBySms = false) =>
+        request(`/v1/trips/${id}/guardian-link`, {
+          method: 'POST',
+          body: { share_by_sms: shareBySms },
+        }),
+
+      revokeGuardianLink: (id) =>
+        request(`/v1/trips/${id}/guardian-link`, { method: 'DELETE' }),
 
       rate: (id, rating, comment) =>
         request(`/v1/trips/${id}/rate`, {

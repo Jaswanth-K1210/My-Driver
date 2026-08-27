@@ -50,6 +50,8 @@ const EnvSchema = z.object({
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_FROM_NUMBER: z.string().optional(),
 
+  VOICE_PROVIDER: z.enum(['console', 'twilio']).default('console'),
+
   PUSH_PROVIDER: z.enum(['console', 'fcm']).default('console'),
   FCM_SERVICE_ACCOUNT_JSON: z.string().optional(),
 
@@ -59,6 +61,9 @@ const EnvSchema = z.object({
   STORAGE_ACCESS_KEY: z.string().default('mydriver'),
   STORAGE_SECRET_KEY: z.string().default('mydriver123'),
   STORAGE_FORCE_PATH_STYLE: boolFromEnv.default(true),
+
+  // Base URL the guardian tracking link points at (the public website).
+  PUBLIC_WEB_URL: z.string().url().default('http://localhost:5173'),
 
   LIVENESS_PROVIDER: z.enum(['mock']).default('mock'),
   LIVENESS_MOCK_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.97),

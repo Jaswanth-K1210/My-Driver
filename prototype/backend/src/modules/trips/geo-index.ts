@@ -20,14 +20,19 @@ export async function setAvailability(
     [userId, availability],
   )
 
-  if (availability !== 'ONLINE') {
+  // Only OFFLINE leaves the index. An ON_TRIP driver keeps their last known
+  // position, so finishing a trip puts them straight back in the running:
+  // dropping them on ON_TRIP left them undispatchable forever afterwards,
+  // because completing a trip restores ONLINE without a position to re-add.
+  // Keeping them indexed is safe — findNearbyDrivers filters on
+  // availability = 'ONLINE' in SQL, so they cannot be offered a second trip.
+  if (availability === 'OFFLINE') {
     await removeDriverFromIndex(userId)
     return
   }
 
-  // Dispatch searches the Redis geo index, so a driver who goes ONLINE without
-  // a position is invisible to it until their first telemetry frame arrives.
-  // Seeding it here closes that window.
+  // Dispatch searches the geo index, so a driver going ONLINE without a
+  // position would be invisible until their first telemetry frame.
   if (at) await upsertDriverLocation(userId, at, { force: true })
 }
 
