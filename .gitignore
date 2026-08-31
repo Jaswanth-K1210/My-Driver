@@ -9,10 +9,14 @@ build/
 .expo/
 .next/
 out/
+.vercel/
 
 # Environment / secrets
 .env
-.env.*
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
 !.env.example
 *.pem
 *.key
@@ -28,10 +32,61 @@ pnpm-debug.log*
 
 # OS / editor
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 .idea/
 .vscode/
 *.swp
+*.swo
+
+# Mobile (React Native / Android / iOS)
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+*.apk
+*.aab
+
+ios/build/
+ios/Pods/
+ios/.symlinks/
+ios/DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcshareddata/
+
+# Java/Gradle
+.gradle/
+**/.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/gradle/wrapper/gradle-wrapper.jar
+!gradle-wrapper.properties
+!**/gradle/wrapper/gradle-wrapper.properties
+*.zip
+**/gradle/wrapper/*.zip
+*.tar
+*.tar.gz
+.gradletasknamecache
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
 
 # Backup of former nested git repo
 .git-backup-mobile/
+
+# Misc
+.cache/
+coverage/
+.eslintcache
+scratch/
+

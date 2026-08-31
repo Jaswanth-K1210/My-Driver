@@ -37,6 +37,13 @@ function toOffer(pending) {
     earnings: pending.driver_earnings_estimate,
     pickupCoords: pending.pickup,
     dropCoords: pending.drop,
+    stops: pending.stops,
+    returnStops: pending.return_stops,
+    vehicleSpecs: pending.vehicle_specs,
+    visionMode: pending.vision_mode,
+    flightNumber: pending.flight_number,
+    requirement: pending.requirement,
+    tripType: pending.trip_type,
   }
 }
 

@@ -1,12 +1,17 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Clock3, MapPin, ShieldCheck, Star } from 'lucide-react'
-import { HERO_WORDS, STATS, TRUST_MARKS } from '../../data/mock.js'
+import { ArrowRight, Car, ChevronDown, ChevronUp, Compass, CreditCard, Gauge, MapPin, Plane, ShieldCheck, Star } from 'lucide-react'
+import { HERO_WORDS, STATS, TRUST_MARKS, REQUIREMENTS } from '../../data/mock.js'
 import { useTrip } from '../../context/tripStore.js'
-import { DEFAULT_CONFIG, quoteFor } from '../../lib/booking.js'
+import { DEFAULT_CONFIG, getRecommendedSkillId, quoteFor } from '../../lib/booking.js'
 import { formatINR } from '../../lib/utils.js'
-import { DropPicker, PackagePicker, PickupField, SkillPicker, TimePicker } from '../app/BookingFields.jsx'
-import { Segmented } from '../app/Primitives.jsx'
+import {
+  CarSpecPicker,
+  RequirementSelector,
+  TimePicker,
+  TripDetailsForm,
+  VehicleTypeSelector,
+} from '../app/BookingFields.jsx'
 
 function KineticWord() {
   // Words share one grid cell and are staggered by a quarter of the 8s cycle,
@@ -28,21 +33,30 @@ function KineticWord() {
   )
 }
 
-const MODES = [
-  { id: 'location', label: 'By location', icon: MapPin },
-  { id: 'hour', label: 'By hour', icon: Clock3 },
-]
-
 /**
  * Full booking configurator shown in the hero. It seeds the same config shape
  * the dashboard uses, and hands it to /app/book on submit so nothing is retyped.
  */
 function HeroBooking() {
   const navigate = useNavigate()
-  const { setConfig: setTripConfig } = useTrip()
+  const { setConfig: setTripConfig, skills } = useTrip()
   const [config, setConfig] = useState(DEFAULT_CONFIG)
-  const quote = quoteFor(config)
+  const quote = quoteFor(config, skills)
   const set = (patch) => setConfig((prev) => ({ ...prev, ...patch }))
+
+  const [openSections, setOpenSections] = useState({
+    vehicle: true,
+    requirement: false,
+  })
+
+  const toggleSection = (key) => setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }))
+
+  const handleAutoMatch = (updatedCarOrReq) => {
+    const car = updatedCarOrReq?.company ? updatedCarOrReq : config.carDetails
+    const req = typeof updatedCarOrReq === 'string' ? updatedCarOrReq : config.requirement
+    const recSkill = getRecommendedSkillId(car, req)
+    set({ skillId: recSkill })
+  }
 
   const submit = (e) => {
     e.preventDefault()
@@ -52,71 +66,132 @@ function HeroBooking() {
     navigate('/app/book')
   }
 
+  const activeReq = REQUIREMENTS.find((r) => r.id === config.requirement) ?? REQUIREMENTS[0]
+
   return (
-    <form
-      onSubmit={submit}
-      className="w-full rounded-[2rem] border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-900/10 sm:p-8"
-    >
-      <div className="flex items-center justify-between gap-4">
-        <h2 className="text-xl font-black tracking-tight text-slate-900">Book a driver</h2>
-        <span className="rounded-full bg-brand-50 px-3 py-1.5 text-[11px] font-bold text-brand-700">
-          Fare locked upfront
-        </span>
-      </div>
+    <form onSubmit={submit} className="w-full space-y-4">
+      {/* ── CARD 1: VEHICLE & CAR SPECS ── */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl shadow-slate-900/10 transition-all">
+        <button
+          type="button"
+          onClick={() => toggleSection('vehicle')}
+          className="flex w-full items-center justify-between text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              <Car className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">1. Vehicle & Car</h2>
+              {!openSections.vehicle && (
+                <p className="text-xs font-medium text-slate-500">
+                  {config.vehicleType} · {config.carDetails.company} {config.carDetails.model}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {openSections.vehicle ? (
+              <ChevronUp className="h-5 w-5 text-slate-400" />
+            ) : (
+              <ChevronDown className="h-5 w-5 text-slate-400" />
+            )}
+          </div>
+        </button>
 
-      <Segmented
-        className="mt-5"
-        size="lg"
-        options={MODES}
-        value={config.mode}
-        onChange={(mode) => set({ mode })}
-      />
-
-      <div className="mt-4 space-y-3">
-        <PickupField size="lg" />
-
-        {config.mode === 'location' ? (
-          <DropPicker size="lg" value={config.dropId} onChange={(dropId) => set({ dropId })} />
-        ) : (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-slate-500">How long do you need a driver?</p>
-            <PackagePicker value={config.packageId} onChange={(packageId) => set({ packageId })} />
+        {openSections.vehicle && (
+          <div className="mt-4 pt-4 border-t border-slate-100 space-y-5">
+            <VehicleTypeSelector value={config.vehicleType} onChange={(vehicleType) => set({ vehicleType })} />
+            <div className="pt-2">
+              <CarSpecPicker carDetails={config.carDetails} onChange={(carDetails) => set({ carDetails })} onAutoMatchSkill={handleAutoMatch} />
+            </div>
           </div>
         )}
-
-        <TimePicker size="lg" value={config.pickupTime} onChange={(pickupTime) => set({ pickupTime })} />
-
-        <div>
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">Skill certification</p>
-          <SkillPicker value={config.skillId} onChange={(skillId) => set({ skillId })} />
-        </div>
       </div>
 
-      <div className="mt-5 flex items-end justify-between gap-4 border-t border-slate-200 pt-5">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Estimated fare</p>
-          <p className="mt-0.5 text-3xl font-black tracking-tight text-slate-900">
-            {quote.ready ? formatINR(quote.total) : '—'}
+      {/* ── CARD 2: TRIP REQUIREMENT ── */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl shadow-slate-900/10 transition-all">
+        <button
+          type="button"
+          onClick={() => toggleSection('requirement')}
+          className="flex w-full items-center justify-between text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
+              {config.requirement === 'within_city' && <MapPin className="h-5 w-5" />}
+              {config.requirement === 'inter_city' && <Compass className="h-5 w-5" />}
+              {config.requirement === 'airport' && <Plane className="h-5 w-5" />}
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900">2. Route Details</h2>
+              {!openSections.requirement && (
+                <p className="text-xs font-medium text-slate-500">
+                  {activeReq.label} · {config.tripType === 'two_way' ? 'Round Trip' : 'One Way'}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {openSections.requirement ? (
+              <ChevronUp className="h-5 w-5 text-slate-400" />
+            ) : (
+              <ChevronDown className="h-5 w-5 text-slate-400" />
+            )}
+          </div>
+        </button>
+
+        {openSections.requirement && (
+          <div className="mt-4 pt-4 border-t border-slate-100 space-y-4">
+            <RequirementSelector value={config.requirement} onChange={(requirement) => set({ requirement })} onAutoMatchSkill={handleAutoMatch} />
+            <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
+              <TripDetailsForm config={config} setConfig={setConfig} />
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-bold text-slate-700">Pickup Schedule</label>
+              <TimePicker value={config.pickupTime} onChange={(pickupTime) => set({ pickupTime })} />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── CARD 3: SUMMARY & BOOK ── */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl shadow-slate-900/10 transition-all">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+          <div className="flex items-center gap-2.5">
+            <CreditCard className="h-5 w-5 text-brand-600" />
+            <h2 className="text-base font-black text-slate-900">Instant Booking</h2>
+          </div>
+          <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
+            Fare Locked
+          </span>
+        </div>
+
+        <div className="mt-4 flex items-end justify-between gap-4">
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Estimated fare</p>
+            <p className="mt-0.5 text-3xl font-black tracking-tight text-slate-900">
+              {quote.ready ? formatINR(quote.total) : '—'}
+            </p>
+          </div>
+          <p className="pb-1 text-right text-xs text-slate-500 max-w-[120px] leading-tight">
+            {quote.ready ? `${quote.distanceKm} km · incl. fees` : 'Complete all fields to book'}
           </p>
         </div>
-        <p className="pb-1.5 text-right text-xs text-slate-500">
-          {quote.ready ? `${quote.distanceKm} km · incl. fees` : 'Choose a destination'}
+
+        <button
+          type="submit"
+          disabled={!quote.ready}
+          className="group mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-500 px-5 py-4 text-sm font-black text-white shadow-lg shadow-brand-500/25 transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
+        >
+          Find my {quote.skill.label} driver
+          <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 group-disabled:translate-x-0" aria-hidden="true" />
+        </button>
+
+        <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] font-medium text-slate-500">
+          <ShieldCheck className="h-3.5 w-3.5 text-brand-500" aria-hidden="true" />
+          Nearest certified driver · {quote.skill.eta}
         </p>
       </div>
-
-      <button
-        type="submit"
-        disabled={!quote.ready}
-        className="group mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-500 px-5 py-4 text-sm font-black text-white shadow-lg shadow-brand-500/25 transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
-      >
-        Find my {quote.skill.label} driver
-        <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 group-disabled:translate-x-0" aria-hidden="true" />
-      </button>
-
-      <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] font-medium text-slate-500">
-        <ShieldCheck className="h-3.5 w-3.5 text-brand-500" aria-hidden="true" />
-        Nearest certified driver · {quote.skill.eta}
-      </p>
     </form>
   )
 }

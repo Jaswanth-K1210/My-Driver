@@ -2,16 +2,20 @@ import { useState } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Slider from '@react-native-community/slider'
-import { Bell, ChevronDown, Gauge, MapPin, Navigation, Search } from 'lucide-react-native'
-import { CUSTOMER, DROPS, PICKUP, SKILLS } from '../../data/mock'
+import { Bell, Gauge, Search, Shield } from 'lucide-react-native'
+import { CUSTOMER, SKILLS, VISION_MODES } from '../../data/mock'
 import { useTrip } from '../../context/TripContext'
-import DemoBadge from '../../components/DemoBadge'
+import { quoteFor } from '../../lib/booking'
 import { clamp, formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
 import FakeStatusBar from '../../components/StatusBar'
 import { useToast } from '../../components/Toast'
+
+import RequirementTabs from './components/RequirementTabs'
+import WithinCityForm from './components/WithinCityForm'
+import CarDetailsForm from './components/CarDetailsForm'
 
 function SectionLabel({ children, icon: Icon }) {
   return (
@@ -24,52 +28,14 @@ function SectionLabel({ children, icon: Icon }) {
   )
 }
 
-function PlaceList({ onSelect }) {
-  return (
-    <View style={{ marginTop: space.sm, gap: 2 }}>
-      {DROPS.map((place) => (
-        <Pressable
-          key={place.id}
-          accessibilityRole="button"
-          onPress={() => onSelect(place)}
-          style={({ pressed }) => ({
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: space.md,
-            borderRadius: radius.md,
-            paddingHorizontal: space.md,
-            paddingVertical: 10,
-            backgroundColor: pressed ? colors.surfaceAlt : 'transparent',
-          })}
-        >
-          <MapPin size={16} color={colors.red} />
-          <View style={{ flex: 1 }}>
-            <Text numberOfLines={1} style={{ ...type.body, color: colors.text }}>
-              {place.name}
-            </Text>
-            <Text numberOfLines={1} style={{ ...type.tiny, color: colors.textMuted }}>
-              {place.address}
-            </Text>
-          </View>
-          <Pill label={`${place.distanceKm} km`} />
-        </Pressable>
-      ))}
-    </View>
-  )
-}
-
 export default function HomeScreen({ config, onChange, onFindDriver }) {
   const { toast } = useToast()
-  const [dropOpen, setDropOpen] = useState(false)
-
-  const drop = DROPS.find((d) => d.id === config.dropId) ?? null
-  // Rates come from GET /v1/rate-cards, so a price change needs no app release.
   const { skills } = useTrip()
-  const skill = skills.find((s) => s.id === config.skillId) ?? SKILLS[0]
 
-  const baseFare = drop ? drop.distanceKm * skill.rate : 0
-  const nightFee = config.skillId === 'MD-Night' ? 30 : 0
-  const total = baseFare + 19 + nightFee
+  const quote = quoteFor(config, skills)
+  const isIntercity = config.requirement === 'inter_city'
+  const isAirport = config.requirement === 'airport'
+  const isFullTime = config.requirement === 'full_time'
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -85,16 +51,7 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
         }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-          <View
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: radius.pill,
-              backgroundColor: colors.redSoft,
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
+          <View style={{ width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.redSoft, alignItems: 'center', justifyContent: 'center' }}>
             <Text style={{ ...type.bodyBold, color: colors.red }}>{CUSTOMER.initials}</Text>
           </View>
           <View>
@@ -104,7 +61,6 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
         </View>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Notifications"
           onPress={() => toast('No new alerts — all trips sealed', 'info')}
           style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 10 }}
         >
@@ -112,183 +68,111 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
         </Pressable>
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: space.xl, paddingBottom: space.xxl, gap: space.lg }}
-      >
-        <Card>
-          <View style={{ flexDirection: 'row', gap: space.md }}>
-            <MapPin size={16} color={colors.graphite} style={{ marginTop: 2 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.6 }}>PICKUP</Text>
-              <Text numberOfLines={1} style={{ ...type.body, color: colors.text }}>
-                {PICKUP.name}
-              </Text>
-              <Text numberOfLines={1} style={{ ...type.tiny, color: colors.textMuted }}>
-                {PICKUP.address}
-              </Text>
-            </View>
-          </View>
-
-          <View
-            style={{
-              width: 1,
-              height: 16,
-              backgroundColor: colors.borderStrong,
-              marginLeft: 7,
-              marginVertical: space.md,
-            }}
-          />
-
-          <View style={{ flexDirection: 'row', gap: space.md }}>
-            <Navigation size={16} color={colors.red} style={{ marginTop: 2 }} />
-            <View style={{ flex: 1 }}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityState={{ expanded: dropOpen }}
-                onPress={() => setDropOpen((v) => !v)}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.6 }}>DROP</Text>
-                  <Text
-                    numberOfLines={1}
-                    style={{ ...type.body, color: drop ? colors.text : colors.textMuted }}
-                  >
-                    {drop ? `${drop.name} · ${drop.address}` : 'Where are you heading?'}
-                  </Text>
-                </View>
-                <ChevronDown
-                  size={16}
-                  color={colors.textMuted}
-                  style={{ transform: [{ rotate: dropOpen ? '180deg' : '0deg' }] }}
-                />
-              </Pressable>
-              {dropOpen ? (
-                <PlaceList
-                  onSelect={(place) => {
-                    onChange({ ...config, dropId: place.id })
-                    setDropOpen(false)
-                  }}
-                />
-              ) : null}
-            </View>
-          </View>
-        </Card>
-
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: space.xxl, gap: space.lg }}>
+        
+        {/* Step 1: Requirement Selection */}
         <View>
-          <SectionLabel>Skill certification</SectionLabel>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: space.sm, paddingRight: space.xl }}
-          >
-            {skills.map((s) => {
-              const selected = config.skillId === s.id
-              return (
-                <Pressable
-                  key={s.id}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected }}
-                  onPress={() => onChange({ ...config, skillId: s.id })}
-                  style={{
-                    borderRadius: radius.md,
-                    borderWidth: 1,
-                    borderColor: selected ? colors.red : colors.border,
-                    backgroundColor: selected ? colors.redSoft : colors.surface,
-                    paddingHorizontal: 14,
-                    paddingVertical: space.sm,
-                  }}
-                >
-                  <Text style={{ ...type.caption, color: selected ? colors.redPressed : colors.text }}>
-                    {s.label}
-                  </Text>
-                  <Text style={{ ...type.micro, color: colors.textMuted }}>{s.id}</Text>
-                </Pressable>
-              )
-            })}
-          </ScrollView>
+          <View style={{ paddingHorizontal: space.xl }}>
+            <SectionLabel>1. What do you need?</SectionLabel>
+          </View>
+          <RequirementTabs selectedId={config.requirement} onChange={(r) => onChange({ ...config, requirement: r })} />
         </View>
 
-        <Card>
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: space.xs,
-            }}
-          >
-            <SectionLabel icon={Gauge}>Speed ceiling</SectionLabel>
-            <Pill label={`${config.ceiling} km/h`} tone={config.ceiling > 80 ? 'brand' : 'safe'} />
+        <View style={{ paddingHorizontal: space.xl, gap: space.lg }}>
+          
+          {/* Step 2: Vehicle Specs */}
+          <View>
+            <SectionLabel>2. Your Vehicle</SectionLabel>
+            <CarDetailsForm config={config} onChange={onChange} />
           </View>
-          <Slider
-            minimumValue={40}
-            maximumValue={120}
-            step={5}
-            value={config.ceiling}
-            onValueChange={(v) => onChange({ ...config, ceiling: clamp(Math.round(v), 40, 120) })}
-            minimumTrackTintColor={colors.red}
-            maximumTrackTintColor={colors.surfaceSunken}
-            thumbTintColor={colors.red}
-            accessibilityLabel={`Speed ceiling ${config.ceiling} kilometres per hour`}
-          />
-          <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 16 }}>
-            Breaches alert you, your guardians and the Safety Desk instantly.
-          </Text>
-        </Card>
 
-        <Card>
-          <SectionLabel>Fare estimate</SectionLabel>
-          {[
-            ['Trip distance', drop ? `${drop.distanceKm} km` : '--'],
-            [`${skill.id} rate`, `${formatINR(skill.rate)}/km`],
-            ['Platform fee', formatINR(19)],
-            ...(nightFee > 0 ? [['Night monitoring', formatINR(nightFee)]] : []),
-          ].map(([label, value]) => (
-            <View
-              key={label}
-              style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 }}
-            >
-              <Text style={{ ...type.caption, color: colors.textMuted }}>{label}</Text>
-              <Text style={{ ...type.caption, color: colors.text }}>{value}</Text>
+          {/* Step 3: Route */}
+          <Card>
+            <SectionLabel>3. Route Planner</SectionLabel>
+            {config.requirement === 'within_city' && (
+              <WithinCityForm config={config} onChange={onChange} />
+            )}
+            {isIntercity && (
+              <View style={{ padding: space.md, alignItems: 'center' }}>
+                <Text style={{ ...type.caption, color: colors.textMuted }}>Inter-city routing UI placeholder</Text>
+              </View>
+            )}
+            {isAirport && (
+              <View style={{ padding: space.md, alignItems: 'center' }}>
+                <Text style={{ ...type.caption, color: colors.textMuted }}>Airport transfers UI placeholder</Text>
+              </View>
+            )}
+            {isFullTime && (
+              <View style={{ padding: space.md, alignItems: 'center' }}>
+                <Text style={{ ...type.caption, color: colors.textMuted }}>Full-time service UI placeholder</Text>
+              </View>
+            )}
+          </Card>
+
+          {/* VisionCam Mode */}
+          <View>
+            <SectionLabel icon={Shield}>VisionCam Mode</SectionLabel>
+            <View style={{ flexDirection: 'row', gap: space.sm }}>
+              {VISION_MODES.map((mode) => {
+                const selected = mode.id === config.visionMode
+                return (
+                  <Pressable
+                    key={mode.id}
+                    onPress={() => onChange({ ...config, visionMode: mode.id })}
+                    style={{ flex: 1, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: selected ? colors.brand : colors.border, backgroundColor: selected ? colors.brandSoft : colors.surface }}
+                  >
+                    <Text style={{ ...type.bodyBold, color: selected ? colors.brandPressed : colors.text, textAlign: 'center' }}>Mode {mode.id}</Text>
+                    <Text style={{ ...type.micro, color: colors.textMuted, textAlign: 'center', marginTop: 2 }}>{mode.name}</Text>
+                  </Pressable>
+                )
+              })}
             </View>
-          ))}
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              borderTopWidth: 1,
-              borderTopColor: colors.border,
-              marginTop: space.sm,
-              paddingTop: space.sm,
-            }}
-          >
-            <Text style={{ ...type.bodyBold, color: colors.text }}>Estimated fare</Text>
-            <Text style={{ ...type.bodyBold, color: colors.red }}>{drop ? formatINR(total) : '--'}</Text>
           </View>
-        </Card>
+
+          {/* Speed Ceiling */}
+          <Card>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: space.xs }}>
+              <SectionLabel icon={Gauge}>Speed ceiling</SectionLabel>
+              <Pill label={`${config.ceiling} km/h`} tone={config.ceiling > 80 ? 'brand' : 'safe'} />
+            </View>
+            <Slider
+              minimumValue={40}
+              maximumValue={120}
+              step={5}
+              value={config.ceiling}
+              onValueChange={(v) => onChange({ ...config, ceiling: clamp(Math.round(v), 40, 120) })}
+              minimumTrackTintColor={colors.red}
+              maximumTrackTintColor={colors.surfaceSunken}
+              thumbTintColor={colors.red}
+            />
+          </Card>
+
+          {/* Quote Estimation */}
+          <Card>
+            <SectionLabel>Price Estimate</SectionLabel>
+            <View style={{ gap: space.sm }}>
+              {quote.lines.map((line) => (
+                <View key={line.label} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                  <Text style={{ ...type.caption, color: colors.textMuted, flex: 1 }}>{line.label}</Text>
+                  <Text style={{ ...type.caption, color: colors.text, flex: 1, textAlign: 'right' }}>{line.value}</Text>
+                </View>
+              ))}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.border, marginTop: space.sm, paddingTop: space.sm }}>
+                <Text style={{ ...type.bodyBold, color: colors.text }}>Estimated total</Text>
+                <Text style={{ ...type.bodyBold, color: colors.brand }}>{quote.ready ? formatINR(quote.total) : '--'}</Text>
+              </View>
+            </View>
+          </Card>
+        </View>
       </ScrollView>
 
-      <View
-        style={{
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-          backgroundColor: colors.surface,
-          padding: space.lg,
-        }}
-      >
+      <View style={{ borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface, padding: space.lg }}>
         <Button
-          label={`Find my ${skill.label} driver`}
+          label={`Find ${quote.skill.label} Driver`}
           icon={Search}
-          disabled={!drop}
+          disabled={!quote.ready}
           onPress={onFindDriver}
         />
-        {!drop ? (
-          <Text style={{ ...type.tiny, color: colors.textMuted, textAlign: 'center', marginTop: space.sm }}>
-            Choose a destination to continue
-          </Text>
-        ) : null}
       </View>
     </SafeAreaView>
   )

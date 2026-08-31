@@ -5,6 +5,7 @@ import { ArrowLeft, Check, KeyRound, ScanFace, ShieldCheck } from 'lucide-react-
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
 import { useToast } from '../../components/Toast'
+import { DEMO_OTP } from '../../data/mock'
 import { useDriver } from '../../context/DriverContext'
 import { colors, radius, space, type } from '../../theme/tokens'
 

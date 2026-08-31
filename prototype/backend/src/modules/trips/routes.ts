@@ -43,10 +43,20 @@ const FareSchema = z.object({
 export const QuoteBody = z
   .object({
     booking_type: z.enum(['POINT_TO_POINT', 'HOURLY']),
-    hours: z.union([z.literal(2), z.literal(4), z.literal(8), z.literal(12)]).optional(),
+    hours: z.number().int().min(1).nullable().optional(),
     pickup: LatLngSchema,
-    drop: LatLngSchema.optional(),
+    drop: LatLngSchema.nullable().optional(),
+    pickup_address: z.string().max(240).nullable().optional(),
+    drop_address: z.string().max(240).nullable().optional(),
     required_certification: z.string().min(1).max(40),
+    stops: z.array(z.any()).nullable().optional(),
+    return_stops: z.array(z.any()).nullable().optional(),
+    return_drop: LatLngSchema.nullable().optional(),
+    car_details: z.any().nullable().optional(),
+    vision_mode: z.string().nullable().optional(),
+    flight_number: z.string().nullable().optional(),
+    requirement: z.string().nullable().optional(),
+    trip_type: z.string().nullable().optional(),
   })
   .strict()
 
@@ -91,6 +101,14 @@ const TripViewSchema = z.object({
       mydriver_score: z.number().nullable(),
     })
     .nullable(),
+  stops: z.array(z.any()).nullable().optional(),
+  return_stops: z.array(z.any()).nullable().optional(),
+  return_drop: LatLngSchema.nullable().optional(),
+  vehicle_specs: z.any().nullable().optional(),
+  vision_mode: z.string().nullable().optional(),
+  flight_number: z.string().nullable().optional(),
+  requirement: z.string().nullable().optional(),
+  trip_type: z.string().nullable().optional(),
 })
 
 export function registerTripRoutes(app: FastifyInstance): void {
@@ -148,7 +166,7 @@ export function registerTripRoutes(app: FastifyInstance): void {
         fare: computeFare({
           bookingType: body.booking_type,
           distanceKm,
-          hours: body.hours,
+          hours: body.hours ?? undefined,
           perKmRate: card.per_km_rate,
           hourlyRate: card.hourly_rate,
           pickupAt: new Date(),
@@ -164,8 +182,6 @@ export function registerTripRoutes(app: FastifyInstance): void {
       schema: {
         body: QuoteBody.extend({
           speed_ceiling_kmh: z.number().int().min(20).max(120),
-          pickup_address: z.string().max(240).optional(),
-          drop_address: z.string().max(240).optional(),
         }).strict(),
         response: { 201: TripViewSchema },
       },
@@ -188,6 +204,14 @@ export function registerTripRoutes(app: FastifyInstance): void {
         requiredCertification: b.required_certification,
         speedCeilingKmh: b.speed_ceiling_kmh,
         idempotencyKey: typeof idempotencyKey === 'string' ? idempotencyKey : undefined,
+        stops: b.stops,
+        returnStops: b.return_stops,
+        returnDrop: b.return_drop,
+        carDetails: b.car_details,
+        visionMode: b.vision_mode,
+        flightNumber: b.flight_number,
+        requirement: b.requirement,
+        tripType: b.trip_type,
       })
 
       // Dispatch runs out of band: booking must not block on driver search.

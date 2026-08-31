@@ -13,11 +13,15 @@ const STATUS_LABEL = {
   ESCALATED: 'Safety Desk engaged',
 }
 
+import { CITY_LOCATIONS, INTERCITY_DESTINATIONS, AIRPORT_LOCATIONS } from '../data/mock'
+
 const nearestDropName = (drop) => {
   if (!drop) return 'Destination'
   let best = null
   let bestDist = Infinity
-  for (const d of DROPS) {
+  const allDrops = [...DROPS, ...CITY_LOCATIONS, ...INTERCITY_DESTINATIONS, ...AIRPORT_LOCATIONS]
+  for (const d of allDrops) {
+    if (d.lat == null || d.lng == null) continue
     const dist = Math.abs(d.lat - drop.lat) + Math.abs(d.lng - drop.lng)
     if (dist < bestDist) {
       bestDist = dist
@@ -81,38 +85,3 @@ export function toVaultRow(trip) {
   }
 }
 
-const HOURS_BY_PACKAGE = { h2: 2, h4: 4, h8: 8, h12: 12 }
-
-/**
- * Turns the booking config into the exact body POST /v1/trips/book accepts.
- * There is deliberately no VisionCam `mode` field: the backend has no dashcam
- * concept and rejects an unknown field outright, so sending one would fail the
- * whole booking.
- */
-export function bookingPayloadFor(config) {
-  const pickup = { lat: PICKUP.lat, lng: PICKUP.lng }
-
-  if (config.mode === 'hour') {
-    return {
-      booking_type: 'HOURLY',
-      hours: HOURS_BY_PACKAGE[config.packageId] ?? 4,
-      pickup,
-      pickup_address: PICKUP.address,
-      required_certification: config.skillId,
-      speed_ceiling_kmh: config.ceiling,
-    }
-  }
-
-  const drop = DROPS.find((d) => d.id === config.dropId)
-  if (!drop) throw new Error('Choose a destination before booking')
-
-  return {
-    booking_type: 'POINT_TO_POINT',
-    pickup,
-    pickup_address: PICKUP.address,
-    drop: { lat: drop.lat, lng: drop.lng },
-    drop_address: drop.address,
-    required_certification: config.skillId,
-    speed_ceiling_kmh: config.ceiling,
-  }
-}

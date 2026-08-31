@@ -219,6 +219,27 @@ export default function DriverHomeScreen({ onLogout }) {
               </View>
             </View>
 
+            {(request.vehicleSpecs || request.requirement || request.stops?.length > 0) && (
+              <View style={{ flexDirection: 'row', gap: space.xs, marginTop: space.md, flexWrap: 'wrap' }}>
+                {request.vehicleSpecs && (
+                  <>
+                    <Pill label={`${request.vehicleSpecs.company} ${request.vehicleSpecs.model}`} />
+                    <Pill label={request.vehicleSpecs.transmission} />
+                  </>
+                )}
+                {request.requirement === 'airport' && request.flightNumber && (
+                  <Pill label={`Flight ${request.flightNumber}`} tone="brand" />
+                )}
+                {request.tripType === 'two_way' && <Pill label="Round Trip" tone="brand" />}
+                {request.stops?.length > 0 && (
+                  <Pill label={`${request.stops.length} Stop${request.stops.length > 1 ? 's' : ''}`} />
+                )}
+                {request.requirement && (
+                  <Pill label={request.requirement.replace('_', ' ')} style={{ textTransform: 'capitalize' }} />
+                )}
+              </View>
+            )}
+
             <View
               style={{
                 flexDirection: 'row',

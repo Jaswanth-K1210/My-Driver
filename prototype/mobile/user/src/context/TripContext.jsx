@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/apiClient'
 import { SKILLS } from '../data/mock'
-import { bookingPayloadFor, toVaultRow, toViewTrip } from '../lib/tripView'
+import { bookingPayloadFor, DEFAULT_CONFIG } from '../lib/booking'
+import { toVaultRow, toViewTrip } from '../lib/tripView'
 import { useAuth } from './AuthContext'
 
 const TripCtx = createContext(null)
@@ -10,14 +11,6 @@ export function useTrip() {
   const ctx = useContext(TripCtx)
   if (!ctx) throw new Error('useTrip must be used inside a TripProvider')
   return ctx
-}
-
-const DEFAULT_CONFIG = {
-  mode: 'location',
-  dropId: null,
-  packageId: 'h4',
-  skillId: 'MD-Standard',
-  ceiling: 60,
 }
 
 /**

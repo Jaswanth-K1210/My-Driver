@@ -17,6 +17,7 @@ import {
 import MapCanvas from '../../components/app/MapCanvas.jsx'
 import PhoneFrame from '../../components/app/PhoneFrame.jsx'
 import MobileTrackScreen from '../../components/app/mobile/MobileTrackScreen.jsx'
+import MobileDriverAcceptScreen from '../../components/app/mobile/MobileDriverAcceptScreen.jsx'
 import { Modal, SectionCard, StatCard } from '../../components/app/Primitives.jsx'
 import { useTrip } from '../../context/tripStore.js'
 import { useToast } from '../../context/toastStore.js'
@@ -48,25 +49,34 @@ function EmptyState() {
   )
 }
 
-function Matching({ label }) {
+function Matching({ label, trip }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white px-6 py-24 text-center">
-      <span className="relative flex h-20 w-20 text-brand-500">
-        <span className="pulse-ring absolute inline-flex h-20 w-20 rounded-full" />
-        <span className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-50">
-          <Search className="h-8 w-8" aria-hidden="true" />
+    <div className="grid gap-6 xl:grid-cols-[1fr_auto]">
+      <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white px-6 py-24 text-center h-[500px]">
+        <span className="relative flex h-20 w-20 text-brand-500">
+          <span className="pulse-ring absolute inline-flex h-20 w-20 rounded-full" />
+          <span className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-50">
+            <Search className="h-8 w-8" aria-hidden="true" />
+          </span>
         </span>
-      </span>
-      <h2 className="mt-6 text-lg font-bold text-slate-900">{label ?? 'Matching a certified driver…'}</h2>
-      <p className="mt-1.5 text-sm text-slate-500">Drivers have 20 seconds to accept</p>
-      <ul className="mt-6 w-full max-w-xs space-y-2">
-        {['Police background check', 'Face-match handshake armed', 'VisionCam standby'].map((item) => (
-          <li key={item} className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" aria-hidden="true" />
-            {item}
-          </li>
-        ))}
-      </ul>
+        <h2 className="mt-6 text-lg font-bold text-slate-900">{label ?? 'Matching a certified driver…'}</h2>
+        <p className="mt-1.5 text-sm text-slate-500">Drivers have 20 seconds to accept</p>
+        <ul className="mt-6 w-full max-w-xs space-y-2">
+          {['Police background check', 'Face-match handshake armed', 'VisionCam standby'].map((item) => (
+            <li key={item} className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" aria-hidden="true" />
+              {item}
+            </li>
+          ))}
+        </ul>
+      </div>
+      
+      {/* Driver App Preview */}
+      <div className="hidden xl:block">
+        <PhoneFrame label="Driver App Preview (Accepting)">
+          <MobileDriverAcceptScreen trip={trip} />
+        </PhoneFrame>
+      </div>
     </div>
   )
 }
@@ -157,9 +167,19 @@ export default function Track() {
   const [guardians, setGuardians] = useState([])
   const [sharedIds, setSharedIds] = useState([])
   const [confirmCancel, setConfirmCancel] = useState(false)
+  const [handshakeOtp, setHandshakeOtp] = useState(null)
   const [sosStage, setSosStage] = useState('idle')
   const [countdown, setCountdown] = useState(SOS_COUNTDOWN_S)
   const holdRef = useRef(null)
+
+  // Fetch handshake OTP for driver when in HANDSHAKE_PENDING phase
+  useEffect(() => {
+    if (trip?.status === 'HANDSHAKE_PENDING' && trip?.serverId) {
+      api.trips.handshakeOtp(trip.serverId)
+        .then((res) => setHandshakeOtp(res.otp))
+        .catch(() => setHandshakeOtp(null))
+    }
+  }, [trip?.status, trip?.serverId])
 
   // Real guardians from the account, for the share sheet.
   useEffect(() => {
@@ -202,7 +222,7 @@ export default function Track() {
   }, [sosStage, countdown, toast])
 
   if (phase === 'idle') return <EmptyState />
-  if (phase === 'matching') return <Matching label={trip?.statusLabel} />
+  if (phase === 'matching') return <Matching label={trip?.statusLabel} trip={trip} />
   if (phase === 'complete' && trip) {
     return (
       <TripComplete
@@ -279,6 +299,25 @@ export default function Track() {
             >
               Cancel trip
             </button>
+          </div>
+        </div>
+      )}
+
+      {trip.status === 'HANDSHAKE_PENDING' && (
+        <div className="rise-in flex flex-wrap items-center justify-between gap-4 rounded-3xl border-2 border-brand-500 bg-brand-50/70 p-6 shadow-sm">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 animate-ping rounded-full bg-brand-500" />
+              <span className="text-xs font-black uppercase tracking-wider text-brand-600">Pickup Handshake Required</span>
+            </div>
+            <h3 className="mt-1 text-lg font-bold text-slate-900">Share your 4-digit OTP with your driver</h3>
+            <p className="mt-0.5 text-xs text-slate-600">The driver will verify your OTP and take a quick safety selfie to start the engine.</p>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold uppercase text-slate-500">Your OTP:</span>
+            <span className="flex items-center justify-center rounded-2xl bg-brand-500 px-5 py-2.5 font-mono text-2xl font-black tracking-widest text-white shadow-md shadow-brand-500/25">
+              {handshakeOtp ?? '····'}
+            </span>
           </div>
         </div>
       )}

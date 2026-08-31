@@ -47,6 +47,6 @@ export async function runMigrations(): Promise<void> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && (import.meta.url === `file://${process.argv[1]}` || process.argv[1].endsWith('migrate.ts'))) {
   await runMigrations()
 }

@@ -48,6 +48,14 @@ export type TripView = {
   requested_at: string
   completed_at: string | null
   driver: TripDriver | null
+  stops?: any[] | null
+  return_stops?: any[] | null
+  return_drop?: LatLng | null
+  vehicle_specs?: any | null
+  vision_mode?: string | null
+  flight_number?: string | null
+  requirement?: string | null
+  trip_type?: string | null
 }
 
 /**
@@ -58,6 +66,7 @@ const TRIP_SELECT = `
   SELECT
     t.id, t.customer_id, t.driver_id, t.status, t.booking_type, t.hourly_package_hours,
     t.pickup_lat, t.pickup_lng, t.drop_lat, t.drop_lng,
+    t.return_drop_lat, t.return_drop_lng,
     t.required_certification, t.speed_ceiling_kmh,
     t.estimated_distance_km::float8 AS estimated_distance_km,
     t.estimated_fare::float8        AS estimated_fare,
@@ -66,6 +75,7 @@ const TRIP_SELECT = `
     t.fare_amount::float8           AS fare_amount,
     t.driver_earnings::float8       AS driver_earnings,
     t.requested_at, t.completed_at,
+    t.stops, t.return_stops, t.vehicle_specs, t.vision_mode, t.flight_number, t.requirement, t.trip_type,
     du.full_name          AS driver_name,
     dp.vehicle_model      AS driver_vehicle_model,
     dp.vehicle_plate      AS driver_vehicle_plate,
@@ -88,16 +98,18 @@ const initialsOf = (name: string | null): string | null => {
 function toView(row: RawTrip): TripView {
   const {
     pickup_lat, pickup_lng, drop_lat, drop_lng,
+    return_drop_lat, return_drop_lng,
     driver_name, driver_vehicle_model, driver_vehicle_plate, driver_rating, driver_score,
     ...rest
   } = row
 
-  const base = rest as Omit<TripView, 'pickup' | 'drop' | 'driver'>
+  const base = rest as Omit<TripView, 'pickup' | 'drop' | 'return_drop' | 'driver'>
 
   return {
     ...base,
     pickup: { lat: pickup_lat as number, lng: pickup_lng as number },
-    drop: drop_lat === null ? null : { lat: drop_lat as number, lng: drop_lng as number },
+    drop: drop_lat == null ? null : { lat: drop_lat as number, lng: drop_lng as number },
+    return_drop: return_drop_lat == null ? null : { lat: return_drop_lat as number, lng: return_drop_lng as number },
     driver: base.driver_id
       ? {
           id: base.driver_id,
@@ -160,14 +172,22 @@ const generateHandshakeOtp = (): string =>
 export type BookInput = {
   customerId: string
   bookingType: BookingType
-  hours?: number | undefined
+  hours?: number | null | undefined
   pickup: LatLng
-  pickupAddress?: string | undefined
-  drop?: LatLng | undefined
-  dropAddress?: string | undefined
+  pickupAddress?: string | null | undefined
+  drop?: LatLng | null | undefined
+  dropAddress?: string | null | undefined
   requiredCertification: string
   speedCeilingKmh: number
-  idempotencyKey?: string | undefined
+  idempotencyKey?: string | null | undefined
+  stops?: any[] | null | undefined
+  returnStops?: any[] | null | undefined
+  returnDrop?: LatLng | null | undefined
+  carDetails?: any | null | undefined
+  visionMode?: string | null | undefined
+  flightNumber?: string | null | undefined
+  requirement?: string | null | undefined
+  tripType?: string | null | undefined
 }
 
 export async function bookTrip(input: BookInput): Promise<TripView> {
@@ -192,7 +212,7 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
   const fare = computeFare({
     bookingType: input.bookingType,
     distanceKm,
-    hours: input.hours,
+    hours: input.hours ?? undefined,
     perKmRate: card.per_km_rate,
     hourlyRate: card.hourly_rate,
     pickupAt: new Date(),
@@ -210,8 +230,9 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
          drop_lat, drop_lng, drop_address,
          required_certification, speed_ceiling_kmh,
          pickup_handshake_otp_hash, estimated_distance_km, estimated_fare,
-         idempotency_key
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+         idempotency_key, stops, return_stops, return_drop_lat, return_drop_lng,
+         vehicle_specs, vision_mode, flight_number, requirement, trip_type
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
        RETURNING id`,
       [
         input.customerId,
@@ -229,6 +250,15 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
         distanceKm.toFixed(2),
         fare.total.toFixed(2),
         input.idempotencyKey ?? null,
+        input.stops ? JSON.stringify(input.stops) : null,
+        input.returnStops ? JSON.stringify(input.returnStops) : null,
+        input.returnDrop?.lat ?? null,
+        input.returnDrop?.lng ?? null,
+        input.carDetails ? JSON.stringify(input.carDetails) : null,
+        input.visionMode ?? null,
+        input.flightNumber ?? null,
+        input.requirement ?? null,
+        input.tripType ?? null,
       ],
     )
     const tripId = rows[0]!.id as string
@@ -571,6 +601,13 @@ export type PendingOffer = {
   estimated_distance_km: number | null
   estimated_fare: number | null
   driver_earnings_estimate: number | null
+  stops?: any[] | null
+  return_stops?: any[] | null
+  vehicle_specs?: any | null
+  vision_mode?: string | null
+  flight_number?: string | null
+  requirement?: string | null
+  trip_type?: string | null
   // Phase 1 rates drivers only (driver_ratings) — there is no customer
   // rating to show on the offer card.
   customer: { name: string | null }
@@ -599,6 +636,13 @@ export async function listPendingOffers(driverId: string): Promise<PendingOffer[
             t.speed_ceiling_kmh,
             t.estimated_distance_km::float8   AS estimated_distance_km,
             t.estimated_fare::float8          AS estimated_fare,
+            t.stops,
+            t.return_stops,
+            t.vehicle_specs,
+            t.vision_mode,
+            t.flight_number,
+            t.requirement,
+            t.trip_type,
             u.full_name                       AS customer_name
        FROM trip_offers o
        JOIN trips t  ON t.id = o.trip_id
@@ -622,6 +666,13 @@ export async function listPendingOffers(driverId: string): Promise<PendingOffer[
     speed_ceiling_kmh: r.speed_ceiling_kmh,
     estimated_distance_km: r.estimated_distance_km,
     estimated_fare: r.estimated_fare,
+    stops: r.stops,
+    return_stops: r.return_stops,
+    vehicle_specs: r.vehicle_specs,
+    vision_mode: r.vision_mode,
+    flight_number: r.flight_number,
+    requirement: r.requirement,
+    trip_type: r.trip_type,
     // The same 80% split computeFare() applies, so the driver sees take-home.
     driver_earnings_estimate:
       r.estimated_fare === null ? null : Math.round(r.estimated_fare * 0.8 * 100) / 100,

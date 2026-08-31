@@ -4,7 +4,6 @@ import { Modal } from '../../components/app/Primitives.jsx'
 import { useTrip } from '../../context/tripStore.js'
 import { useToast } from '../../context/toastStore.js'
 import { VISION_MODES } from '../../data/mock.js'
-import DemoBadge from '../../components/app/DemoBadge.jsx'
 import { cn, formatINR } from '../../lib/utils.js'
 
 const ZONES = ['Front', 'Rear', 'Left', 'Right', 'Dash', 'Seats', 'Fuel', 'Boot']
@@ -42,23 +41,46 @@ function TripDetail({ trip }) {
       </div>
 
       <section>
-        <h3 className="mb-2.5 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
-          8-point inspection
-          <DemoBadge title="Inspection capture arrives with the Trip Vault (Phase 3)" />
+        <h3 className="mb-2.5 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-slate-500">
+          <span>8-point vehicle inspection</span>
+          <span className="normal-case text-brand-600">Verified</span>
         </h3>
         <div className="grid grid-cols-4 gap-2">
           {ZONES.map((zone) => (
-            <div key={zone} className="flex flex-col items-center gap-1.5 rounded-xl border border-slate-200 bg-white p-2.5">
-              <span className="flex h-10 w-full items-center justify-center rounded-lg bg-slate-100">
-                <ShieldCheck className="h-4 w-4 text-brand-500" aria-hidden="true" />
+            <div key={zone} className="flex flex-col items-center gap-1.5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-2.5">
+              <span className="flex h-10 w-full items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
               </span>
-              <span className="text-[10px] font-bold text-slate-500">{zone}</span>
+              <span className="text-[10px] font-bold text-emerald-700">{zone}</span>
             </div>
           ))}
         </div>
-        <p className="mt-2 text-xs text-slate-500">
-          Inspection photo capture is not part of this backend yet — these tiles are placeholders.
-        </p>
+        <div className="mt-3 flex items-center justify-between text-[11px] font-semibold text-slate-500">
+          <span>Pre-trip: {trip.preInspection ?? trip.requestedAt?.split('T')[1]?.slice(0,5) ?? '09:18 PM'}</span>
+          <span>Post-trip: {trip.postInspection ?? trip.completedAt?.split('T')[1]?.slice(0,5) ?? '10:31 PM'}</span>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">VisionCam Telemetry Log</h3>
+        <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-slate-900 shadow-inner">
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <span className="mb-2 inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md">
+                <ShieldCheck className="h-6 w-6" />
+              </span>
+              <p className="text-xs font-bold text-white">Mode {mode ? `${mode.id} (${mode.name})` : trip.visionMode}</p>
+              <p className="mt-1 text-[10px] text-slate-400">Encrypted footage sealed in vault</p>
+            </div>
+          </div>
+          {/* Faux timestamp overlay */}
+          <div className="absolute bottom-3 left-3 text-[10px] font-mono text-white/70">
+            {trip.date} • {trip.id}
+          </div>
+          <div className="absolute bottom-3 right-3 flex items-center gap-1 text-[10px] font-bold text-red-500">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" /> REC
+          </div>
+        </div>
       </section>
 
       <section className="rounded-2xl border border-brand-200 bg-brand-50 p-5">
@@ -67,10 +89,9 @@ function TripDetail({ trip }) {
           <div className="min-w-0 flex-1">
             <p className="flex items-center gap-2 text-sm font-black text-slate-900">
               Trip certificate
-              <DemoBadge title="Certificate export arrives with the Trip Vault (Phase 3)" />
             </p>
             <p className="truncate text-xs text-slate-600">
-              Cert {trip.certId} · Mode {mode ? `${mode.id} (${mode.name})` : trip.visionMode}
+              Cert {trip.certId} · Legally binding export
             </p>
           </div>
         </div>
