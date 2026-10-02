@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Car, ChevronDown, ChevronUp, Compass, CreditCard, Gauge, MapPin, Plane, ShieldCheck, Star } from 'lucide-react'
+import { ArrowRight, Car, ChevronDown, ChevronUp, Compass, CreditCard, MapPin, Plane, ShieldCheck, Star } from 'lucide-react'
 import { HERO_WORDS, STATS, TRUST_MARKS, REQUIREMENTS } from '../../data/mock.js'
 import { useTrip } from '../../context/tripStore.js'
 import { DEFAULT_CONFIG, getRecommendedSkillId, quoteFor } from '../../lib/booking.js'

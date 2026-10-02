@@ -10,6 +10,7 @@ import { corsOrigins, env } from './config/env.js'
 import { pool } from './db/client.js'
 import { registerErrorHandler } from './lib/errors.js'
 import { gauge, renderMetrics } from './lib/metrics.js'
+import { registerAdminOpsRoutes } from './modules/admin-ops/routes.js'
 import { registerAuthRoutes } from './modules/auth/routes.js'
 import { registerTripRoutes } from './modules/trips/routes.js'
 import { getIntegrityEngine } from './modules/integrity/engine.js'
@@ -61,6 +62,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerUserRoutes(app)
   registerTripRoutes(app)
   registerSafetyRoutes(app)
+  registerAdminOpsRoutes(app)
   registerVaultRoutes(app)
 
   // "Is this process alive" — for the container runtime.

@@ -25,6 +25,9 @@ export function TripProvider({ children }) {
   const [pastTrips, setPastTrips] = useState([])
   const [skills, setSkills] = useState(SKILLS)
   const [driverPosition, setDriverPosition] = useState(null)
+  // Real integrity-engine alerts for the current trip, and the top speed seen.
+  const [alerts, setAlerts] = useState([])
+  const [maxSpeed, setMaxSpeed] = useState(0)
   const [connection, setConnection] = useState('closed')
   const [error, setError] = useState(null)
 
@@ -98,6 +101,12 @@ export function TripProvider({ children }) {
     conn.on('DRIVER_LOCATION', (frame) => {
       if (frame.trip_id !== tripIdRef.current) return
       setDriverPosition(frame.coords)
+      if (frame.coords.speed != null) setMaxSpeed((m) => Math.max(m, Math.round(frame.coords.speed)))
+    })
+
+    conn.on('ANOMALY_TRIGGERED', (frame) => {
+      if (frame.trip_id !== tripIdRef.current) return
+      setAlerts((prev) => [...prev, { ...frame, at: Date.now() }])
     })
 
     await conn.connect()
@@ -162,6 +171,8 @@ export function TripProvider({ children }) {
       setTrip(null)
       setSummary(null)
       setDriverPosition(null)
+      setAlerts([])
+      setMaxSpeed(0)
       setPhase('idle')
     },
     [],
@@ -184,6 +195,8 @@ export function TripProvider({ children }) {
     setTrip(null)
     setSummary(null)
     setDriverPosition(null)
+    setAlerts([])
+    setMaxSpeed(0)
     setPhase('idle')
     await loadHistory()
   }, [loadHistory])
@@ -224,6 +237,8 @@ export function TripProvider({ children }) {
       rawTrip: trip,
       summary,
       driverPosition,
+      alerts,
+      maxSpeed,
       connection,
       error,
       vaultTrips: pastTrips,
@@ -236,7 +251,7 @@ export function TripProvider({ children }) {
       hasActiveTrip: phase === 'live' || phase === 'matching',
     }),
     [
-      config, skills, phase, viewTrip, trip, summary, driverPosition, connection, error,
+      config, skills, phase, viewTrip, trip, summary, driverPosition, alerts, maxSpeed, connection, error,
       pastTrips, startMatching, completeTrip, cancelTrip, rateTrip, saveToVault, loadHistory,
     ],
   )

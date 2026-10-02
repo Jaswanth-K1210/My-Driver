@@ -12,6 +12,7 @@ import { computeFare } from './fare.js'
 import { setAvailability } from './geo-index.js'
 import { getRateCard } from './rate-cards.js'
 import { assertTransition, CANCELLABLE_FROM, type TripStatus } from './state-machine.js'
+import { isNightPickupIST } from '../../lib/time.js'
 
 export const HANDSHAKE_OTP_DIGITS = 4
 export const HANDSHAKE_MAX_ATTEMPTS = 5
@@ -384,6 +385,20 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
       duration_min: durationMin,
       fare: fare.total,
     })
+
+    // Night Shield: a trip ending inside the 22:00-05:00 window earns a
+    // welfare call 10 minutes after drop-off. Inserted in the completion
+    // transaction so a trip can never complete without its check-in queued.
+    // Day trips get no row, which is what keeps the desk queue small.
+    if (isNightPickupIST(new Date())) {
+      await client.query(
+        `INSERT INTO post_trip_checkins (trip_id, due_at)
+         VALUES ($1, now() + INTERVAL '10 minutes')
+         ON CONFLICT (trip_id) DO NOTHING`,
+        [tripId],
+      )
+    }
+
     await client.query('COMMIT')
   } catch (err) {
     await client.query('ROLLBACK')

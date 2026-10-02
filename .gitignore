@@ -90,3 +90,6 @@ coverage/
 .eslintcache
 scratch/
 
+
+# Generated staff passwords (npm run seed:staff)
+credentials.md

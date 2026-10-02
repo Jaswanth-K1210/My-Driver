@@ -1,6 +1,7 @@
 import { buildApp, setReady } from './app.js'
 import { env } from './config/env.js'
 import { closeDb } from './db/client.js'
+import { startQualificationSweeper } from './modules/admin-ops/sweeper.js'
 import { startEscalationSweeper } from './modules/escalation/sweeper.js'
 import { getIntegrityEngine } from './modules/integrity/engine.js'
 import { startSweeper } from './modules/trips/sweeper.js'
@@ -16,6 +17,7 @@ const stopSweeper = startSweeper()
 const integrity = getIntegrityEngine()
 integrity.start()
 const stopEscalationSweeper = startEscalationSweeper()
+const stopQualificationSweeper = startQualificationSweeper()
 
 let shuttingDown = false
 
@@ -31,6 +33,7 @@ async function shutdown(signal: string): Promise<void> {
   try {
     stopSweeper()
     stopEscalationSweeper()
+    stopQualificationSweeper()
     integrity.stop()
     // 2. Stop accepting connections and let in-flight requests finish.
     await app.close()

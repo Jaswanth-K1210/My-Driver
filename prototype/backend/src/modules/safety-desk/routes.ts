@@ -27,6 +27,7 @@ import {
   deskStats,
   dispatchGuardians,
   escalationQueue,
+  liveDrivers,
   releaseEvidence,
 } from './service.js'
 
@@ -199,6 +200,36 @@ export function registerSafetyRoutes(app: FastifyInstance): void {
       },
     },
     async () => deskStats(),
+  )
+
+  r.get(
+    '/v1/admin/drivers/live',
+    {
+      onRequest: [requireAuth, requireRole(...DESK_ROLES)],
+      schema: {
+        response: {
+          200: z.array(
+            z.object({
+              driver_id: z.string().uuid(),
+              name: z.string().nullable(),
+              vehicle_plate: z.string().nullable(),
+              availability: z.string(),
+              night_shield_certified: z.boolean(),
+              mydriver_score: z.number(),
+              lat: z.number(),
+              lng: z.number(),
+              trip_id: z.string().uuid().nullable(),
+              escalation_level: LevelSchema.nullable(),
+            }),
+          ),
+        },
+      },
+    },
+    async (request) => {
+      // Viewing where drivers are is a privacy-relevant read, so it is audited.
+      await audit(request.auth!.userId, request.auth!.role, 'VIEW_DRIVER_MAP', null)
+      return liveDrivers()
+    },
   )
 
   r.get(

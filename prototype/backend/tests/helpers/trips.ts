@@ -24,7 +24,16 @@ export async function makeCustomer(app: FastifyInstance, phone: string): Promise
   return { userId, accessToken }
 }
 
-/** Log a driver in, put them ONLINE, place them on the geo index, certify them. */
+/**
+ * Log a driver in, put them ONLINE, place them on the geo index, certify them.
+ *
+ * Also marks them APPROVED and Night Shield certified, because dispatch now
+ * filters on both. Night Shield especially: without it this suite would pass
+ * by day and fail after 22:00 IST, which is the worst kind of flake.
+ *
+ * A driver who should NOT be dispatchable is made by overriding these after
+ * the fact — see the onboarding-gate test.
+ */
 export async function makeOnlineDriver(
   app: FastifyInstance,
   phone: string,
@@ -37,9 +46,14 @@ export async function makeOnlineDriver(
     method: 'POST', url: '/v1/driver/availability',
     headers: bearer(accessToken), payload: { availability: 'ONLINE' },
   })
-  await pool.query(`UPDATE driver_profiles SET certifications = $2 WHERE user_id = $1`, [
-    userId, certifications,
-  ])
+  await pool.query(
+    `UPDATE driver_profiles
+        SET certifications = $2,
+            onboarding_status = 'APPROVED',
+            night_shield_certified = true
+      WHERE user_id = $1`,
+    [userId, certifications],
+  )
   await upsertDriverLocation(userId, at, { force: true })
 
   return { userId, accessToken }

@@ -1,13 +1,13 @@
 import { Gauge, MessageSquare, Phone, Siren, Star, Users, X } from 'lucide-react'
-import MapCanvas from '../MapCanvas.jsx'
+import RoadMap from '../RoadMap.jsx'
 import { cn, formatINR } from '../../../lib/utils.js'
 
 /**
  * The live-trip screen exactly as it appears in the MyDriver mobile app,
- * rendered from the same telemetry as the web layout beside it.
+ * rendered from the same live data as the web layout beside it.
  */
-export default function MobileTrackScreen({ trip, telemetry, sharedCount = 0 }) {
-  const { progress, speed, maxSpeed, breaches, overCeiling, etaMin, status } = telemetry
+export default function MobileTrackScreen({ trip, points, live, sharedCount = 0 }) {
+  const { speed, maxSpeed, breaches, overCeiling, status } = live
 
   return (
     <div className="flex h-full flex-col bg-white">
@@ -28,20 +28,17 @@ export default function MobileTrackScreen({ trip, telemetry, sharedCount = 0 }) 
       </header>
 
       <div className="relative mx-3 h-44 shrink-0 overflow-hidden rounded-2xl border border-slate-200">
-        <MapCanvas progress={progress} className="h-full w-full" />
+        <RoadMap points={points} className="h-full w-full" label="Live trip map, app preview" />
         <span
           className={cn(
-            'absolute left-2 top-2 rounded-lg px-1.5 py-1 text-[10px] font-black backdrop-blur',
+            'absolute right-2 top-2 z-10 rounded-lg px-1.5 py-1 text-[10px] font-black backdrop-blur',
             overCeiling ? 'bg-brand-600 text-white' : 'bg-white/90 text-brand-600',
           )}
         >
-          {speed} km/h
+          {speed ?? '–'} km/h
         </span>
-        <span className="absolute bottom-2 left-2 rounded-lg bg-white/90 px-1.5 py-1 text-[9px] font-semibold text-slate-700 backdrop-blur">
-          {status} · {Math.round(progress)}%
-        </span>
-        <span className="absolute bottom-2 right-2 rounded-lg bg-white/90 px-1.5 py-1 text-[10px] font-bold text-slate-700 backdrop-blur">
-          ETA {etaMin}m
+        <span className="absolute bottom-2 left-2 z-10 rounded-lg bg-white/90 px-1.5 py-1 text-[9px] font-semibold text-slate-700 backdrop-blur">
+          {status}
         </span>
       </div>
 

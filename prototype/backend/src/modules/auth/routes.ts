@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { signInWithGoogle } from './google.js'
 import { requestOtp, ROLES } from './otp.js'
+import { staffLogin } from './password.js'
 import { verifyOtp } from './service.js'
 import { revokeRefreshToken, rotateRefreshToken } from './tokens.js'
 
@@ -95,6 +96,32 @@ export function registerAuthRoutes(app: FastifyInstance): void {
       const { tokens, user } = await signInWithGoogle(app, {
         idToken: request.body.id_token,
         role: request.body.role,
+        deviceId: request.body.device_id,
+      })
+      return { ...tokens, user }
+    },
+  )
+
+  // Operators only. No signup: accounts are created by `npm run seed:staff`.
+  r.post(
+    '/v1/auth/staff/login',
+    {
+      schema: {
+        body: z
+          .object({
+            email: z.string().email().max(254),
+            password: z.string().min(1).max(256),
+            device_id: z.string().max(128).optional(),
+          })
+          .strict(),
+        response: { 200: TokenResponse },
+      },
+    },
+    async (request) => {
+      const { tokens, user } = await staffLogin(app, {
+        email: request.body.email,
+        password: request.body.password,
+        ip: request.ip,
         deviceId: request.body.device_id,
       })
       return { ...tokens, user }

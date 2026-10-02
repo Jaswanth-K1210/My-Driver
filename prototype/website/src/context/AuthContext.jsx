@@ -91,6 +91,15 @@ export function AuthProvider({ children }) {
     [refreshMe],
   )
 
+  /** Admin portal: operators sign in with the email and password issued to them. */
+  const staffLogin = useCallback(
+    async (email, password) => {
+      await api.auth.staffLogin(email, password)
+      return refreshMe()
+    },
+    [refreshMe],
+  )
+
   const signOut = useCallback(async () => {
     await api.auth.logout()
     setUser(null)
@@ -104,10 +113,11 @@ export function AuthProvider({ children }) {
       requestOtp,
       verifyOtp,
       signInWithGoogle,
+      staffLogin,
       signOut,
       refreshMe,
     }),
-    [user, loading, requestOtp, verifyOtp, signInWithGoogle, signOut, refreshMe],
+    [user, loading, requestOtp, verifyOtp, signInWithGoogle, staffLogin, signOut, refreshMe],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

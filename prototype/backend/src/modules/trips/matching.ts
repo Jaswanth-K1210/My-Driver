@@ -1,4 +1,5 @@
 import { pool } from '../../db/client.js'
+import { isNightPickupIST } from '../../lib/time.js'
 import { conflict, notFound } from '../../lib/errors.js'
 import { getPushProvider } from '../../providers/push/index.js'
 import { broadcastOffer, broadcastStateChange } from './broadcast.js'
@@ -66,11 +67,14 @@ export async function startDispatch(tripId: string): Promise<void> {
 
   if (trip.dispatch_round >= MAX_DISPATCH_ROUNDS) return endWithNoDrivers(trip)
 
+  // Night Shield is a hard protocol: inside 22:00-05:00 IST only a currently
+  // qualified driver may be offered the trip.
   const candidates = await findNearbyDrivers(
     { lat: trip.pickup_lat, lng: trip.pickup_lng },
     SEARCH_RADIUS_KM,
     trip.required_certification,
     10,
+    isNightPickupIST(new Date()),
   )
 
   const { rows: alreadyOffered } = await pool.query<{ driver_id: string }>(

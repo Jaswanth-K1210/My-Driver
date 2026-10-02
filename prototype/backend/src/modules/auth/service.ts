@@ -1,8 +1,9 @@
 import type { FastifyInstance } from 'fastify'
 import { pool } from '../../db/client.js'
-import { unauthorized } from '../../lib/errors.js'
+import { forbidden, unauthorized } from '../../lib/errors.js'
 import { OTP_MAX_ATTEMPTS, verifyOtpHash, type Role } from './otp.js'
 import { issueTokens, type TokenPair } from './tokens.js'
+import { SELF_SERVICE_ROLES } from './roles.js'
 
 export type PublicUser = {
   id: string
@@ -30,6 +31,30 @@ export async function grantRole(userId: string, role: Role): Promise<void> {
      ON CONFLICT (user_id, role) DO NOTHING`,
     [userId, role],
   )
+}
+
+/**
+ * Grant on sign-in, but only where signing in is allowed to create the role.
+ *
+ * Both the OTP path and the Google path call this instead of grantRole, so the
+ * rule holds wherever a session is minted rather than in one of the two.
+ */
+export async function grantRoleOnSignIn(userId: string, role: Role): Promise<void> {
+  if (SELF_SERVICE_ROLES.includes(role)) {
+    await grantRole(userId, role)
+    return
+  }
+
+  const held = await getUserRoles(userId)
+  if (!held.includes(role)) {
+    // Deliberately the same message whether the account exists, lacks the role,
+    // or was never provisioned: probing this endpoint must not reveal who holds
+    // a privileged role.
+    throw forbidden(
+      'ROLE_NOT_GRANTED',
+      'This account does not hold that role. Privileged roles are provisioned by an operator.',
+    )
+  }
 }
 
 export async function getUserRoles(userId: string): Promise<Role[]> {
@@ -72,7 +97,7 @@ export async function verifyOtp(
   await pool.query(`UPDATE otp_challenges SET consumed_at = now() WHERE id = $1`, [challenge.id])
 
   const user = await findOrCreateUserByPhone(input.phoneNumber)
-  await grantRole(user.id, input.role)
+  await grantRoleOnSignIn(user.id, input.role)
 
   const { rows: userRows } = await pool.query<Omit<PublicUser, 'role'>>(
     `SELECT id, phone_number, email, full_name FROM users WHERE id = $1`,

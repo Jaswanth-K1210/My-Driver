@@ -47,6 +47,20 @@ function memoryStorage() {
   }
 }
 
+/**
+ * Query string builder. Hand-built rather than URLSearchParams: React Native
+ * only partially polyfills that, and this file must behave identically in the
+ * browser and in Expo. Undefined and null values are dropped.
+ */
+function qs(params) {
+  const parts = []
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === '') continue
+    parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+  }
+  return parts.length > 0 ? `?${parts.join('&')}` : ''
+}
+
 export function createClient({ baseUrl, storage, onAuthChange } = {}) {
   if (!baseUrl) throw new Error('createClient requires a baseUrl')
 
@@ -290,6 +304,16 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
           }),
         ),
 
+      // Operators only; the server picks the session role from what they hold.
+      staffLogin: async (email, password) =>
+        storeAuth(
+          await request('/v1/auth/staff/login', {
+            method: 'POST',
+            body: { email, password },
+            auth: false,
+          }),
+        ),
+
       google: async (id_token, role, device_id) =>
         storeAuth(
           await request('/v1/auth/google', {
@@ -344,6 +368,7 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
     admin: {
       stats: () => request('/v1/admin/stats'),
       activeTrips: () => request('/v1/admin/trips/active'),
+      liveDrivers: () => request('/v1/admin/drivers/live'),
 
       escalations: (includeResolved = false) =>
         request(`/v1/admin/escalations?include_resolved=${includeResolved}`),
@@ -372,6 +397,97 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
           method: 'POST',
           body: { recipient },
         }),
+
+      /* ── Operations: driver onboarding, testing, badges ─────────────── */
+
+      drivers: (params = {}) => request(`/v1/admin/drivers${qs(params)}`),
+
+      driver: (id) => request(`/v1/admin/drivers/${id}`),
+
+      setDriverStatus: (id, status, note) =>
+        request(`/v1/admin/drivers/${id}/status`, {
+          method: 'POST',
+          body: { status, ...(note ? { note } : {}) },
+        }),
+
+      documentUrl: (id) => request(`/v1/admin/documents/${id}/url`),
+
+      reviewDocument: (id, status, rejectReason) =>
+        request(`/v1/admin/documents/${id}/review`, {
+          method: 'POST',
+          body: { status, ...(rejectReason ? { reject_reason: rejectReason } : {}) },
+        }),
+
+      assessments: () => request('/v1/admin/assessments'),
+
+      pendingAttempts: (params = {}) => request(`/v1/admin/attempts/pending${qs(params)}`),
+
+      gradeAttempt: (id, score, notes) =>
+        request(`/v1/admin/attempts/${id}/grade`, {
+          method: 'POST',
+          body: { score, ...(notes ? { notes } : {}) },
+        }),
+
+      badges: () => request('/v1/admin/badges'),
+
+      awardBadge: (driverId, badgeCode) =>
+        request(`/v1/admin/drivers/${driverId}/badges`, {
+          method: 'POST',
+          body: { badge_code: badgeCode },
+        }),
+
+      revokeBadge: (driverId, badgeCode, reason) =>
+        request(`/v1/admin/drivers/${driverId}/badges/revoke`, {
+          method: 'POST',
+          body: { badge_code: badgeCode, reason },
+        }),
+
+      /* ── Night Shield ───────────────────────────────────────────────── */
+
+      qualifyNightShield: (driverId) =>
+        request(`/v1/admin/drivers/${driverId}/night-shield`, { method: 'POST' }),
+
+      revokeNightShield: (driverId, reason) =>
+        request(`/v1/admin/drivers/${driverId}/night-shield/revoke`, {
+          method: 'POST',
+          body: { reason },
+        }),
+
+      nightShieldExpiring: (days = 14) => request(`/v1/admin/night-shield/expiring?days=${days}`),
+
+      shiftChecks: (shiftDate) =>
+        request(`/v1/admin/night-shield/checks${qs({ shift_date: shiftDate })}`),
+
+      checkins: (params = {}) => request(`/v1/admin/checkins${qs(params)}`),
+
+      recordCheckin: (tripId, outcome, notes) =>
+        request(`/v1/admin/checkins/${tripId}`, {
+          method: 'POST',
+          body: { outcome, ...(notes ? { notes } : {}) },
+        }),
+
+      /* ── Finance ────────────────────────────────────────────────────── */
+
+      payouts: (params = {}) => request(`/v1/admin/payouts${qs(params)}`),
+
+      unsettled: (periodStart, periodEnd) =>
+        request(`/v1/admin/payouts/unsettled${qs({ period_start: periodStart, period_end: periodEnd })}`),
+
+      generatePayout: (driverId, periodStart, periodEnd) =>
+        request('/v1/admin/payouts/generate', {
+          method: 'POST',
+          body: { driver_id: driverId, period_start: periodStart, period_end: periodEnd },
+        }),
+
+      advancePayout: (id, to, reference) =>
+        request(`/v1/admin/payouts/${id}/advance`, {
+          method: 'POST',
+          body: { to, ...(reference ? { reference } : {}) },
+        }),
+
+      /* ── Audit ledger (SUPER_ADMIN) ─────────────────────────────────── */
+
+      audit: (params = {}) => request(`/v1/admin/audit${qs(params)}`),
     },
 
     trips: {

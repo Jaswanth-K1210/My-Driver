@@ -4,7 +4,7 @@ import { googleClientIds } from '../../config/env.js'
 import { pool } from '../../db/client.js'
 import { unauthorized } from '../../lib/errors.js'
 import type { Role } from './otp.js'
-import { grantRole, type PublicUser } from './service.js'
+import { grantRoleOnSignIn, type PublicUser } from './service.js'
 import { issueTokens, type TokenPair } from './tokens.js'
 
 export type GoogleIdentity = {
@@ -81,7 +81,7 @@ export async function signInWithGoogle(
   }
 
   const userId = await resolveUser(identity)
-  await grantRole(userId, input.role)
+  await grantRoleOnSignIn(userId, input.role)
 
   const { rows } = await pool.query<Omit<PublicUser, 'role'>>(
     `SELECT id, phone_number, email, full_name FROM users WHERE id = $1`,

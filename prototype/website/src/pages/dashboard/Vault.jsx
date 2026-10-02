@@ -1,16 +1,46 @@
-import { useState } from 'react'
-import { Archive, BadgeCheck, Download, ShieldCheck } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Archive, BadgeCheck, Download } from 'lucide-react'
 import { Modal } from '../../components/app/Primitives.jsx'
 import { useTrip } from '../../context/tripStore.js'
 import { useToast } from '../../context/toastStore.js'
-import { VISION_MODES } from '../../data/mock.js'
-import { cn, formatINR } from '../../lib/utils.js'
+import { api } from '../../lib/apiClient.js'
+import { formatINR } from '../../lib/utils.js'
 
-const ZONES = ['Front', 'Rear', 'Left', 'Right', 'Dash', 'Seats', 'Fuel', 'Boot']
+const PHASES = [
+  { id: 'PRE', label: 'Pre-trip' },
+  { id: 'POST', label: 'Post-trip' },
+]
 
+/** Loads one sealed trip's evidence: inspection photos and the certificate. */
 function TripDetail({ trip }) {
   const { toast } = useToast()
-  const mode = VISION_MODES.find((m) => m.id === trip.visionMode)
+  const [photos, setPhotos] = useState(null)
+  const [cert, setCert] = useState(null)
+  const [issuing, setIssuing] = useState(false)
+
+  useEffect(() => {
+    let live = true
+    api.trips
+      .vaultPhotos(trip.serverId)
+      .then((rows) => live && setPhotos(rows))
+      .catch(() => live && setPhotos([]))
+    return () => {
+      live = false
+    }
+  }, [trip.serverId])
+
+  const openCertificate = async () => {
+    setIssuing(true)
+    try {
+      const c = cert ?? (await api.trips.certificate(trip.serverId))
+      setCert(c)
+      window.open(c.url, '_blank', 'noopener')
+    } catch (err) {
+      toast(err?.message ?? 'Certificate is not available for this trip', 'warning')
+    } finally {
+      setIssuing(false)
+    }
+  }
 
   return (
     <div className="space-y-5">
@@ -29,79 +59,68 @@ function TripDetail({ trip }) {
 
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: 'Distance', value: `${Number(trip.distanceKm).toFixed(1)} km`, danger: false },
-          { label: 'Ceiling', value: `${trip.ceiling} km/h`, danger: false },
-          { label: 'Duration', value: trip.durationMin ? `${trip.durationMin} min` : '—', danger: false },
+          { label: 'Distance', value: `${Number(trip.distanceKm).toFixed(1)} km` },
+          { label: 'Ceiling', value: `${trip.ceiling} km/h` },
+          { label: 'Duration', value: trip.durationMin ? `${trip.durationMin} min` : '—' },
         ].map((stat) => (
           <div key={stat.label} className="rounded-2xl border border-slate-200 bg-white p-4 text-center">
-            <p className={cn('text-base font-black', stat.danger ? 'text-brand-600' : 'text-slate-900')}>{stat.value}</p>
+            <p className="text-base font-black text-slate-900">{stat.value}</p>
             <p className="mt-0.5 text-[11px] text-slate-500">{stat.label}</p>
           </div>
         ))}
       </div>
 
-      <section>
-        <h3 className="mb-2.5 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-slate-500">
-          <span>8-point vehicle inspection</span>
-          <span className="normal-case text-brand-600">Verified</span>
-        </h3>
-        <div className="grid grid-cols-4 gap-2">
-          {ZONES.map((zone) => (
-            <div key={zone} className="flex flex-col items-center gap-1.5 rounded-xl border border-emerald-100 bg-emerald-50/50 p-2.5">
-              <span className="flex h-10 w-full items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
-                <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+      {PHASES.map((phase) => {
+        const shots = (photos ?? []).filter((p) => p.phase === phase.id)
+        return (
+          <section key={phase.id}>
+            <h3 className="mb-2.5 flex items-center justify-between text-xs font-bold uppercase tracking-wide text-slate-500">
+              <span>{phase.label} inspection</span>
+              <span className="normal-case">
+                {photos === null ? 'Loading…' : shots.length === 0 ? 'Not recorded' : `${shots.length}/8 zones`}
               </span>
-              <span className="text-[10px] font-bold text-emerald-700">{zone}</span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-3 flex items-center justify-between text-[11px] font-semibold text-slate-500">
-          <span>Pre-trip: {trip.preInspection ?? trip.requestedAt?.split('T')[1]?.slice(0,5) ?? '09:18 PM'}</span>
-          <span>Post-trip: {trip.postInspection ?? trip.completedAt?.split('T')[1]?.slice(0,5) ?? '10:31 PM'}</span>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <h3 className="mb-3 text-xs font-bold uppercase tracking-wide text-slate-500">VisionCam Telemetry Log</h3>
-        <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-slate-900 shadow-inner">
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-center">
-              <span className="mb-2 inline-flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur-md">
-                <ShieldCheck className="h-6 w-6" />
-              </span>
-              <p className="text-xs font-bold text-white">Mode {mode ? `${mode.id} (${mode.name})` : trip.visionMode}</p>
-              <p className="mt-1 text-[10px] text-slate-400">Encrypted footage sealed in vault</p>
-            </div>
-          </div>
-          {/* Faux timestamp overlay */}
-          <div className="absolute bottom-3 left-3 text-[10px] font-mono text-white/70">
-            {trip.date} • {trip.id}
-          </div>
-          <div className="absolute bottom-3 right-3 flex items-center gap-1 text-[10px] font-bold text-red-500">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-red-500" /> REC
-          </div>
-        </div>
-      </section>
+            </h3>
+            {shots.length > 0 && (
+              <div className="grid grid-cols-4 gap-2">
+                {shots.map((shot) => (
+                  <a
+                    key={shot.zone}
+                    href={shot.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={`SHA-256 ${shot.sha256}`}
+                    className="group overflow-hidden rounded-xl border border-slate-200"
+                  >
+                    <img src={shot.url} alt={`${phase.label} ${shot.zone}`} loading="lazy" className="aspect-square w-full object-cover transition-transform group-hover:scale-105" />
+                    <span className="block truncate px-1.5 py-1 text-[10px] font-bold text-slate-600">
+                      {shot.zone.replaceAll('_', ' ').toLowerCase()}
+                    </span>
+                  </a>
+                ))}
+              </div>
+            )}
+          </section>
+        )
+      })}
 
       <section className="rounded-2xl border border-brand-200 bg-brand-50 p-5">
         <div className="flex items-start gap-3">
           <BadgeCheck className="mt-0.5 h-5 w-5 shrink-0 text-brand-500" aria-hidden="true" />
           <div className="min-w-0 flex-1">
-            <p className="flex items-center gap-2 text-sm font-black text-slate-900">
-              Trip certificate
-            </p>
+            <p className="text-sm font-black text-slate-900">Trip certificate</p>
             <p className="truncate text-xs text-slate-600">
-              Cert {trip.certId} · Legally binding export
+              {cert ? `${cert.cert_id} · SHA-256 ${cert.sha256.slice(0, 16)}…` : 'Signed PDF with route, fare and inspection digests'}
             </p>
           </div>
         </div>
         <button
           type="button"
-          onClick={() => toast('Certificate exported to downloads (demo)', 'success')}
-          className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-500 py-3 text-sm font-black text-white transition-colors hover:bg-brand-600"
+          disabled={issuing}
+          onClick={openCertificate}
+          className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-500 py-3 text-sm font-black text-white transition-colors hover:bg-brand-600 disabled:opacity-50"
         >
           <Download className="h-4 w-4" aria-hidden="true" />
-          Export PDF certificate
+          {issuing ? 'Preparing…' : 'Open PDF certificate'}
         </button>
       </section>
     </div>

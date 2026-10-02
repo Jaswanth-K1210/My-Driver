@@ -5,6 +5,8 @@ import type { Role } from '../auth/otp.js'
 import { getEscalation, notifyGuardians } from '../escalation/service.js'
 import { evidenceBundle } from '../vault/service.js'
 import type { EscalationLevel } from '../escalation/levels.js'
+import { redis } from '../../redis/client.js'
+import { GEO_KEY } from '../trips/geo-index.js'
 
 /**
  * admin_crm_spec.md requires every Safety Desk action to be logged immutably —
@@ -59,6 +61,58 @@ export async function activeTrips(): Promise<LiveTrip[]> {
       LIMIT 500`,
   )
   return rows
+}
+
+export type LiveDriver = {
+  driver_id: string
+  name: string | null
+  vehicle_plate: string | null
+  availability: string
+  night_shield_certified: boolean
+  mydriver_score: number
+  lat: number
+  lng: number
+  trip_id: string | null
+  escalation_level: EscalationLevel | null
+}
+
+/**
+ * Every driver with a known position, for the admin live map.
+ *
+ * Positions come from the dispatch geo index in Redis (refreshed every 10s per
+ * driver), not from telemetry, so no new write path is added for the map.
+ * ponytail: reads the whole index; switch to GEOSEARCH BYBOX on the visible
+ * map bounds once online drivers reach the tens of thousands.
+ */
+export async function liveDrivers(): Promise<LiveDriver[]> {
+  const ids = await redis.zrange(GEO_KEY, 0, -1)
+  if (ids.length === 0) return []
+  const positions = await redis.geopos(GEO_KEY, ...ids)
+  const at = new Map<string, { lat: number; lng: number }>()
+  ids.forEach((id, i) => {
+    const p = positions[i]
+    if (p) at.set(id, { lng: Number(p[0]), lat: Number(p[1]) })
+  })
+
+  const { rows } = await pool.query<Omit<LiveDriver, 'lat' | 'lng'>>(
+    `SELECT dp.user_id AS driver_id,
+            u.full_name AS name,
+            dp.vehicle_plate,
+            dp.availability,
+            dp.night_shield_certified,
+            dp.mydriver_score::float8 AS mydriver_score,
+            t.id AS trip_id,
+            e.level AS escalation_level
+       FROM driver_profiles dp
+       JOIN users u ON u.id = dp.user_id
+       LEFT JOIN trips t ON t.driver_id = dp.user_id
+            AND t.status IN ('MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP', 'ESCALATED')
+       LEFT JOIN escalations e ON e.trip_id = t.id AND e.status <> 'RESOLVED'
+      WHERE dp.user_id = ANY($1::uuid[])
+        AND dp.availability <> 'OFFLINE'`,
+    [[...at.keys()]],
+  )
+  return rows.map((r) => ({ ...r, ...at.get(r.driver_id)! }))
 }
 
 export type QueueItem = {

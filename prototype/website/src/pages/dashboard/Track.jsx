@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   BadgeCheck,
@@ -6,23 +6,21 @@ import {
   CarFront,
   CheckCircle2,
   Gauge,
+  Copy,
   MessageSquare,
-  Phone,
   Search,
   Siren,
   Star,
   Users,
   X,
 } from 'lucide-react'
-import MapCanvas from '../../components/app/MapCanvas.jsx'
+import RoadMap from '../../components/app/RoadMap.jsx'
 import PhoneFrame from '../../components/app/PhoneFrame.jsx'
 import MobileTrackScreen from '../../components/app/mobile/MobileTrackScreen.jsx'
 import MobileDriverAcceptScreen from '../../components/app/mobile/MobileDriverAcceptScreen.jsx'
 import { Modal, SectionCard, StatCard } from '../../components/app/Primitives.jsx'
 import { useTrip } from '../../context/tripStore.js'
 import { useToast } from '../../context/toastStore.js'
-import { useTripTelemetry } from '../../lib/useTripTelemetry.js'
-import DemoBadge from '../../components/app/DemoBadge.jsx'
 import { api } from '../../lib/apiClient.js'
 import { cn, formatINR, maskPhone } from '../../lib/utils.js'
 
@@ -131,9 +129,8 @@ function TripComplete({ trip, summary, onSave, onRate }) {
       <div className="mt-6 flex items-start gap-3 rounded-2xl border border-brand-200 bg-brand-50 p-4 text-left">
         <BadgeCheck className="mt-0.5 h-5 w-5 shrink-0 text-brand-500" aria-hidden="true" />
         <p className="text-sm text-slate-700">
-          Route and telematics are sealed to the trip ledger.{' '}
-          <span className="font-semibold">Inspection photos and the exportable certificate</span> arrive
-          with the Trip Vault. <DemoBadge title="Trip Vault is Phase 3" />
+          Route, telematics and the 8-point inspection photos are sealed to this trip. Your{' '}
+          <span className="font-semibold">signed trip certificate</span> is in the Trip Vault.
         </p>
       </div>
 
@@ -158,14 +155,16 @@ function TripComplete({ trip, summary, onSave, onRate }) {
 }
 
 export default function Track() {
-  const { phase, trip, summary, driverPosition, connection, cancelTrip, rateTrip, saveToVault } =
-    useTrip()
+  const {
+    phase, trip, summary, driverPosition, alerts, maxSpeed, connection, cancelTrip, rateTrip, saveToVault,
+  } = useTrip()
   const { toast } = useToast()
   const navigate = useNavigate()
 
   const [guardianOpen, setGuardianOpen] = useState(false)
   const [guardians, setGuardians] = useState([])
-  const [sharedIds, setSharedIds] = useState([])
+  const [shared, setShared] = useState(null)
+  const [sharing, setSharing] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [handshakeOtp, setHandshakeOtp] = useState(null)
   const [sosStage, setSosStage] = useState('idle')
@@ -193,33 +192,38 @@ export default function Track() {
     if (holdRef.current) clearTimeout(holdRef.current)
   }, [])
 
-  const handleBreach = useCallback(
-    (value) => toast(`Speed breach ${value} km/h logged — guardians alerted`, 'warning'),
-    [toast],
-  )
-
-  // Progress and the speed trace remain simulated: the Phase 2 integrity engine
-  // is what will supply real speed-vs-ceiling analysis. Completion is NOT
-  // simulated — the driver ends the trip server-side and the socket tells us.
-  const telemetry = useTripTelemetry({
-    ceiling: trip?.ceiling ?? 60,
-    active: phase === 'live' && Boolean(trip),
-    onBreach: handleBreach,
-    onComplete: undefined,
-  })
+  // Alerts come from the server's integrity engine, not from this page.
+  const seenAlerts = useRef(0)
+  useEffect(() => {
+    const latest = alerts.at(-1)
+    if (alerts.length > seenAlerts.current && latest) {
+      const what = latest.reason === 'SPEED_CEILING_BREACH' ? 'Speed limit exceeded'
+        : latest.reason === 'ROUTE_DEVIATION_EXCEEDED' ? 'Route deviation detected'
+        : 'Driver signal lost'
+      toast(`${what}. The Safety Desk has been alerted.`, 'warning', 5000)
+    }
+    seenAlerts.current = alerts.length
+  }, [alerts, toast])
 
   useEffect(() => {
     if (sosStage !== 'armed') return undefined
     const t = setTimeout(() => {
       if (countdown <= 1) {
-        setSosStage('fired')
-        toast('Silent SOS sent — Safety Desk & guardians alerted', 'danger', 4000)
+        setSosStage('sending')
+        api.trips
+          .sos(trip.serverId, { silent: true })
+          .then(() => setSosStage('fired'))
+          .catch((err) => {
+            // Never pretend an SOS went through. Tell them to call 112.
+            setSosStage('failed')
+            toast(err?.message ?? 'SOS could not reach the Safety Desk', 'danger', 6000)
+          })
       } else {
         setCountdown((c) => c - 1)
       }
     }, 1000)
     return () => clearTimeout(t)
-  }, [sosStage, countdown, toast])
+  }, [sosStage, countdown, toast, trip?.serverId])
 
   if (phase === 'idle') return <EmptyState />
   if (phase === 'matching') return <Matching label={trip?.statusLabel} trip={trip} />
@@ -227,7 +231,7 @@ export default function Track() {
     return (
       <TripComplete
         trip={trip}
-        summary={summary ?? { maxSpeed: telemetry.maxSpeed, breaches: telemetry.breaches }}
+        summary={summary ?? { maxSpeed, breaches: alerts.length }}
         onRate={rateTrip}
         onSave={async () => {
           await saveToVault()
@@ -238,24 +242,35 @@ export default function Track() {
   }
   if (!trip) return <EmptyState />
 
-  const { progress, maxSpeed, breaches, etaMin } = telemetry
-  // A real DRIVER_LOCATION frame wins over the simulated trace.
-  const liveSpeed = driverPosition?.speed
-  const speed = liveSpeed != null ? Math.round(liveSpeed) : telemetry.speed
-  const overCeiling = speed > trip.ceiling
-  const status = trip.statusLabel ?? telemetry.status
+  const breaches = alerts.length
+  const speed = driverPosition?.speed != null ? Math.round(driverPosition.speed) : null
+  const overCeiling = speed != null && speed > trip.ceiling
+  const status = trip.statusLabel
 
-  const toggleShare = (id) =>
-    setSharedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-
-  const sendLinks = (channel) => {
-    if (sharedIds.length === 0) {
-      toast('Select at least one guardian', 'warning')
-      return
+  // One link per trip; the server texts it to every saved guardian.
+  const shareLink = async (bySms) => {
+    setSharing(true)
+    try {
+      const link = await api.trips.guardianLink(trip.serverId, bySms)
+      setShared(link)
+      if (bySms) {
+        toast(`Live link texted to ${link.sent_to_guardians} guardian${link.sent_to_guardians === 1 ? '' : 's'}`, 'success')
+      } else {
+        await navigator.clipboard?.writeText(link.url)
+        toast('Live link copied', 'success')
+      }
+    } catch (err) {
+      toast(err?.message ?? 'Could not create a live link', 'warning')
+    } finally {
+      setSharing(false)
     }
-    toast(`Live link sent to ${sharedIds.length} guardian${sharedIds.length > 1 ? 's' : ''} via ${channel}`, 'success')
-    setGuardianOpen(false)
   }
+
+  const mapPoints = [
+    { id: 'pickup', ...trip.pickup, color: '#16a34a', label: `Pickup · ${trip.from}` },
+    { id: 'drop', ...trip.drop, color: '#0f172a', label: `Drop · ${trip.to}` },
+    driverPosition && { id: 'driver', ...driverPosition, color: '#2563eb', label: 'Your driver' },
+  ].filter(Boolean)
 
   return (
     <div className="space-y-6">
@@ -289,7 +304,6 @@ export default function Track() {
                 setConfirmCancel(false)
                 try {
                   await cancelTrip()
-                  telemetry.reset()
                   toast('Trip cancelled', 'info')
                 } catch (err) {
                   toast(err?.message ?? 'Could not cancel the trip', 'warning')
@@ -324,21 +338,19 @@ export default function Track() {
 
       <div className="grid gap-6 xl:grid-cols-[1fr_auto]">
         <div className="min-w-0 space-y-5">
-          <div className="relative h-80 overflow-hidden rounded-3xl border border-slate-200 bg-white">
-            <MapCanvas progress={progress} className="h-full w-full" />
+          <div className="relative h-96 overflow-hidden rounded-3xl border border-slate-200 bg-white">
+            <RoadMap points={mapPoints} className="h-full w-full" label="Live trip map" />
             <span
               className={cn(
-                'absolute left-4 top-4 rounded-xl px-3 py-2 text-sm font-black backdrop-blur',
+                'absolute right-4 top-4 z-10 rounded-xl px-3 py-2 text-sm font-black backdrop-blur',
                 overCeiling ? 'bg-brand-600 text-white' : 'bg-white/90 text-brand-600',
               )}
             >
-              {speed} km/h · ceiling {trip.ceiling}
+              {speed ?? '–'} km/h · ceiling {trip.ceiling}
             </span>
-            <span className="absolute bottom-4 left-4 rounded-xl bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 backdrop-blur">
-              {status} · {Math.round(progress)}%
-            </span>
-            <span className="absolute bottom-4 right-4 rounded-xl bg-white/90 px-3 py-2 text-sm font-bold text-slate-700 backdrop-blur">
-              ETA {etaMin} min
+            <span className="absolute bottom-4 left-4 z-10 rounded-xl bg-white/90 px-3 py-2 text-xs font-semibold text-slate-700 backdrop-blur">
+              {status}
+              {!driverPosition && ' · waiting for driver GPS'}
             </span>
           </div>
 
@@ -354,24 +366,6 @@ export default function Track() {
                 <p className="truncate text-sm text-slate-500">
                   {trip.driver ? `${trip.driver.vehicle} · ${trip.driver.plate}` : 'Vehicle details arrive on acceptance'}
                 </p>
-              </div>
-              <div className="flex shrink-0 gap-2">
-                <button
-                  type="button"
-                  aria-label="Call driver"
-                  onClick={() => toast('Calling driver over masked number…', 'info')}
-                  className="rounded-2xl bg-slate-100 p-3 text-slate-700 transition-colors hover:bg-slate-200"
-                >
-                  <Phone className="h-4 w-4" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  aria-label="Message driver"
-                  onClick={() => toast('Secure chat opened (demo)', 'info')}
-                  className="rounded-2xl bg-slate-100 p-3 text-slate-700 transition-colors hover:bg-slate-200"
-                >
-                  <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                </button>
               </div>
             </div>
             <div className="mt-5 grid grid-cols-3 gap-3 border-t border-slate-200 pt-5 text-center">
@@ -396,7 +390,7 @@ export default function Track() {
           <div className="grid gap-4 sm:grid-cols-3">
             <StatCard icon={Gauge} label="Max speed" value={maxSpeed} unit="km/h" danger={maxSpeed > trip.ceiling} />
             <StatCard icon={Car} label="Fare locked" value={formatINR(trip.fare)} />
-            <StatCard icon={Users} label="Guardians" value={`${sharedIds.length}/${guardians.length}`} />
+            <StatCard icon={Users} label="Guardians" value={shared ? 'Watching' : `${guardians.length} saved`} />
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -407,8 +401,8 @@ export default function Track() {
             >
               <Users className="h-4 w-4" aria-hidden="true" />
               Share guardian link
-              {sharedIds.length > 0 && (
-                <span className="rounded-md bg-brand-500 px-1.5 text-[10px] font-black text-white">{sharedIds.length}</span>
+              {shared && (
+                <span className="rounded-md bg-brand-500 px-1.5 text-[10px] font-black text-white">Live</span>
               )}
             </button>
             <button
@@ -431,61 +425,82 @@ export default function Track() {
         <div className="hidden xl:block">
           <div className="sticky top-10">
             <PhoneFrame label="Same trip in the MyDriver app">
-              <MobileTrackScreen trip={trip} telemetry={telemetry} sharedCount={sharedIds.length} />
+              <MobileTrackScreen
+                trip={trip}
+                points={mapPoints}
+                live={{ speed, maxSpeed, breaches, overCeiling, status }}
+                sharedCount={shared ? guardians.length : 0}
+              />
             </PhoneFrame>
           </div>
         </div>
       </div>
 
       <Modal open={guardianOpen} onClose={() => setGuardianOpen(false)} title="Share guardian link">
+        <p className="mb-4 text-sm text-slate-600">
+          Guardians get a private link showing your driver's live position and speed until the trip ends.
+          No app or login needed.
+        </p>
         <ul className="space-y-2">
           {guardians.length === 0 && (
             <li className="rounded-2xl border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500">
-              No guardians yet — add up to 3 in your Profile.
+              No guardians yet. Add up to 3 in your <Link to="/app/profile" className="font-semibold text-brand-600">Profile</Link>.
             </li>
           )}
-          {guardians.map((g) => {
-            const selected = sharedIds.includes(g.id)
-            return (
-              <li key={g.id}>
-                <button
-                  type="button"
-                  role="checkbox"
-                  aria-checked={selected}
-                  onClick={() => toggleShare(g.id)}
-                  className={cn(
-                    'flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition-colors',
-                    selected ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:border-slate-300',
-                  )}
-                >
-                  <span className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-black', selected ? 'bg-brand-500 text-white' : 'bg-slate-100 text-slate-600')}>
-                    {g.name.charAt(0)}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-bold text-slate-900">{g.name}</span>
-                    <span className="block text-xs text-slate-500">
-                      {g.relation} · {maskPhone(g.phone)}
-                    </span>
-                  </span>
-                  <span className={cn('h-5 w-5 shrink-0 rounded-md border-2', selected ? 'border-brand-500 bg-brand-500' : 'border-slate-300')} aria-hidden="true" />
-                </button>
-              </li>
-            )
-          })}
+          {guardians.map((g) => (
+            <li key={g.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 p-4">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-black text-slate-600">
+                {g.name.charAt(0)}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-bold text-slate-900">{g.name}</span>
+                <span className="block text-xs text-slate-500">
+                  {g.relation} · {maskPhone(g.phone)}
+                </span>
+              </span>
+            </li>
+          ))}
         </ul>
+        {shared && (
+          <p className="mt-4 break-all rounded-2xl bg-slate-50 p-3 font-mono text-xs text-slate-600">{shared.url}</p>
+        )}
         <div className="mt-5 flex gap-3">
-          <button type="button" onClick={() => sendLinks('SMS')} className="flex-1 rounded-2xl bg-slate-100 py-3.5 text-sm font-black text-slate-900 transition-colors hover:bg-slate-200">
-            Send via SMS
+          <button
+            type="button"
+            disabled={sharing}
+            onClick={() => shareLink(false)}
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-slate-100 py-3.5 text-sm font-black text-slate-900 transition-colors hover:bg-slate-200 disabled:opacity-50"
+          >
+            <Copy className="h-4 w-4" aria-hidden="true" />
+            Copy link
           </button>
-          <button type="button" onClick={() => sendLinks('WhatsApp')} className="flex-1 rounded-2xl bg-brand-500 py-3.5 text-sm font-black text-white transition-colors hover:bg-brand-600">
-            Send via WhatsApp
+          <button
+            type="button"
+            disabled={sharing || guardians.length === 0}
+            onClick={() => shareLink(true)}
+            className="flex flex-1 items-center justify-center gap-2 rounded-2xl bg-brand-500 py-3.5 text-sm font-black text-white transition-colors hover:bg-brand-600 disabled:opacity-50"
+          >
+            <MessageSquare className="h-4 w-4" aria-hidden="true" />
+            Text all guardians
           </button>
         </div>
       </Modal>
 
-      {(sosStage === 'armed' || sosStage === 'fired') && (
+      {sosStage !== 'idle' && (
         <div className="fixed inset-0 z-[95] flex flex-col items-center justify-center gap-5 bg-white/97 p-6 text-center backdrop-blur">
-          {sosStage === 'armed' ? (
+          {sosStage === 'sending' ? (
+            <p className="text-xl font-black text-slate-900">Alerting the Safety Desk…</p>
+          ) : sosStage === 'failed' ? (
+            <>
+              <Siren className="h-12 w-12 text-brand-700" aria-hidden="true" />
+              <p className="text-xl font-black text-brand-700">SOS did not go through</p>
+              <p className="max-w-sm text-sm text-slate-600">Call emergency services on 112 now.</p>
+              <a href="tel:112" className="rounded-full bg-brand-700 px-8 py-3.5 text-sm font-black text-white">Call 112</a>
+              <button type="button" onClick={() => setSosStage('armed')} className="text-sm font-bold text-slate-600">
+                Retry SOS
+              </button>
+            </>
+          ) : sosStage === 'armed' ? (
             <>
               <span className="relative flex h-28 w-28 text-brand-700">
                 <span className="pulse-ring absolute inline-flex h-28 w-28 rounded-full" />
@@ -495,7 +510,7 @@ export default function Track() {
               </span>
               <p className="text-xl font-black text-slate-900">SOS activating…</p>
               <p className="max-w-sm text-sm leading-relaxed text-slate-600">
-                Safety Desk will be alerted with live location and VisionCam stream. Guardians will be notified.
+                The Safety Desk will be alerted at emergency level with your live location, and your guardians notified.
               </p>
               <button type="button" onClick={() => setSosStage('idle')} className="mt-2 rounded-full bg-slate-100 px-8 py-3.5 text-sm font-black text-slate-900 transition-colors hover:bg-slate-200">
                 Cancel — I am safe
@@ -508,7 +523,7 @@ export default function Track() {
               </span>
               <p className="text-xl font-black text-brand-700">Emergency protocol active</p>
               <ul className="w-full max-w-sm space-y-2 text-left">
-                {['Safety Desk escalated to L3', 'Live location streaming', 'Guardians notified via SMS', 'VisionCam evidence sealing'].map((item) => (
+                {['Safety Desk alerted at L4 (emergency)', 'Live location shared with the desk', 'Guardians notified', 'Trip evidence preserved'].map((item) => (
                   <li key={item} className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" aria-hidden="true" />
                     {item}
@@ -516,7 +531,7 @@ export default function Track() {
                 ))}
               </ul>
               <button type="button" onClick={() => setSosStage('idle')} className="mt-2 rounded-full bg-slate-100 px-8 py-3.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-200">
-                End drill (demo)
+                Close. The Safety Desk will call you
               </button>
             </>
           )}

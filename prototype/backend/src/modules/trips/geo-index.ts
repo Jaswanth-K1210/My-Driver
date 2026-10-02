@@ -74,6 +74,7 @@ export async function findNearbyDrivers(
   radiusKm: number,
   certification: string,
   limit: number,
+  requireNightShield = false,
 ): Promise<string[]> {
   const nearby = (await redis.georadius(
     GEO_KEY,
@@ -89,14 +90,20 @@ export async function findNearbyDrivers(
   if (nearby.length === 0) return []
 
   const { rows } = await pool.query<{ user_id: string }>(
+    // Every dispatch path routes through this one query, so every eligibility
+    // rule lives here and only here. A badge, an approval flag or a Night
+    // Shield qualification that this predicate does not read would be
+    // decoration rather than a control.
     `SELECT user_id
        FROM driver_profiles
       WHERE user_id = ANY($1::uuid[])
         AND availability = 'ONLINE'
         AND $2 = ANY(certifications)
+        AND onboarding_status = 'APPROVED'
+        AND (NOT $4::boolean OR night_shield_certified)
       ORDER BY mydriver_score DESC
       LIMIT $3`,
-    [nearby, certification, limit],
+    [nearby, certification, limit, requireNightShield],
   )
 
   const eligible = new Set(rows.map((r) => r.user_id))

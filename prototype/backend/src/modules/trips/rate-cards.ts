@@ -1,3 +1,4 @@
+import { env } from '../../config/env.js'
 import { pool } from '../../db/client.js'
 import { notFound } from '../../lib/errors.js'
 import { redis } from '../../redis/client.js'
@@ -56,8 +57,16 @@ export async function listRateCards(): Promise<RateCard[]> {
 }
 
 export async function ensureDriverProfile(userId: string): Promise<void> {
+  // New profiles default to PENDING, so a driver cannot be dispatched until
+  // ops approves them in the admin portal. That gate is the point of the
+  // onboarding flow, but it would make `npm run dev` unusable for anyone
+  // testing the driver app locally, so development auto-approves.
+  // Test keeps the real default so the gate stays under test.
+  const autoApprove = env.NODE_ENV === 'development'
   await pool.query(
-    `INSERT INTO driver_profiles (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING`,
-    [userId],
+    `INSERT INTO driver_profiles (user_id, onboarding_status, onboarded_at)
+     VALUES ($1, COALESCE($2::onboarding_status, 'PENDING'), now())
+     ON CONFLICT (user_id) DO NOTHING`,
+    [userId, autoApprove ? 'APPROVED' : null],
   )
 }

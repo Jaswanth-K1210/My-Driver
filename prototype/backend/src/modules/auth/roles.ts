@@ -21,5 +21,16 @@ export const ROLES = [
 
 export type Role = (typeof ROLES)[number]
 
+/**
+ * Roles a person may obtain simply by signing in.
+ *
+ * Everything NOT in this list — every desk, ops, finance and admin role — must
+ * already have been granted by an operator through `npm run grant-role`.
+ * Sign-in can authenticate into such a role, but must never create it: a login
+ * endpoint that grants whatever role it is asked for is a privilege-escalation
+ * surface, which is precisely what grant-role.ts exists to avoid.
+ */
+export const SELF_SERVICE_ROLES: readonly Role[] = ['CUSTOMER', 'DRIVER']
+
 /** Roles that may sit at the 24x7 Safety Desk. */
 export const DESK_ROLES = ['SAFETY_DESK_AGENT', 'OPS_MANAGER', 'SUPER_ADMIN'] as const

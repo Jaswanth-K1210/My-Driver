@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { SectionCard, Toggle } from '../../components/app/Primitives.jsx'
-import DemoBadge from '../../components/app/DemoBadge.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { useToast } from '../../context/toastStore.js'
 import { MAX_GUARDIANS } from '../../data/mock.js'
 import { api } from '../../lib/apiClient.js'
 import { toE164 } from '../../lib/phone.js'
 import { maskPhone } from '../../lib/utils.js'
+
+const CONSENT_VERSION = '2026-09'
+
+const CONSENTS = [
+  { purpose: 'LOCATION_TRACKING', label: 'Live location during trips', description: 'Lets the Safety Desk see where your trip is in real time.' },
+  { purpose: 'TELEMATICS_COLLECTION', label: 'Speed and motion telemetry', description: 'Speed-ceiling and route-deviation alerts. Kept for 90 days.' },
+  { purpose: 'GUARDIAN_SHARING', label: 'Share trips with guardians', description: 'Your guardians can be texted a live link and alerted on an SOS.' },
+  { purpose: 'BIOMETRIC_LIVENESS', label: 'Driver face-match at pickup', description: 'The driver selfie at handshake is compared to their verified photo.' },
+]
 
 export default function Profile() {
   const { user } = useAuth()
@@ -16,9 +24,7 @@ export default function Profile() {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [busy, setBusy] = useState(false)
-  const [autoSos, setAutoSos] = useState(true)
-  const [biometric, setBiometric] = useState(true)
-  const [nightWatch, setNightWatch] = useState(true)
+  const [consents, setConsents] = useState([])
 
   const reload = useCallback(async () => {
     try {
@@ -30,7 +36,26 @@ export default function Profile() {
 
   useEffect(() => {
     void reload()
+    api.me.consents.list().then(setConsents).catch(() => setConsents([]))
   }, [reload])
+
+  // The ledger is append-only: the newest row per purpose is the current state.
+  const granted = (purpose) => {
+    const latest = consents
+      .filter((c) => c.purpose === purpose)
+      .sort((a, b) => b.granted_at.localeCompare(a.granted_at))[0]
+    return Boolean(latest && !latest.revoked_at)
+  }
+
+  const setConsent = async (purpose, on) => {
+    try {
+      await api.me.consents.record(purpose, CONSENT_VERSION, on)
+      setConsents(await api.me.consents.list())
+      toast(on ? 'Consent recorded' : 'Consent withdrawn', 'success')
+    } catch (err) {
+      toast(err?.message ?? 'Could not update consent', 'warning')
+    }
+  }
 
   const addGuardian = async () => {
     const trimmed = name.trim()
@@ -156,19 +181,21 @@ export default function Profile() {
         )}
       </SectionCard>
 
-      <SectionCard
-        title={
-          <span className="flex items-center gap-2">
-            Safety defaults
-            <DemoBadge title="These switches are local only until the escalation engine ships (Phase 2)" />
-          </span>
-        }
-      >
+      <SectionCard title="Privacy and consents">
         <div className="divide-y divide-slate-200">
-          <Toggle checked={autoSos} onChange={setAutoSos} label="Volume-button Silent SOS" description="Triple-press the volume button to alert the Safety Desk." />
-          <Toggle checked={biometric} onChange={setBiometric} label="Biometric trip unlock" description="Require Face ID or fingerprint before a trip starts." />
-          <Toggle checked={nightWatch} onChange={setNightWatch} label="Night Watch monitoring" description="Live Safety Desk monitoring on every trip after 10 PM." />
+          {CONSENTS.map((c) => (
+            <Toggle
+              key={c.purpose}
+              checked={granted(c.purpose)}
+              onChange={(on) => setConsent(c.purpose, on)}
+              label={c.label}
+              description={c.description}
+            />
+          ))}
         </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Every change is kept in your consent history. Withdrawing never deletes the record.
+        </p>
       </SectionCard>
     </div>
   )

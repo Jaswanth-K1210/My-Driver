@@ -171,7 +171,7 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
           label={`Find ${quote.skill.label} Driver`}
           icon={Search}
           disabled={!quote.ready}
-          onPress={onFindDriver}
+          onPress={() => onFindDriver(config)}
         />
       </View>
     </SafeAreaView>

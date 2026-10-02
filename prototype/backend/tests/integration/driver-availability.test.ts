@@ -26,6 +26,17 @@ describe('driver availability and dispatchability', () => {
     const login = await loginAs(app, '+919848012345', 'DRIVER')
     driverId = login.userId
     token = login.accessToken
+    // This suite asserts on findNearbyDrivers directly, which also filters on
+    // onboarding status. A PENDING driver is correctly undispatchable, so the
+    // profile is created APPROVED up front — INSERT rather than UPDATE because
+    // ensureDriverProfile() only creates the row later, when the driver first
+    // sets availability, so an UPDATE here would match nothing.
+    await pool.query(
+      `INSERT INTO driver_profiles (user_id, onboarding_status, onboarded_at)
+       VALUES ($1, 'APPROVED', now())
+       ON CONFLICT (user_id) DO UPDATE SET onboarding_status = 'APPROVED'`,
+      [driverId],
+    )
   })
   afterAll(async () => { await app.close() })
 
