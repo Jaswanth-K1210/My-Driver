@@ -24,7 +24,9 @@ export default function Checkins() {
   const overdue = items.filter((item) => item.overdue)
 
   const record = async (tripId, outcome) => {
-    const notes = window.prompt(`Check-in outcome: ${outcome}. Notes (optional)`) ?? undefined
+    const rawNotes = window.prompt(`Check-in outcome: ${outcome}. Notes (optional)`)
+    if (rawNotes === null) return
+    const notes = rawNotes.trim() ? rawNotes.trim() : undefined
     setBusy(true)
     try {
       await api.admin.recordCheckin(tripId, outcome, notes)

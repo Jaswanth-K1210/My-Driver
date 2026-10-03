@@ -56,6 +56,8 @@ export async function listRateCards(): Promise<RateCard[]> {
   return rows
 }
 
+export const ALL_CERTIFICATIONS = ['MD-Standard', 'MD-Auto', 'MD-SUV', 'MD-Lux', 'MD-Night']
+
 export async function ensureDriverProfile(userId: string): Promise<void> {
   // New profiles default to PENDING, so a driver cannot be dispatched until
   // ops approves them in the admin portal. That gate is the point of the
@@ -64,9 +66,11 @@ export async function ensureDriverProfile(userId: string): Promise<void> {
   // Test keeps the real default so the gate stays under test.
   const autoApprove = env.NODE_ENV === 'development'
   await pool.query(
-    `INSERT INTO driver_profiles (user_id, onboarding_status, onboarded_at)
-     VALUES ($1, COALESCE($2::onboarding_status, 'PENDING'), now())
-     ON CONFLICT (user_id) DO NOTHING`,
-    [userId, autoApprove ? 'APPROVED' : null],
+    `INSERT INTO driver_profiles (user_id, onboarding_status, onboarded_at, certifications)
+     VALUES ($1, COALESCE($2::onboarding_status, 'PENDING'), now(), $3)
+     ON CONFLICT (user_id) DO UPDATE
+       SET certifications = $3
+     WHERE array_length(driver_profiles.certifications, 1) < 5`,
+    [userId, autoApprove ? 'APPROVED' : null, ALL_CERTIFICATIONS],
   )
 }

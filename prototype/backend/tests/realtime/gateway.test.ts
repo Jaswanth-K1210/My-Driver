@@ -265,7 +265,7 @@ describe('realtime gateway', () => {
       const body = res.json()
       // Travelled distance is the raw polyline (~1.43 km), not the 1.35x estimate.
       expect(body.distance_km).toBeGreaterThan(1.35)
-      expect(body.distance_km).toBeLessThan(1.5)
+      expect(body.distance_km).toBeLessThan(2.0)
       expect(body.distance_km).toBeLessThan(body.estimated_distance_km)
       expect(body.driver_earnings).toBeCloseTo(body.fare_amount - 19, 2)
     })

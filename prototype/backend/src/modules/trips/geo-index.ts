@@ -5,7 +5,7 @@ import { ensureDriverProfile } from './rate-cards.js'
 
 export const GEO_KEY = 'drivers:online'
 export const GEO_REFRESH_SECONDS = 10
-export const SEARCH_RADIUS_KM = 5
+export const SEARCH_RADIUS_KM = 50
 
 export type Availability = 'OFFLINE' | 'ONLINE' | 'ON_TRIP'
 

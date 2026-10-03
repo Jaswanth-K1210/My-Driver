@@ -10,6 +10,7 @@ build/
 .next/
 out/
 .vercel/
+.vite/
 
 # Environment / secrets
 .env
