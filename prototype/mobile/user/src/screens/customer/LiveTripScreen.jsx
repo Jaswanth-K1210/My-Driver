@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { Pressable, ScrollView, Share, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import {
   AlertTriangle,
   Car,
   Gauge,
-  MessageSquare,
-  Phone,
   Siren,
   Star,
   Users,
@@ -19,13 +17,21 @@ import Card from '../../components/Card'
 import { useToast } from '../../components/Toast'
 import { api } from '../../lib/apiClient'
 import { useTrip } from '../../context/TripContext'
-import DemoBadge from '../../components/DemoBadge'
 import { formatINR, maskPhone } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 
-const TOTAL_MINUTES = 18
+// City average used for the ETA; the driver's live position supplies the distance.
+const CITY_KMH = 25
 const SOS_HOLD_MS = 1200
 const SOS_COUNTDOWN_S = 5
+
+const km = (a, b) => {
+  const r = Math.PI / 180
+  const dLat = (b.lat - a.lat) * r
+  const dLng = (b.lng - a.lng) * r
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2
+  return 12742 * Math.asin(Math.sqrt(h))
+}
 
 function statusFor(progress) {
   if (progress < 8) return 'Driver is arriving at pickup'
@@ -56,7 +62,7 @@ function MapBadge({ children, tone = 'neutral', style }) {
 }
 
 export default function LiveTripScreen({ trip, onCancel }) {
-  const { driverPosition, connection } = useTrip()
+  const { driverPosition, connection, rawTrip } = useTrip()
   const [guardians, setGuardians] = useState([])
 
   // Real guardians from the account, for the share sheet.
@@ -68,38 +74,37 @@ export default function LiveTripScreen({ trip, onCancel }) {
   }, [])
 
   const { toast } = useToast()
-  const [progress, setProgress] = useState(0)
-  const [speed, setSpeed] = useState(24)
   const [maxSpeed, setMaxSpeed] = useState(0)
   const [breaches, setBreaches] = useState(0)
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [sharedIds, setSharedIds] = useState([])
+  const [sharing, setSharing] = useState(false)
+  const [linkSent, setLinkSent] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [sosStage, setSosStage] = useState('idle')
   const [countdown, setCountdown] = useState(SOS_COUNTDOWN_S)
   const holdRef = useRef(null)
-  const completedRef = useRef(false)
 
+  // Speed, top speed and breaches come only from the driver's real
+  // DRIVER_LOCATION frames; nothing on this screen is simulated.
+  const liveSpeed = driverPosition?.speed != null ? Math.round(driverPosition.speed) : null
+  const wasOverRef = useRef(false)
   useEffect(() => {
-    const tick = setInterval(() => {
-      setProgress((p) => Math.min(100, p + 0.4))
-    }, 130)
-    return () => clearInterval(tick)
-  }, [])
+    if (liveSpeed == null) return
+    setMaxSpeed((m) => Math.max(m, liveSpeed))
+    const over = liveSpeed > trip.ceiling
+    if (over && !wasOverRef.current) {
+      setBreaches((b) => b + 1)
+      toast(`Speed ${liveSpeed} km/h is over your ${trip.ceiling} km/h limit. Logged.`, 'warning')
+    }
+    wasOverRef.current = over
+  }, [liveSpeed, trip.ceiling, toast])
 
-  useEffect(() => {
-    const tick = setInterval(() => {
-      const drift = 0.45 + Math.random() * 0.65
-      const clamped = Math.max(18, Math.min(trip.ceiling + 16, Math.round(trip.ceiling * drift)))
-      setSpeed(clamped)
-      setMaxSpeed((m) => Math.max(m, clamped))
-      if (clamped > trip.ceiling) {
-        setBreaches((b) => b + 1)
-        toast(`Speed breach ${clamped} km/h logged — guardians alerted`, 'warning')
-      }
-    }, 1600)
-    return () => clearInterval(tick)
-  }, [trip.ceiling, toast])
+  const pickup = rawTrip?.pickup
+  const drop = rawTrip?.drop
+  const total = pickup && drop ? km(pickup, drop) : null
+  const left = driverPosition && drop ? km(driverPosition, drop) : null
+  const progress = total && left != null ? Math.max(0, Math.min(100, (1 - left / total) * 100)) : 0
+  const etaMin = left != null ? Math.max(1, Math.ceil((left / CITY_KMH) * 60)) : null
 
   // Latest telemetry and callback are read through refs so this effect depends
   // only on `progress`. Listing them as deps (as the web prototype did) re-ran
@@ -132,34 +137,36 @@ export default function LiveTripScreen({ trip, onCancel }) {
     const t = setTimeout(() => {
       if (countdown <= 1) {
         setSosStage('fired')
-        toast('Silent SOS sent — Safety Desk & guardians alerted', 'danger', 4000)
+        api.trips
+          .sos(rawTrip.id, { silent: true })
+          .then(() => toast('SOS sent. The Safety Desk and your guardians have been alerted.', 'danger', 5000))
+          .catch(() => toast('SOS could not reach us. Call 112 now.', 'danger', 8000))
       } else {
         setCountdown((c) => c - 1)
       }
     }, 1000)
     return () => clearTimeout(t)
-  }, [sosStage, countdown, toast])
+  }, [sosStage, countdown, toast, rawTrip?.id])
 
-  // A real DRIVER_LOCATION frame wins over the simulated trace.
-  const liveSpeed = driverPosition?.speed
-  const shownSpeed = liveSpeed != null ? Math.round(liveSpeed) : speed
-  const overCeiling = shownSpeed > trip.ceiling
-  const etaMin = Math.max(1, Math.ceil(TOTAL_MINUTES * (1 - progress / 100)))
+  const overCeiling = liveSpeed != null && liveSpeed > trip.ceiling
 
-  const toggleShare = (id) => {
-    setSharedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-  }
-
-  const sendLinks = (channel) => {
-    if (sharedIds.length === 0) {
-      toast('Select at least one guardian', 'warning')
-      return
+  /** Texts every saved guardian, or hands the link to the share sheet. */
+  const shareLink = async (bySms) => {
+    setSharing(true)
+    try {
+      const link = await api.trips.guardianLink(rawTrip.id, bySms)
+      if (bySms) {
+        toast(`Live link texted to ${link.sent_to_guardians} guardian${link.sent_to_guardians === 1 ? '' : 's'}`, 'success')
+      } else {
+        await Share.share({ message: `Follow my MyDriver trip live: ${link.url}` })
+      }
+      setLinkSent(true)
+      setSheetOpen(false)
+    } catch (err) {
+      toast(err?.message ?? 'Could not create the live link', 'warning')
+    } finally {
+      setSharing(false)
     }
-    toast(
-      `Live link sent to ${sharedIds.length} guardian${sharedIds.length > 1 ? 's' : ''} via ${channel}`,
-      'success',
-    )
-    setSheetOpen(false)
   }
 
   return (
@@ -230,9 +237,9 @@ export default function LiveTripScreen({ trip, onCancel }) {
       >
         <MapCanvas progress={progress} style={{ width: '100%', height: '100%' }} />
         <MapBadge tone={overCeiling ? 'alert' : 'neutral'} style={{ left: 10, top: 10 }}>
-          {`${shownSpeed} km/h / ceiling ${trip.ceiling}`}
+          {liveSpeed != null ? `${liveSpeed} km/h · limit ${trip.ceiling}` : `Limit ${trip.ceiling} km/h`}
         </MapBadge>
-        <MapBadge style={{ right: 10, top: 10 }}>{`ETA ${etaMin} min`}</MapBadge>
+        {etaMin != null ? <MapBadge style={{ right: 10, top: 10 }}>{`ETA ${etaMin} min`}</MapBadge> : null}
         <MapBadge style={{ left: 10, bottom: 10 }}>
           {`${trip.statusLabel ?? statusFor(progress)}${connection === 'open' ? '' : ' · reconnecting'}`}
         </MapBadge>
@@ -264,24 +271,6 @@ export default function LiveTripScreen({ trip, onCancel }) {
                 {trip.driver.vehicle} · {trip.driver.plate}
               </Text>
             </View>
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Call driver"
-                onPress={() => toast('Calling driver over masked number…', 'info')}
-                style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 10 }}
-              >
-                <Phone size={16} color={colors.text} />
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Message driver"
-                onPress={() => toast('Secure chat opened (demo)', 'info')}
-                style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 10 }}
-              >
-                <MessageSquare size={16} color={colors.text} />
-              </Pressable>
-            </View>
           </View>
 
           <View
@@ -296,12 +285,12 @@ export default function LiveTripScreen({ trip, onCancel }) {
             <View style={{ flex: 1, alignItems: 'center' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <Star size={13} color={colors.red} fill={colors.red} />
-                <Text style={{ ...type.bodyBold, color: colors.text }}>{trip.driver.rating}</Text>
+                <Text style={{ ...type.bodyBold, color: colors.text }}>{trip.driver.rating ?? "New"}</Text>
               </View>
               <Text style={{ ...type.micro, color: colors.textMuted }}>Rating</Text>
             </View>
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ ...type.bodyBold, color: colors.text }}>{trip.driver.score}</Text>
+              <Text style={{ ...type.bodyBold, color: colors.text }}>{trip.driver.score != null ? Math.round(trip.driver.score) : "—"}</Text>
               <Text style={{ ...type.micro, color: colors.textMuted }}>Safety score</Text>
             </View>
             <View style={{ flex: 1, alignItems: 'center' }}>
@@ -342,7 +331,7 @@ export default function LiveTripScreen({ trip, onCancel }) {
         </View>
 
         <Text style={{ ...type.tiny, color: colors.textFaint, textAlign: 'center', lineHeight: 16 }}>
-          Silent SOS also triggers on triple volume-button press. Guardians see route, speed and stops live.
+          Hold SOS for a second to alert the Safety Desk and your guardians.
         </Text>
       </ScrollView>
 
@@ -357,7 +346,7 @@ export default function LiveTripScreen({ trip, onCancel }) {
         }}
       >
         <Button
-          label={sharedIds.length > 0 ? `Guardian link (${sharedIds.length})` : 'Guardian link'}
+          label={linkSent ? 'Link shared' : 'Share live link'}
           icon={Users}
           variant="outline"
           onPress={() => setSheetOpen(true)}
@@ -390,65 +379,49 @@ export default function LiveTripScreen({ trip, onCancel }) {
       </View>
 
       <BottomSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="Share guardian link">
+        <Text style={{ ...type.caption, color: colors.textMuted, marginBottom: space.md, lineHeight: 18 }}>
+          Guardians see your route, speed and stops live until the trip ends. The link expires automatically.
+        </Text>
         <View style={{ gap: space.sm }}>
-          {guardians.map((g) => {
-            const selected = sharedIds.includes(g.id)
-            return (
-              <Pressable
+          {guardians.length === 0 ? (
+            <Card tone="sunken">
+              <Text style={{ ...type.caption, color: colors.textMuted }}>
+                No guardians saved yet. Add them in Profile, or share the link with anyone below.
+              </Text>
+            </Card>
+          ) : (
+            guardians.map((g) => (
+              <View
                 key={g.id}
-                accessibilityRole="checkbox"
-                accessibilityState={{ checked: selected }}
-                onPress={() => toggleShare(g.id)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: space.md,
-                  borderRadius: radius.md,
-                  borderWidth: 1,
-                  borderColor: selected ? colors.red : colors.border,
-                  backgroundColor: selected ? colors.redSoft : colors.surface,
-                  padding: space.md,
-                }}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: space.md }}
               >
-                <View
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: radius.pill,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: selected ? colors.red : colors.surfaceAlt,
-                  }}
-                >
-                  <Text style={{ ...type.caption, color: selected ? colors.onRed : colors.text }}>
-                    {g.name.charAt(0)}
-                  </Text>
+                <View style={{ width: 36, height: 36, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt }}>
+                  <Text style={{ ...type.caption, color: colors.text }}>{g.name.charAt(0)}</Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text numberOfLines={1} style={{ ...type.body, color: colors.text }}>
-                    {g.name}
-                  </Text>
+                  <Text numberOfLines={1} style={{ ...type.body, color: colors.text }}>{g.name}</Text>
                   <Text numberOfLines={1} style={{ ...type.tiny, color: colors.textMuted }}>
                     {g.relation} · {maskPhone(g.phone)}
                   </Text>
                 </View>
-                <View
-                  style={{
-                    width: 20,
-                    height: 20,
-                    borderRadius: 6,
-                    borderWidth: 2,
-                    borderColor: selected ? colors.red : colors.borderStrong,
-                    backgroundColor: selected ? colors.red : 'transparent',
-                  }}
-                />
-              </Pressable>
-            )
-          })}
+              </View>
+            ))
+          )}
         </View>
         <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.lg }}>
-          <Button label="Send via SMS" variant="subtle" onPress={() => sendLinks('SMS')} style={{ flex: 1 }} />
-          <Button label="Send via WhatsApp" onPress={() => sendLinks('WhatsApp')} style={{ flex: 1 }} />
+          <Button
+            label="Share link"
+            variant="subtle"
+            disabled={sharing}
+            onPress={() => shareLink(false)}
+            style={{ flex: 1 }}
+          />
+          <Button
+            label={sharing ? 'Sending…' : 'Text guardians'}
+            disabled={sharing || guardians.length === 0}
+            onPress={() => shareLink(true)}
+            style={{ flex: 1 }}
+          />
         </View>
       </BottomSheet>
 
@@ -542,7 +515,7 @@ export default function LiveTripScreen({ trip, onCancel }) {
                   </View>
                 ))}
               </View>
-              <Button label="End drill (demo)" variant="ghost" onPress={() => setSosStage('idle')} />
+              <Button label="Close" variant="ghost" onPress={() => setSosStage('idle')} />
             </>
           )}
         </View>

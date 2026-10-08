@@ -1,21 +1,19 @@
-import { useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Slider from '@react-native-community/slider'
-import { Bell, Gauge, Search, Shield } from 'lucide-react-native'
-import { CUSTOMER, SKILLS, VISION_MODES } from '../../data/mock'
+import { Gauge, Search } from 'lucide-react-native'
+import { useAuth } from '../../context/AuthContext'
 import { useTrip } from '../../context/TripContext'
 import { quoteFor } from '../../lib/booking'
 import { clamp, formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
-import FakeStatusBar from '../../components/StatusBar'
-import { useToast } from '../../components/Toast'
 
 import RequirementTabs from './components/RequirementTabs'
 import WithinCityForm from './components/WithinCityForm'
 import CarDetailsForm from './components/CarDetailsForm'
+import { AirportForm, FullTimeForm, InterCityForm } from './components/TripForms'
 
 function SectionLabel({ children, icon: Icon }) {
   return (
@@ -29,8 +27,12 @@ function SectionLabel({ children, icon: Icon }) {
 }
 
 export default function HomeScreen({ config, onChange, onFindDriver }) {
-  const { toast } = useToast()
   const { skills } = useTrip()
+  const { user } = useAuth()
+  const name = user?.full_name ?? 'there'
+  const initials = (user?.full_name ?? 'MD').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()
+  const hour = new Date().getHours()
+  const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
 
   const quote = quoteFor(config, skills)
   const isIntercity = config.requirement === 'inter_city'
@@ -39,7 +41,6 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
-      <FakeStatusBar />
 
       <View
         style={{
@@ -52,20 +53,13 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
           <View style={{ width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.redSoft, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ ...type.bodyBold, color: colors.red }}>{CUSTOMER.initials}</Text>
+            <Text style={{ ...type.bodyBold, color: colors.red }}>{initials}</Text>
           </View>
           <View>
-            <Text style={{ ...type.tiny, color: colors.textMuted }}>Good evening</Text>
-            <Text style={{ ...type.body, color: colors.text }}>{CUSTOMER.name}</Text>
+            <Text style={{ ...type.tiny, color: colors.textMuted }}>{greeting}</Text>
+            <Text style={{ ...type.body, color: colors.text }}>{name}</Text>
           </View>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => toast('No new alerts — all trips sealed', 'info')}
-          style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 10 }}
-        >
-          <Bell size={16} color={colors.text} />
-        </Pressable>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: space.xxl, gap: space.lg }}>
@@ -82,57 +76,25 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
           
           {/* Step 2: Vehicle Specs */}
           <View>
-            <SectionLabel>2. Your Vehicle</SectionLabel>
+            <SectionLabel>2. Your car</SectionLabel>
             <CarDetailsForm config={config} onChange={onChange} />
           </View>
 
           {/* Step 3: Route */}
           <Card>
-            <SectionLabel>3. Route Planner</SectionLabel>
+            <SectionLabel>{isFullTime ? '3. Your contract' : '3. Your route'}</SectionLabel>
             {config.requirement === 'within_city' && (
               <WithinCityForm config={config} onChange={onChange} />
             )}
-            {isIntercity && (
-              <View style={{ padding: space.md, alignItems: 'center' }}>
-                <Text style={{ ...type.caption, color: colors.textMuted }}>Inter-city routing UI placeholder</Text>
-              </View>
-            )}
-            {isAirport && (
-              <View style={{ padding: space.md, alignItems: 'center' }}>
-                <Text style={{ ...type.caption, color: colors.textMuted }}>Airport transfers UI placeholder</Text>
-              </View>
-            )}
-            {isFullTime && (
-              <View style={{ padding: space.md, alignItems: 'center' }}>
-                <Text style={{ ...type.caption, color: colors.textMuted }}>Full-time service UI placeholder</Text>
-              </View>
-            )}
+            {isIntercity && <InterCityForm config={config} onChange={onChange} />}
+            {isAirport && <AirportForm config={config} onChange={onChange} />}
+            {isFullTime && <FullTimeForm config={config} onChange={onChange} />}
           </Card>
-
-          {/* VisionCam Mode */}
-          <View>
-            <SectionLabel icon={Shield}>VisionCam Mode</SectionLabel>
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              {VISION_MODES.map((mode) => {
-                const selected = mode.id === config.visionMode
-                return (
-                  <Pressable
-                    key={mode.id}
-                    onPress={() => onChange({ ...config, visionMode: mode.id })}
-                    style={{ flex: 1, padding: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: selected ? colors.brand : colors.border, backgroundColor: selected ? colors.brandSoft : colors.surface }}
-                  >
-                    <Text style={{ ...type.bodyBold, color: selected ? colors.brandPressed : colors.text, textAlign: 'center' }}>Mode {mode.id}</Text>
-                    <Text style={{ ...type.micro, color: colors.textMuted, textAlign: 'center', marginTop: 2 }}>{mode.name}</Text>
-                  </Pressable>
-                )
-              })}
-            </View>
-          </View>
 
           {/* Speed Ceiling */}
           <Card>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: space.xs }}>
-              <SectionLabel icon={Gauge}>Speed ceiling</SectionLabel>
+              <SectionLabel icon={Gauge}>Speed limit</SectionLabel>
               <Pill label={`${config.ceiling} km/h`} tone={config.ceiling > 80 ? 'brand' : 'safe'} />
             </View>
             <Slider
@@ -149,7 +111,7 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
 
           {/* Quote Estimation */}
           <Card>
-            <SectionLabel>Price Estimate</SectionLabel>
+            <SectionLabel>Price estimate</SectionLabel>
             <View style={{ gap: space.sm }}>
               {quote.lines.map((line) => (
                 <View key={line.label} style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -159,7 +121,7 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
               ))}
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: colors.border, marginTop: space.sm, paddingTop: space.sm }}>
                 <Text style={{ ...type.bodyBold, color: colors.text }}>Estimated total</Text>
-                <Text style={{ ...type.bodyBold, color: colors.brand }}>{quote.ready ? formatINR(quote.total) : '--'}</Text>
+                <Text style={{ ...type.bodyBold, color: colors.red }}>{quote.ready ? formatINR(quote.total) : '--'}</Text>
               </View>
             </View>
           </Card>

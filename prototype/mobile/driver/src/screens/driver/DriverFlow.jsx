@@ -6,16 +6,24 @@ import HandshakeScreen from './HandshakeScreen'
 import InspectionScreen from './InspectionScreen'
 import DriveActiveScreen from './DriveActiveScreen'
 import TripSummaryScreen from './TripSummaryScreen'
+import OnboardingScreen, { OnboardingLoading, useOnboarding } from './OnboardingScreen'
 
 /**
- * Phase follows the server trip status, with one local-only step: the 8-point
- * inspection has no backend in Phase 1, so it sits between the handshake and
- * the drive as a clearly-marked demo step.
+ * Phase follows the server trip status. Two local gates sit on top: the driver
+ * must be approved (onboarding), and the pre-trip Trip Vault inspection must
+ * be sealed between the handshake and the drive.
  */
 function Flow({ onLogout }) {
   const { trip, completeTrip, clearTrip } = useDriver()
+  const { onboarding, reload } = useOnboarding()
   const [inspected, setInspected] = useState(false)
   const [result, setResult] = useState(null)
+
+  if (!onboarding) return <OnboardingLoading />
+  // Approval is the server's call; until then the driver only sees their checklist.
+  if (onboarding.onboarding_status !== 'APPROVED') {
+    return <OnboardingScreen onboarding={onboarding} reload={reload} onLogout={onLogout} />
+  }
 
   if (!trip) return <DriverHomeScreen onLogout={onLogout} />
 
@@ -26,7 +34,7 @@ function Flow({ onLogout }) {
   }
 
   if (trip.status === 'IN_TRIP' && !inspected) {
-    return <InspectionScreen onInspectionDone={() => setInspected(true)} />
+    return <InspectionScreen tripId={trip.serverId} onInspectionDone={() => setInspected(true)} />
   }
 
   if (trip.status === 'IN_TRIP') {

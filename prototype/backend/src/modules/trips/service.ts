@@ -39,6 +39,8 @@ export type TripView = {
   hourly_package_hours: number | null
   pickup: LatLng
   drop: LatLng | null
+  pickup_address?: string | null
+  drop_address?: string | null
   required_certification: string
   speed_ceiling_kmh: number
   estimated_distance_km: number | null
@@ -58,6 +60,7 @@ export type TripView = {
   flight_number?: string | null
   requirement?: string | null
   trip_type?: string | null
+  customer_name?: string | null
 }
 
 /**
@@ -67,7 +70,7 @@ export type TripView = {
 const TRIP_SELECT = `
   SELECT
     t.id, t.customer_id, t.driver_id, t.status, t.booking_type, t.hourly_package_hours,
-    t.pickup_lat, t.pickup_lng, t.drop_lat, t.drop_lng,
+    t.pickup_lat, t.pickup_lng, t.drop_lat, t.drop_lng, t.pickup_address, t.drop_address,
     t.return_drop_lat, t.return_drop_lng,
     t.required_certification, t.speed_ceiling_kmh,
     t.estimated_distance_km::float8 AS estimated_distance_km,
@@ -78,12 +81,14 @@ const TRIP_SELECT = `
     t.driver_earnings::float8       AS driver_earnings,
     t.requested_at, t.completed_at,
     t.stops, t.return_stops, t.vehicle_specs, t.vision_mode, t.flight_number, t.requirement, t.trip_type,
+    cu.full_name          AS customer_name,
     du.full_name          AS driver_name,
     dp.vehicle_model      AS driver_vehicle_model,
     dp.vehicle_plate      AS driver_vehicle_plate,
     dp.rating::float8     AS driver_rating,
     dp.mydriver_score::float8 AS driver_score
   FROM trips t
+  JOIN users cu                ON cu.id = t.customer_id
   LEFT JOIN users du           ON du.id = t.driver_id
   LEFT JOIN driver_profiles dp ON dp.user_id = t.driver_id
 `

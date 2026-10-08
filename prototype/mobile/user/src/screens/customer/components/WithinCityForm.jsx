@@ -3,7 +3,6 @@ import { Pressable, Text, View } from 'react-native'
 import { MapPin, Navigation, Plus, Minus, RotateCcw } from 'lucide-react-native'
 import { CITY_LOCATIONS } from '../../../data/mock'
 import { colors, radius, space, type } from '../../../theme/tokens'
-import { Pill } from '../../../components/Button'
 
 export function LocationDropdown({ value, options, onChange, placeholder }) {
   const [open, setOpen] = useState(false)
@@ -96,8 +95,8 @@ export default function WithinCityForm({ config, onChange }) {
         <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center' }}>
           <View style={{ width: 16 }} />
           <Pressable onPress={addStop} style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.xs }}>
-            <Plus size={14} color={colors.brand} />
-            <Text style={{ ...type.caption, color: colors.brand }}>Add stop</Text>
+            <Plus size={14} color={colors.red} />
+            <Text style={{ ...type.caption, color: colors.red }}>Add stop</Text>
           </Pressable>
         </View>
       )}
@@ -118,10 +117,10 @@ export default function WithinCityForm({ config, onChange }) {
         <Text style={{ ...type.body }}>Return to pickup?</Text>
         <Pressable 
           onPress={() => onChange({ ...config, tripType: config.tripType === 'two_way' ? 'one_way' : 'two_way' })}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.sm, backgroundColor: config.tripType === 'two_way' ? colors.brandSoft : colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: config.tripType === 'two_way' ? colors.brand : colors.border }}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.sm, backgroundColor: config.tripType === 'two_way' ? colors.redSoft : colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: config.tripType === 'two_way' ? colors.red : colors.border }}
         >
-          <RotateCcw size={14} color={config.tripType === 'two_way' ? colors.brand : colors.textMuted} />
-          <Text style={{ ...type.caption, color: config.tripType === 'two_way' ? colors.brand : colors.textMuted }}>
+          <RotateCcw size={14} color={config.tripType === 'two_way' ? colors.red : colors.textMuted} />
+          <Text style={{ ...type.caption, color: config.tripType === 'two_way' ? colors.red : colors.textMuted }}>
             {config.tripType === 'two_way' ? 'Round Trip' : 'One Way'}
           </Text>
         </Pressable>

@@ -511,9 +511,15 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
 
     payments: {
       forTrip: (tripId) => request(`/v1/trips/${tripId}/payment`),
-      /** Hosted checkout page; open it in a browser tab or in-app browser. */
+      /**
+       * Hosted checkout page; open it in a browser tab or in-app browser.
+       * Built from this client's baseUrl rather than the server's
+       * checkout_url: on a phone the server's idea of its own address
+       * (often localhost) is not reachable.
+       */
       checkoutUrl: (payment, returnUrl) =>
-        payment.checkout_url + (returnUrl ? `?return=${encodeURIComponent(returnUrl)}` : ''),
+        `${baseUrl}/v1/payments/${payment.id}/checkout` +
+        (returnUrl ? `?return=${encodeURIComponent(returnUrl)}` : ''),
     },
 
     trips: {

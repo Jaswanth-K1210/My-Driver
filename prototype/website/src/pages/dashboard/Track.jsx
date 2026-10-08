@@ -424,12 +424,12 @@ export default function Track() {
               <div>
                 <p className="flex items-center justify-center gap-1 text-lg font-black text-slate-900">
                   <Star className="h-4 w-4 fill-brand-500 text-brand-500" aria-hidden="true" />
-                  {trip.driver.rating}
+                  {trip.driver.rating ?? "New"}
                 </p>
                 <p className="text-xs text-slate-500">Rating</p>
               </div>
               <div>
-                <p className="text-lg font-black text-slate-900">{trip.driver.score}</p>
+                <p className="text-lg font-black text-slate-900">{trip.driver.score != null ? Math.round(trip.driver.score) : "—"}</p>
                 <p className="text-xs text-slate-500">Safety score</p>
               </div>
               <div>

@@ -1,4 +1,4 @@
-import { Pressable, Text, View, ScrollView } from 'react-native'
+import { Pressable, Text, View } from 'react-native'
 import { REQUIREMENTS } from '../../../data/mock'
 import { colors, radius, space, type } from '../../../theme/tokens'
 
@@ -18,15 +18,15 @@ export default function RequirementTabs({ selectedId, onChange }) {
               minWidth: '45%',
               borderRadius: radius.md,
               borderWidth: 1,
-              borderColor: selected ? colors.brand : colors.border,
-              backgroundColor: selected ? colors.brandSoft : colors.surface,
+              borderColor: selected ? colors.red : colors.border,
+              backgroundColor: selected ? colors.redSoft : colors.surface,
               paddingHorizontal: 12,
               paddingVertical: 10,
               gap: 2,
             }}
           >
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Text style={{ ...type.caption, color: selected ? colors.brandPressed : colors.text }}>
+              <Text style={{ ...type.caption, color: selected ? colors.redPressed : colors.text }}>
                 {req.label}
               </Text>
             </View>

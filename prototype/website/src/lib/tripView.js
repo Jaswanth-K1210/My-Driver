@@ -26,8 +26,9 @@ export function toViewTrip(trip, config) {
   if (!trip) return null
 
     const hourly = trip.booking_type === 'HOURLY'
-    let from = PICKUP.name
-    let to = hourly ? `${trip.hourly_package_hours}-hour hire` : 'Destination'
+    // Server addresses first (trip history has no local config to rebuild from).
+    let from = trip.pickup_address ?? PICKUP.name
+    let to = trip.drop_address ?? (hourly ? `${trip.hourly_package_hours}-hour hire` : 'Destination')
 
     if (config) {
       if (config.requirement === 'inter_city') {
@@ -87,8 +88,8 @@ export function toViewTrip(trip, config) {
           initials: trip.driver.initials ?? 'MD',
           vehicle: trip.driver.vehicle_model ?? 'Vehicle details pending',
           plate: trip.driver.vehicle_plate ?? '—',
-          rating: trip.driver.rating ?? 5,
-          score: trip.driver.mydriver_score ?? 100,
+          rating: trip.driver.rating ?? null,
+          score: trip.driver.mydriver_score ?? null,
           trips: null,
         }
       : null,

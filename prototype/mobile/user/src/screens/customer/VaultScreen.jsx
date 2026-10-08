@@ -1,20 +1,39 @@
-import { useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native'
+import * as WebBrowser from 'expo-web-browser'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Archive, BadgeCheck, Download, ShieldCheck } from 'lucide-react-native'
+import { Archive, BadgeCheck, Download } from 'lucide-react-native'
 import BottomSheet from '../../components/BottomSheet'
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
-import DemoBadge from '../../components/DemoBadge'
 import { useTrip } from '../../context/TripContext'
 import { useToast } from '../../components/Toast'
+import { api } from '../../lib/apiClient'
 import { formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 
-const ZONES = ['Front', 'Rear', 'Left', 'Right', 'Dash', 'Seats', 'Fuel', 'Boot']
+const ZONE_LABEL = { FRONT: 'Front', REAR: 'Rear', LEFT: 'Left', RIGHT: 'Right', DASHBOARD: 'Dash', SEATS: 'Seats', FUEL_ODOMETER: 'Fuel', BOOT: 'Boot' }
 
 function TripDetail({ trip }) {
   const { toast } = useToast()
+  const [photos, setPhotos] = useState(null)
+  const [opening, setOpening] = useState(false)
+
+  useEffect(() => {
+    api.trips.vaultPhotos(trip.serverId).then(setPhotos).catch(() => setPhotos([]))
+  }, [trip.serverId])
+
+  const openCertificate = async () => {
+    setOpening(true)
+    try {
+      const cert = await api.trips.certificate(trip.serverId)
+      await WebBrowser.openBrowserAsync(cert.url)
+    } catch (err) {
+      toast(err?.message ?? 'Could not open the certificate', 'warning')
+    } finally {
+      setOpening(false)
+    }
+  }
   const stats = [
     { label: 'Distance', value: `${Number(trip.distanceKm).toFixed(1)} km`, alert: false },
     { label: 'Ceiling', value: `${trip.ceiling} km/h`, alert: false },
@@ -47,40 +66,30 @@ function TripDetail({ trip }) {
 
       <View>
         <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.6, marginBottom: space.sm }}>
-          8-POINT INSPECTION
+          PRE-TRIP INSPECTION
         </Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
-          {ZONES.map((zone) => (
-            <View
-              key={zone}
-              style={{
-                width: '22%',
-                alignItems: 'center',
-                gap: 4,
-                borderRadius: radius.sm,
-                borderWidth: 1,
-                borderColor: colors.border,
-                padding: space.sm,
-              }}
-            >
-              <View
-                style={{
-                  width: '100%',
-                  height: 34,
-                  borderRadius: 6,
-                  backgroundColor: colors.surfaceAlt,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <ShieldCheck size={16} color={colors.graphite} />
+        {photos === null ? (
+          <ActivityIndicator color={colors.red} />
+        ) : photos.length === 0 ? (
+          <Text style={{ ...type.tiny, color: colors.textMuted }}>No inspection photos were recorded for this trip.</Text>
+        ) : (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+            {photos.map((p) => (
+              <View key={`${p.phase}-${p.zone}`} style={{ width: '22.5%', gap: 4 }}>
+                <Image
+                  source={{ uri: p.url }}
+                  accessibilityLabel={`${ZONE_LABEL[p.zone] ?? p.zone} photo`}
+                  style={{ width: '100%', aspectRatio: 1, borderRadius: radius.sm, backgroundColor: colors.surfaceAlt }}
+                />
+                <Text style={{ fontSize: 10, fontWeight: '700', color: colors.textMuted, textAlign: 'center' }}>
+                  {ZONE_LABEL[p.zone] ?? p.zone}
+                </Text>
               </View>
-              <Text style={{ fontSize: 9, fontWeight: '700', color: colors.textMuted }}>{zone}</Text>
-            </View>
-          ))}
-        </View>
+            ))}
+          </View>
+        )}
         <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 6 }}>
-          Inspection capture is not part of this backend yet — these tiles are placeholders.
+          Watermarked with time and place, and sealed with a SHA-256 fingerprint.
         </Text>
       </View>
 
@@ -90,14 +99,15 @@ function TripDetail({ trip }) {
           <View style={{ flex: 1 }}>
             <Text style={{ ...type.bodyBold, color: colors.text }}>Trip certificate</Text>
             <Text numberOfLines={1} style={{ ...type.tiny, color: colors.textMuted }}>
-              Cert {trip.certId}
+              A signed PDF record of this trip, its route and its inspection
             </Text>
           </View>
         </View>
         <Button
-          label="Export PDF certificate"
+          label={opening ? 'Preparing…' : 'Open PDF certificate'}
           icon={Download}
-          onPress={() => toast('Certificate exported to downloads (demo)', 'success')}
+          disabled={opening}
+          onPress={openCertificate}
           style={{ marginTop: space.md }}
         />
       </Card>

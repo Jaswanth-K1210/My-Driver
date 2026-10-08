@@ -5,14 +5,11 @@ import { Archive, Check, Star } from 'lucide-react-native'
 import MapCanvas from '../../components/MapCanvas'
 import Button from '../../components/Button'
 import Card from '../../components/Card'
-import DemoBadge from '../../components/DemoBadge'
 import { useTrip } from '../../context/TripContext'
-import { useToast } from '../../components/Toast'
 import { formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 
 export default function TripCompleteScreen({ trip, onSave }) {
-  const { toast } = useToast()
   const { rateTrip } = useTrip()
   const [rating, setRating] = useState(0)
   const [saving, setSaving] = useState(false)
@@ -131,11 +128,6 @@ export default function TripCompleteScreen({ trip, onSave }) {
           icon={Archive}
           disabled={rating === 0 || saving}
           onPress={finish}
-        />
-        <Button
-          label="Email me the receipt"
-          variant="ghost"
-          onPress={() => toast('Receipt sent to your email (demo)', 'info')}
         />
       </View>
     </SafeAreaView>

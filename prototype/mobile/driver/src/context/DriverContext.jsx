@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import * as Location from 'expo-location'
 import { api } from '../lib/apiClient'
 import { useAuth } from './AuthContext'
 
@@ -10,12 +11,15 @@ export function useDriver() {
   return ctx
 }
 
-/**
- * Hyderabad city centre. A production driver app would use the device GPS;
- * Expo Go has no background-location module wired up here, so going online
- * reports this fixed origin and telemetry walks outward from it.
- */
-export const DEFAULT_ORIGIN = { lat: 17.4399, lng: 78.3813 }
+/** Where the driver is right now. Dispatch matches by distance, so this is required to go online. */
+async function currentPosition() {
+  const { status } = await Location.requestForegroundPermissionsAsync()
+  if (status !== 'granted') {
+    throw new Error('Allow location access to go online. Trips are matched by distance.')
+  }
+  const { coords } = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
+  return { lat: coords.latitude, lng: coords.longitude }
+}
 
 const shortId = (id) => `TRP-${String(id).replace(/-/g, '').slice(0, 6).toUpperCase()}`
 
@@ -27,9 +31,9 @@ function toOffer(pending) {
     id: shortId(pending.trip_id),
     serverId: pending.trip_id,
     expiresAt: pending.expires_at,
-    customer: pending.customer?.name ?? 'MyDriver customer',
-    pickup: pending.pickup_address ?? 'Customer pickup point',
-    drop: pending.drop_address ?? 'Destination',
+    customer: pending.customer?.name ?? 'Customer',
+    pickup: pending.pickup_address ?? 'Pickup point on map',
+    drop: pending.drop_address ?? 'Destination on map',
     skill: pending.required_certification,
     ceiling: pending.speed_ceiling_kmh,
     distanceKm: km,
@@ -54,10 +58,11 @@ function toRequest(trip) {
     id: shortId(trip.id),
     serverId: trip.id,
     status: trip.status,
-    customer: 'MyDriver customer',
-    rating: 4.9,
-    pickup: 'Customer pickup point',
-    drop: trip.booking_type === 'HOURLY' ? `${trip.hourly_package_hours}-hour hire` : 'Destination',
+    customer: trip.customer_name ?? 'Customer',
+    pickup: trip.pickup_address ?? 'Pickup point on map',
+    drop:
+      trip.drop_address ??
+      (trip.booking_type === 'HOURLY' ? `${trip.hourly_package_hours}-hour hire` : 'Destination on map'),
     skill: trip.required_certification,
     ceiling: trip.speed_ceiling_kmh,
     distanceKm: Number(trip.distance_km ?? trip.estimated_distance_km ?? 0),
@@ -210,9 +215,10 @@ export function DriverProvider({ children }) {
    * would leave this driver undispatchable. The location is sent with it.
    */
   const goOnline = useCallback(
-    async (next, at = DEFAULT_ORIGIN) => {
+    async (next) => {
       setBusy(true)
       try {
+        const at = next ? await currentPosition() : undefined
         await api.driver.setAvailability(next ? 'ONLINE' : 'OFFLINE', next ? at : undefined)
         setOnline(next)
         await refreshSummary()
@@ -266,6 +272,12 @@ export function DriverProvider({ children }) {
     realtimeRef.current.sendDriverTelemetry(id, coords, sensors)
   }, [])
 
+  const sendSos = useCallback(async () => {
+    const id = tripIdRef.current
+    if (!id) throw new Error('No active trip')
+    return api.trips.sos(id, { silent: true })
+  }, [])
+
   const completeTrip = useCallback(async () => {
     const id = tripIdRef.current
     if (!id) throw new Error('No active trip')
@@ -293,6 +305,7 @@ export function DriverProvider({ children }) {
       respondToOffer,
       submitHandshake,
       sendTelemetry,
+      sendSos,
       completeTrip,
       clearTrip,
       refreshSummary,
@@ -300,7 +313,7 @@ export function DriverProvider({ children }) {
     }),
     [
       online, busy, summary, offer, trip, connection,
-      goOnline, respondToOffer, submitHandshake, sendTelemetry, completeTrip, clearTrip,
+      goOnline, respondToOffer, submitHandshake, sendTelemetry, sendSos, completeTrip, clearTrip,
       refreshSummary, refreshOffers,
     ],
   )

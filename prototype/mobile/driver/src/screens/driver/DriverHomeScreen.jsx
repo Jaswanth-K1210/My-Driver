@@ -1,14 +1,12 @@
 import { useState } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { IndianRupee, LogOut, Star, TrendingUp, XCircle, Zap } from 'lucide-react-native'
+import { IndianRupee, LogOut, TrendingUp, XCircle, Zap } from 'lucide-react-native'
 import { ActivityIndicator } from 'react-native'
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
 import ScoreRing from '../../components/ScoreRing'
-import FakeStatusBar from '../../components/StatusBar'
 import { useToast } from '../../components/Toast'
-import { DRIVER_PROFILE } from '../../data/mock'
 import Toggle from '../../components/Toggle'
 import { useAuth } from '../../context/AuthContext'
 import { useDriver } from '../../context/DriverContext'
@@ -64,7 +62,6 @@ export default function DriverHomeScreen({ onLogout }) {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>
-      <FakeStatusBar />
 
       <View
         style={{
@@ -80,11 +77,11 @@ export default function DriverHomeScreen({ onLogout }) {
             {online ? `Driver mode · online${connection === 'open' ? '' : ' · connecting'}` : 'Driver mode · offline'}
           </Text>
           <Text style={{ ...type.body, color: colors.text }}>
-            {user?.full_name ?? user?.phone_number ?? DRIVER_PROFILE.name}
+            {user?.full_name ?? user?.phone_number ?? 'Driver'}
           </Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-          <Pill label={DRIVER_PROFILE.badge} tone="brand" />
+          {summary?.rating ? <Pill label={`★ ${summary.rating.toFixed(1)}`} tone="brand" /> : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Log out of MyDriver"
@@ -104,7 +101,7 @@ export default function DriverHomeScreen({ onLogout }) {
         contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.xxl, gap: space.lg }}
       >
         <Card style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
-          <ScoreRing score={Math.round(summary?.mydriver_score ?? DRIVER_PROFILE.score)} />
+          <ScoreRing score={Math.round(summary?.mydriver_score ?? 0)} />
           <View style={{ flex: 1, gap: space.sm }}>
             <View
               style={{
@@ -192,10 +189,7 @@ export default function DriverHomeScreen({ onLogout }) {
           <Card style={{ borderColor: colors.red }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <Text style={{ ...type.bodyBold, color: colors.text }}>{request.customer}</Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Star size={13} color={colors.red} fill={colors.red} />
-                <Text style={{ ...type.caption, color: colors.text }}>{request.rating}</Text>
-              </View>
+              <Pill label={request.skill} tone="neutral" />
             </View>
 
             <View style={{ gap: space.sm, marginTop: space.md }}>

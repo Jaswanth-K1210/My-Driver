@@ -7,7 +7,6 @@ import {
   NIGHT_FEE,
   PICKUP,
   PLATFORM_FEE,
-  SAVED_GARAGE,
   SKILLS,
   START_LOCATIONS,
 } from '../data/mock.js'
@@ -45,13 +44,12 @@ export function getLocationById(id) {
 export const DEFAULT_CONFIG = {
   vehicleType: 'car', // 'car' | 'bus' | 'caravan'
   carDetails: {
-    company: SAVED_GARAGE[0].company,
-    model: SAVED_GARAGE[0].model,
-    engineType: SAVED_GARAGE[0].engineType,
-    transmission: SAVED_GARAGE[0].transmission,
-    plate: SAVED_GARAGE[0].plate,
-    isCustom: false,
-    savedVehicleId: SAVED_GARAGE[0].id,
+    company: '',
+    model: '',
+    engineType: 'Petrol',
+    transmission: 'Manual',
+    plate: '',
+    isCustom: true,
   },
   requirement: 'within_city', // 'within_city' | 'inter_city' | 'airport' | 'full_time'
   tripType: 'one_way', // 'one_way' | 'two_way'
@@ -99,7 +97,8 @@ export const DEFAULT_CONFIG = {
   pickupTime: 'Now',
   skillId: 'MD-Standard',
   ceiling: 60,
-  visionMode: 'R',
+  // VisionCam is not offered; kept null so the payload never claims a mode.
+  visionMode: null,
 }
 
 /** Determines the most suitable driver certification for given car specs and requirement. */

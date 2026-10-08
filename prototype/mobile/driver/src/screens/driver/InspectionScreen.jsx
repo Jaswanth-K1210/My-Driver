@@ -1,217 +1,137 @@
-import { useEffect, useRef, useState } from 'react'
-import { Animated, Easing, Pressable, ScrollView, Text, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { ArrowLeft, Camera, Check, MapPin, ShieldCheck } from 'lucide-react-native'
+import * as ImagePicker from 'expo-image-picker'
+import * as Location from 'expo-location'
+import { Camera, Check, ShieldCheck } from 'lucide-react-native'
 import Button, { Pill } from '../../components/Button'
 import { useToast } from '../../components/Toast'
-import { INSPECTION_POINTS } from '../../data/mock'
-import DemoBadge from '../../components/DemoBadge'
+import { api } from '../../lib/apiClient'
 import { colors, radius, space, type } from '../../theme/tokens'
 
-const CAPTURE_MS = 1400
-const WATERMARK_GPS = '17.4435° N, 78.3772° E'
+/** Mirrors INSPECTION_ZONES in backend/src/modules/vault/zones.ts. */
+const ZONES = [
+  ['FRONT', 'Front'],
+  ['REAR', 'Rear'],
+  ['LEFT', 'Left side'],
+  ['RIGHT', 'Right side'],
+  ['DASHBOARD', 'Dashboard'],
+  ['SEATS', 'Seats'],
+  ['FUEL_ODOMETER', 'Fuel / odometer'],
+  ['BOOT', 'Boot'],
+]
 
-function CaptureOverlay({ point, flash }) {
-  const scan = useRef(new Animated.Value(0)).current
-  const flashOpacity = useRef(new Animated.Value(0)).current
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(scan, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(scan, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ]),
-    )
-    loop.start()
-    return () => loop.stop()
-  }, [scan])
-
-  useEffect(() => {
-    if (!flash) return
-    Animated.sequence([
-      Animated.timing(flashOpacity, { toValue: 0.9, duration: 130, useNativeDriver: true }),
-      Animated.timing(flashOpacity, { toValue: 0, duration: 320, useNativeDriver: true }),
-    ]).start()
-  }, [flash, flashOpacity])
-
-  return (
-    <View
-      style={{
-        position: 'absolute',
-        top: 0,
-        right: 0,
-        bottom: 0,
-        left: 0,
-        zIndex: 70,
-        backgroundColor: colors.bg,
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <View
-        style={{
-          width: 224,
-          height: 224,
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-          borderRadius: radius.lg,
-          borderWidth: 2,
-          borderStyle: 'dashed',
-          borderColor: colors.borderStrong,
-          backgroundColor: colors.surfaceAlt,
-        }}
-      >
-        <Camera size={56} color={colors.borderStrong} />
-        <Animated.View
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            height: 2,
-            backgroundColor: colors.red,
-            transform: [{ translateY: scan.interpolate({ inputRange: [0, 1], outputRange: [18, 200] }) }],
-          }}
-        />
-        <Animated.View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
-            bottom: 0,
-            left: 0,
-            backgroundColor: '#FFFFFF',
-            opacity: flashOpacity,
-          }}
-        />
-        <View
-          style={{
-            position: 'absolute',
-            bottom: 8,
-            left: 8,
-            borderRadius: 4,
-            backgroundColor: 'rgba(12,12,16,0.8)',
-            paddingHorizontal: 6,
-            paddingVertical: 2,
-          }}
-        >
-          <Text style={{ fontSize: 9, fontWeight: '700', color: '#FFFFFF' }}>{WATERMARK_GPS}</Text>
-        </View>
-      </View>
-      <Text style={{ ...type.bodyBold, color: colors.text, marginTop: space.lg }}>Capturing: {point}</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: space.xs }}>
-        <MapPin size={12} color={colors.textMuted} />
-        <Text style={{ ...type.tiny, color: colors.textMuted }}>Stamping GPS + timestamp</Text>
-      </View>
-    </View>
-  )
+async function fix() {
+  try {
+    const { coords } = await Location.getLastKnownPositionAsync() ?? await Location.getCurrentPositionAsync({})
+    return { lat: coords.latitude, lng: coords.longitude }
+  } catch {
+    return undefined
+  }
 }
 
-export default function InspectionScreen({ onInspectionDone, onBack }) {
+/**
+ * Pre-trip Trip Vault inspection. Each photo goes to the server, which burns
+ * the trip, zone, time and position into it and seals its SHA-256. The trip
+ * cannot start until all eight are on record.
+ */
+export default function InspectionScreen({ tripId, onInspectionDone }) {
   const { toast } = useToast()
-  const [captures, setCaptures] = useState({})
-  const [capturing, setCapturing] = useState(null)
-  const [flash, setFlash] = useState(false)
+  const [remaining, setRemaining] = useState(null)
+  const [uploading, setUploading] = useState(null)
+  const [sealing, setSealing] = useState(false)
 
   useEffect(() => {
-    if (capturing === null) return undefined
-    const flashTimer = setTimeout(() => setFlash(true), CAPTURE_MS - 350)
-    const doneTimer = setTimeout(() => {
-      setCaptures((prev) => ({
-        ...prev,
-        [capturing]: new Date().toLocaleTimeString('en-IN', {
-          hour: 'numeric',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true,
-        }),
-      }))
-      setCapturing(null)
-      setFlash(false)
-    }, CAPTURE_MS)
+    let cancelled = false
+    api.driver
+      .startInspection(tripId, 'PRE')
+      .then((r) => !cancelled && setRemaining(r.remaining))
+      .catch((err) => toast(err?.message ?? 'Could not open the inspection', 'warning'))
     return () => {
-      clearTimeout(flashTimer)
-      clearTimeout(doneTimer)
+      cancelled = true
     }
-  }, [capturing])
+  }, [tripId, toast])
 
-  const capturedCount = Object.keys(captures).length
-  const allDone = capturedCount === INSPECTION_POINTS.length
-  const remaining = INSPECTION_POINTS.length - capturedCount
-
-  const startTrip = () => {
-    if (!allDone) {
-      toast('Capture all 8 points before starting', 'warning')
+  const capture = async (zone, label) => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync()
+    if (!perm.granted) {
+      toast('Allow camera access to record the inspection', 'warning')
       return
     }
-    toast('Inspection recorded locally — Trip Vault arrives in Phase 3', 'info')
-    onInspectionDone()
+    const shot = await ImagePicker.launchCameraAsync({ base64: true, quality: 0.6, mediaTypes: ['images'] })
+    if (shot.canceled || !shot.assets?.[0]?.base64) return
+
+    setUploading(zone)
+    try {
+      const res = await api.driver.capturePhoto(tripId, 'PRE', zone, shot.assets[0].base64, await fix())
+      setRemaining(res.remaining)
+    } catch (err) {
+      toast(err?.message ?? `${label} did not upload. Try again.`, 'warning')
+    } finally {
+      setUploading(null)
+    }
   }
+
+  const seal = async () => {
+    setSealing(true)
+    try {
+      await api.driver.completeInspection(tripId, 'PRE')
+      toast('Inspection sealed in the Trip Vault', 'success')
+      onInspectionDone()
+    } catch (err) {
+      // Already sealed (e.g. after an app restart) is fine: carry on.
+      if (err?.code === 'INSPECTION_SEALED') onInspectionDone()
+      else toast(err?.message ?? 'Could not seal the inspection', 'warning')
+    } finally {
+      setSealing(false)
+    }
+  }
+
+  if (!remaining) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.bg }}>
+        <ActivityIndicator color={colors.red} />
+      </View>
+    )
+  }
+
+  const done = ZONES.length - remaining.length
+  const allDone = remaining.length === 0
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: space.md,
-          paddingHorizontal: space.lg,
-          paddingVertical: space.sm,
-        }}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Back to handshake"
-          onPress={onBack}
-          style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 8 }}
-        >
-          <ArrowLeft size={16} color={colors.text} />
-        </Pressable>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: space.lg, paddingVertical: space.sm }}>
         <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-            <Text style={{ ...type.title, color: colors.text }}>8-point inspection</Text>
-            <DemoBadge />
-          </View>
+          <Text style={{ ...type.title, color: colors.text }}>Vehicle inspection</Text>
           <Text style={{ ...type.tiny, color: colors.textMuted }}>
-            Watermarked photos · immutable timestamps
+            Photograph all 8 points before you drive · each photo is watermarked and sealed
           </Text>
         </View>
-        <Pill label={`${capturedCount}/8`} tone={allDone ? 'solid' : 'neutral'} />
+        <Pill label={`${done}/8`} tone={allDone ? 'solid' : 'neutral'} />
       </View>
 
       <View style={{ paddingHorizontal: space.lg, paddingBottom: space.xs }}>
         <View
           accessibilityRole="progressbar"
-          accessibilityValue={{ min: 0, max: 8, now: capturedCount }}
+          accessibilityValue={{ min: 0, max: 8, now: done }}
           style={{ height: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceSunken, overflow: 'hidden' }}
         >
-          <View
-            style={{
-              height: '100%',
-              width: `${(capturedCount / INSPECTION_POINTS.length) * 100}%`,
-              borderRadius: radius.pill,
-              backgroundColor: colors.red,
-            }}
-          />
+          <View style={{ height: '100%', width: `${(done / ZONES.length) * 100}%`, borderRadius: radius.pill, backgroundColor: colors.red }} />
         </View>
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: space.lg }}
-      >
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: space.lg }}>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
-          {INSPECTION_POINTS.map((point, index) => {
-            const capturedAt = captures[index]
-            const isCapturing = capturing === index
+          {ZONES.map(([zone, label]) => {
+            const captured = !remaining.includes(zone)
+            const busy = uploading === zone
             return (
               <Pressable
-                key={point}
+                key={zone}
                 accessibilityRole="button"
-                accessibilityLabel={capturedAt ? `${point} captured at ${capturedAt}` : `Capture ${point}`}
-                disabled={isCapturing || Boolean(capturedAt)}
-                onPress={() => setCapturing(index)}
+                accessibilityLabel={captured ? `${label} captured` : `Photograph ${label}`}
+                disabled={captured || Boolean(uploading)}
+                onPress={() => capture(zone, label)}
                 style={{
                   width: '47.5%',
                   height: 108,
@@ -220,8 +140,8 @@ export default function InspectionScreen({ onInspectionDone, onBack }) {
                   gap: 6,
                   borderRadius: radius.md,
                   borderWidth: 1,
-                  borderColor: capturedAt ? colors.red : colors.border,
-                  backgroundColor: capturedAt ? colors.redSoft : colors.surface,
+                  borderColor: captured ? colors.red : colors.border,
+                  backgroundColor: captured ? colors.redSoft : colors.surface,
                   padding: space.sm,
                 }}
               >
@@ -232,18 +152,20 @@ export default function InspectionScreen({ onInspectionDone, onBack }) {
                     borderRadius: radius.sm,
                     alignItems: 'center',
                     justifyContent: 'center',
-                    backgroundColor: capturedAt ? colors.surface : colors.surfaceAlt,
+                    backgroundColor: captured ? colors.surface : colors.surfaceAlt,
                   }}
                 >
-                  {capturedAt ? (
+                  {busy ? (
+                    <ActivityIndicator size="small" color={colors.red} />
+                  ) : captured ? (
                     <Check size={20} color={colors.red} />
                   ) : (
                     <Camera size={16} color={colors.textMuted} />
                   )}
                 </View>
-                <Text style={{ ...type.tiny, color: colors.text }}>{point}</Text>
-                <Text style={{ fontSize: 9, color: colors.textMuted }}>
-                  {capturedAt ?? (isCapturing ? 'Capturing…' : 'Tap to capture')}
+                <Text style={{ ...type.tiny, color: colors.text }}>{label}</Text>
+                <Text style={{ fontSize: 10, color: colors.textMuted }}>
+                  {captured ? 'Sealed' : busy ? 'Uploading…' : 'Tap to photograph'}
                 </Text>
               </Pressable>
             )
@@ -251,25 +173,14 @@ export default function InspectionScreen({ onInspectionDone, onBack }) {
         </View>
       </ScrollView>
 
-      <View
-        style={{
-          borderTopWidth: 1,
-          borderTopColor: colors.border,
-          backgroundColor: colors.surface,
-          padding: space.lg,
-        }}
-      >
+      <View style={{ borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.surface, padding: space.lg }}>
         <Button
-          label={allDone ? 'Start trip' : `Capture ${remaining} more point${remaining === 1 ? '' : 's'}`}
+          label={sealing ? 'Sealing…' : allDone ? 'Start trip' : `${remaining.length} photo${remaining.length === 1 ? '' : 's'} left`}
           icon={ShieldCheck}
-          disabled={!allDone}
-          onPress={startTrip}
+          disabled={!allDone || sealing}
+          onPress={seal}
         />
       </View>
-
-      {capturing !== null ? (
-        <CaptureOverlay point={INSPECTION_POINTS[capturing]} flash={flash} />
-      ) : null}
     </SafeAreaView>
   )
 }

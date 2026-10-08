@@ -1,56 +1,85 @@
-import { useState } from 'react'
-import { Pressable, Text, View } from 'react-native'
-import { Car } from 'lucide-react-native'
-import { SAVED_GARAGE } from '../../../data/mock'
+import { Pressable, Text, TextInput, View } from 'react-native'
 import { colors, radius, space, type } from '../../../theme/tokens'
 
+const input = {
+  borderWidth: 1,
+  borderColor: colors.border,
+  borderRadius: radius.md,
+  backgroundColor: colors.surface,
+  paddingHorizontal: space.md,
+  paddingVertical: 10,
+  ...type.body,
+  color: colors.text,
+}
+
+function Chips({ options, value, onChange }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: space.sm }}>
+      {options.map((opt) => {
+        const selected = value === opt
+        return (
+          <Pressable
+            key={opt}
+            accessibilityRole="radio"
+            accessibilityState={{ selected }}
+            onPress={() => onChange(opt)}
+            style={{
+              flex: 1,
+              alignItems: 'center',
+              paddingVertical: 10,
+              borderRadius: radius.md,
+              borderWidth: 1,
+              borderColor: selected ? colors.red : colors.border,
+              backgroundColor: selected ? colors.redSoft : colors.surface,
+            }}
+          >
+            <Text style={{ ...type.caption, color: selected ? colors.redPressed : colors.text }}>{opt}</Text>
+          </Pressable>
+        )
+      })}
+    </View>
+  )
+}
+
+/**
+ * The customer's own car, which the driver will drive. Transmission and make
+ * feed the recommended driver tier (getRecommendedSkillId), so they matter.
+ */
 export default function CarDetailsForm({ config, onChange }) {
-  const [useGarage, setUseGarage] = useState(true)
+  const car = config.carDetails ?? {}
+  const set = (patch) => onChange({ ...config, carDetails: { ...car, ...patch, isCustom: true } })
 
   return (
     <View style={{ gap: space.md }}>
-      {/* Tabs */}
-      <View style={{ flexDirection: 'row', backgroundColor: colors.surfaceAlt, borderRadius: radius.md, padding: 4 }}>
-        <Pressable
-          onPress={() => setUseGarage(true)}
-          style={{ flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: useGarage ? colors.surface : 'transparent', borderRadius: radius.md - 2, shadowColor: useGarage ? '#000' : 'transparent', shadowOpacity: 0.05, shadowRadius: 3, elevation: useGarage ? 1 : 0 }}
-        >
-          <Text style={{ ...type.caption, color: useGarage ? colors.text : colors.textMuted }}>Saved Garage</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => setUseGarage(false)}
-          style={{ flex: 1, paddingVertical: 8, alignItems: 'center', backgroundColor: !useGarage ? colors.surface : 'transparent', borderRadius: radius.md - 2, shadowColor: !useGarage ? '#000' : 'transparent', shadowOpacity: 0.05, shadowRadius: 3, elevation: !useGarage ? 1 : 0 }}
-        >
-          <Text style={{ ...type.caption, color: !useGarage ? colors.text : colors.textMuted }}>New Vehicle</Text>
-        </Pressable>
+      <View style={{ flexDirection: 'row', gap: space.sm }}>
+        <TextInput
+          style={[input, { flex: 1 }]}
+          placeholder="Make, e.g. Hyundai"
+          placeholderTextColor={colors.textFaint}
+          value={car.company ?? ''}
+          onChangeText={(company) => set({ company })}
+          accessibilityLabel="Car make"
+        />
+        <TextInput
+          style={[input, { flex: 1 }]}
+          placeholder="Model, e.g. Creta"
+          placeholderTextColor={colors.textFaint}
+          value={car.model ?? ''}
+          onChangeText={(model) => set({ model })}
+          accessibilityLabel="Car model"
+        />
       </View>
-
-      {useGarage ? (
-        <View style={{ gap: space.sm }}>
-          {SAVED_GARAGE.map((car) => {
-            const selected = config.carDetails?.savedVehicleId === car.id
-            return (
-              <Pressable
-                key={car.id}
-                onPress={() => onChange({ ...config, carDetails: { ...car, savedVehicleId: car.id, isCustom: false } })}
-                style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderWidth: 1, borderColor: selected ? colors.brand : colors.border, backgroundColor: selected ? colors.brandSoft : colors.surface, borderRadius: radius.md }}
-              >
-                <Car size={20} color={selected ? colors.brand : colors.textMuted} />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ ...type.bodyBold, color: selected ? colors.brandPressed : colors.text }}>{car.company} {car.model}</Text>
-                  <Text style={{ ...type.caption, color: colors.textMuted }}>{car.plate} · {car.transmission} · {car.engineType}</Text>
-                </View>
-              </Pressable>
-            )
-          })}
-        </View>
-      ) : (
-        <View style={{ padding: space.md, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, backgroundColor: colors.surface }}>
-          <Text style={{ ...type.caption, color: colors.textMuted, textAlign: 'center' }}>
-            New vehicle form goes here (simplified for demo)
-          </Text>
-        </View>
-      )}
+      <TextInput
+        style={[input, { letterSpacing: 1 }]}
+        placeholder="Registration, e.g. TS 09 AB 1234"
+        placeholderTextColor={colors.textFaint}
+        autoCapitalize="characters"
+        value={car.plate ?? ''}
+        onChangeText={(plate) => set({ plate: plate.toUpperCase() })}
+        accessibilityLabel="Registration number"
+      />
+      <Chips options={['Manual', 'Automatic']} value={car.transmission} onChange={(transmission) => set({ transmission })} />
+      <Chips options={['Petrol', 'Diesel', 'EV', 'CNG']} value={car.engineType} onChange={(engineType) => set({ engineType })} />
     </View>
   )
 }

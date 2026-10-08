@@ -1,11 +1,11 @@
-import { Alert } from 'react-native'
-import { View } from 'react-native'
+import { Alert, View } from 'react-native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
 import { Archive, Home, UserRound } from 'lucide-react-native'
 import { colors, type } from '../../theme/tokens'
 import { TripProvider, useTrip } from '../../context/TripContext'
 import HomeScreen from './HomeScreen'
 import MatchingScreen from './MatchingScreen'
+import PaymentScreen from './PaymentScreen'
 import LiveTripScreen from './LiveTripScreen'
 import TripCompleteScreen from './TripCompleteScreen'
 import VaultScreen from './VaultScreen'
@@ -30,7 +30,7 @@ const tabScreenOptions = {
  * backend-side, so there is no local timer pretending a driver was found.
  */
 function Flow({ onLogout }) {
-  const { phase, trip, config, setConfig, summary, startMatching, cancelTrip, finishTrip } =
+  const { phase, trip, payment, openCheckout, config, setConfig, summary, startMatching, cancelTrip, finishTrip } =
     useTrip()
 
   const findDriver = async (nextConfig) => {
@@ -39,6 +39,19 @@ function Flow({ onLogout }) {
     } catch (err) {
       Alert.alert('Could not book', err?.message ?? 'Please try again')
     }
+  }
+
+  if (phase === 'payment' && payment) {
+    return (
+      <PaymentScreen
+        payment={payment}
+        trip={trip}
+        onPay={openCheckout}
+        onCancel={() => {
+          void cancelTrip('Payment not completed')
+        }}
+      />
+    )
   }
 
   if (phase === 'matching') {

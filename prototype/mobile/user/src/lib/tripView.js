@@ -44,8 +44,8 @@ export function toViewTrip(trip, config) {
     serverId: trip.id,
     status: trip.status,
     statusLabel: STATUS_LABEL[trip.status] ?? trip.status,
-    from: PICKUP.name,
-    to: hourly ? `${trip.hourly_package_hours}-hour hire` : nearestDropName(trip.drop),
+    from: trip.pickup_address ?? PICKUP.name,
+    to: trip.drop_address ?? (hourly ? `${trip.hourly_package_hours}-hour hire` : nearestDropName(trip.drop)),
     skill: trip.required_certification,
     ceiling: trip.speed_ceiling_kmh,
     fare: Math.round(trip.fare_amount ?? trip.estimated_fare ?? 0),
@@ -61,8 +61,8 @@ export function toViewTrip(trip, config) {
           initials: trip.driver.initials ?? 'MD',
           vehicle: trip.driver.vehicle_model ?? 'Vehicle details pending',
           plate: trip.driver.vehicle_plate ?? '—',
-          rating: trip.driver.rating ?? 5,
-          score: trip.driver.mydriver_score ?? 100,
+          rating: trip.driver.rating ?? null,
+          score: trip.driver.mydriver_score ?? null,
         }
       : null,
   }
