@@ -8,6 +8,7 @@
  */
 import type { PoolClient } from 'pg'
 import { pool } from '../../db/client.js'
+import { approvalBlockers, getKycStatus } from '../kyc/service.js'
 import { badRequest, conflict, notFound } from '../../lib/errors.js'
 import { getStorageProvider } from '../../providers/storage/index.js'
 import type { Role } from '../auth/otp.js'
@@ -169,6 +170,8 @@ export async function getDriver(driverId: string) {
 
   return {
     profile,
+    kyc: await getKycStatus(driverId),
+    approval_blockers: await approvalBlockers(driverId),
     documents: documents.rows,
     attempts: attempts.rows,
     badges: badges.rows,
@@ -208,6 +211,12 @@ export async function setOnboardingStatus(
         'Every submitted document must be verified or rejected before approval',
         { pending: Number(pending[0]!.count) },
       )
+    }
+    const blockers = await approvalBlockers(driverId)
+    if (blockers.length > 0) {
+      throw conflict('KYC_INCOMPLETE', 'PAN, Aadhaar and a valid driving licence must be verified first', {
+        blockers,
+      })
     }
   }
 

@@ -68,6 +68,23 @@ const EnvSchema = z.object({
   LIVENESS_PROVIDER: z.enum(['mock']).default('mock'),
   LIVENESS_MOCK_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.97),
   LIVENESS_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.8),
+
+  KYC_PROVIDER: z.enum(['mock', 'cashfree']).default('mock'),
+  CASHFREE_BASE_URL: z.string().url().default('https://sandbox.cashfree.com/verification'),
+  CASHFREE_CLIENT_ID: z.string().optional(),
+  CASHFREE_CLIENT_SECRET: z.string().optional(),
+  // Cashfree scores 0-100. Below this the PAN holder's name does not match the
+  // account holder closely enough to call the person verified.
+  KYC_MIN_NAME_MATCH: z.coerce.number().int().min(0).max(100).default(80),
+
+  // 'none' dispatches at booking with no payment step: the pre-payments
+  // behaviour, kept so the trip test suite does not need a checkout per trip.
+  PAYMENTS_PROVIDER: z.enum(['none', 'mock', 'razorpay']).default('none'),
+  RAZORPAY_KEY_ID: z.string().optional(),
+  RAZORPAY_KEY_SECRET: z.string().optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  // Public base URL of this API, used to build the hosted checkout link.
+  PUBLIC_API_URL: z.string().url().default('http://localhost:4000'),
 })
 
 export type Env = z.infer<typeof EnvSchema>

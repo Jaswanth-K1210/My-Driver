@@ -488,6 +488,32 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
       /* ── Audit ledger (SUPER_ADMIN) ─────────────────────────────────── */
 
       audit: (params = {}) => request(`/v1/admin/audit${qs(params)}`),
+
+      /* ── Customer payments (FINANCE; OPS_MANAGER read-only) ─────────── */
+
+      payments: (params = {}) => request(`/v1/admin/payments${qs(params)}`),
+      refundPayment: (id, reason, amount) =>
+        request(`/v1/admin/payments/${id}/refund`, {
+          method: 'POST',
+          body: { reason, ...(amount ? { amount } : {}) },
+        }),
+    },
+
+    /** Identity checks. Required for drivers, optional badge for customers. */
+    kyc: {
+      status: () => request('/v1/kyc/status'),
+      verifyPan: (pan, name) => request('/v1/kyc/pan', { method: 'POST', body: { pan, name } }),
+      requestAadhaarOtp: (aadhaar) =>
+        request('/v1/kyc/aadhaar/otp', { method: 'POST', body: { aadhaar } }),
+      verifyAadhaarOtp: (ref_id, otp) =>
+        request('/v1/kyc/aadhaar/verify', { method: 'POST', body: { ref_id, otp } }),
+    },
+
+    payments: {
+      forTrip: (tripId) => request(`/v1/trips/${tripId}/payment`),
+      /** Hosted checkout page; open it in a browser tab or in-app browser. */
+      checkoutUrl: (payment, returnUrl) =>
+        payment.checkout_url + (returnUrl ? `?return=${encodeURIComponent(returnUrl)}` : ''),
     },
 
     trips: {
@@ -562,6 +588,11 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
         }),
 
       summary: () => request('/v1/driver/summary'),
+
+      /** KYC checklist, uploaded documents and what still blocks approval. */
+      onboarding: () => request('/v1/driver/onboarding'),
+      uploadDocument: (kind, file_base64, extra = {}) =>
+        request('/v1/driver/documents', { method: 'POST', body: { kind, file_base64, ...extra } }),
 
       /**
        * Offers this driver can still accept.

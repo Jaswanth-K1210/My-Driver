@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { ensureDriverProfile } from '../trips/rate-cards.js'
 import { pool } from '../../db/client.js'
 import { forbidden, unauthorized } from '../../lib/errors.js'
 import { OTP_MAX_ATTEMPTS, verifyOtpHash, type Role } from './otp.js'
@@ -42,6 +43,9 @@ export async function grantRole(userId: string, role: Role): Promise<void> {
 export async function grantRoleOnSignIn(userId: string, role: Role): Promise<void> {
   if (SELF_SERVICE_ROLES.includes(role)) {
     await grantRole(userId, role)
+    // A driver exists for onboarding from first sign-in, not first time online:
+    // the KYC checklist and the admin review queue both need the profile row.
+    if (role === 'DRIVER') await ensureDriverProfile(userId)
     return
   }
 

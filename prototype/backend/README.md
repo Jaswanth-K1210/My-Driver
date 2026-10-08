@@ -88,9 +88,33 @@ services mechanical.
 | POST | `/v1/trips/:id/inspections/:phase/photos` · `/complete` | DRIVER |
 | GET | `/v1/trips/:id/inspections` · `/v1/trips/:id/vault/photos` | participant |
 | POST | `/v1/trips/:id/certificate` | participant |
+| GET | `/v1/kyc/status` · POST `/v1/kyc/pan` · `/v1/kyc/aadhaar/otp` · `/v1/kyc/aadhaar/verify` | CUSTOMER, DRIVER |
+| GET | `/v1/driver/onboarding` · POST `/v1/driver/documents` | DRIVER |
+| GET | `/v1/payments/:id/checkout` (hosted page) · POST `/v1/payments/verify` | **public**, signature-authenticated |
+| POST | `/v1/payments/webhook` | **public**, HMAC over the raw body |
+| GET | `/v1/trips/:id/payment` | participant |
+| GET | `/v1/admin/payments` | FINANCE, OPS_MANAGER, SUPER_ADMIN |
+| POST | `/v1/admin/payments/:id/refund` | FINANCE, SUPER_ADMIN |
 | GET | `/health` · `/ready` · `/metrics` | — |
 
 Errors are always `{ "error": { "code", "message", "details"? } }`.
+
+## KYC and payments
+
+**KYC** (`KYC_PROVIDER=mock|cashfree`). PAN is checked against the name the
+person gives; Aadhaar uses the provider's OTP flow. Only the last four
+characters are ever stored. A driver cannot be APPROVED until PAN, Aadhaar
+and an unexpired driving licence are all verified (`approvalBlockers()`); a
+driver who finishes their side moves from PENDING to UNDER_REVIEW on their own.
+The mock accepts any individual PAN (4th letter `P`) and Aadhaar OTP `123456`.
+
+**Payments** (`PAYMENTS_PROVIDER=none|mock|razorpay`). Booking returns a
+`payment` with a `checkout_url`. The trip waits in REQUESTED until the hold is
+authorized (checkout callback or webhook), then dispatches. Completion captures
+`min(final fare, hold)` and records any overage as `amount_due`; cancel and
+NO_DRIVERS_FOUND release the hold; unpaid trips are cancelled after 15 minutes.
+`none` skips all of this, and is what the test suite uses unless a test
+installs a provider.
 
 ## Trip lifecycle
 

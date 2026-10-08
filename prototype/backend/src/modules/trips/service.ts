@@ -7,6 +7,7 @@ import { peppered } from '../../lib/hash.js'
 import { getTelemetryWriter, readTripTrack } from '../../telemetry/batch-writer.js'
 import type { Role } from '../auth/otp.js'
 import { revokeLinksForEndedTrip } from '../guardian/service.js'
+import { captureForTrip, releaseForTrip } from '../payments/service.js'
 import { broadcastStateChange } from './broadcast.js'
 import { computeFare } from './fare.js'
 import { setAvailability } from './geo-index.js'
@@ -409,6 +410,9 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
 
   await setAvailability(driverId, 'ONLINE')
   await revokeLinksForEndedTrip(tripId).catch(() => undefined)
+  // After commit and never fatal: the trip did happen. A failed capture
+  // leaves the payment AUTHORIZED and visible to Finance for a retry.
+  await captureForTrip(tripId, fare.total).catch((err) => console.error('capture failed', tripId, err))
   await broadcastStateChange(tripId, 'COMPLETED')
   return getTripForParticipant(tripId, driverId)
 }
@@ -455,8 +459,30 @@ export async function cancelTrip(
 
   if (trip.driver_id) await setAvailability(trip.driver_id, 'ONLINE')
   await revokeLinksForEndedTrip(tripId).catch(() => undefined)
+  await releaseForTrip(tripId).catch(() => undefined)
   await broadcastStateChange(tripId, 'CANCELLED')
   return getTripForParticipant(tripId, userId)
+}
+
+/** System cancel for a trip whose checkout was never completed. */
+export async function cancelUnpaidTrip(tripId: string): Promise<void> {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await transitionTrip(client, tripId, 'REQUESTED', 'CANCELLED', {
+      cancelled_at: new Date(),
+      cancellation_reason: 'Payment not completed',
+    })
+    await recordEvent(client, tripId, 'TRIP_CANCELLED', null, null, { reason: 'PAYMENT_TIMEOUT' })
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+  await releaseForTrip(tripId)
+  await broadcastStateChange(tripId, 'CANCELLED')
 }
 
 /**

@@ -5,6 +5,8 @@ import { badRequest } from '../../lib/errors.js'
 import { estimateRoadDistanceKm } from '../../lib/geo.js'
 import { issueTicket, TICKET_TTL_SECONDS } from '../../realtime/ticket.js'
 import { requireAuth, requireRole } from '../auth/rbac.js'
+import { PaymentSchema } from '../payments/routes.js'
+import { createPaymentForTrip, paymentsEnabled } from '../payments/service.js'
 import { trackDispatch } from './dispatch-tracker.js'
 import { computeFare } from './fare.js'
 import { setAvailability } from './geo-index.js'
@@ -183,7 +185,7 @@ export function registerTripRoutes(app: FastifyInstance): void {
         body: QuoteBody.extend({
           speed_ceiling_kmh: z.number().int().min(20).max(120),
         }).strict(),
-        response: { 201: TripViewSchema },
+        response: { 201: TripViewSchema.extend({ payment: PaymentSchema.nullable() }) },
       },
     },
     async (request, reply) => {
@@ -214,8 +216,15 @@ export function registerTripRoutes(app: FastifyInstance): void {
         tripType: b.trip_type,
       })
 
+      // With payments on, the trip waits for checkout; authorization is what
+      // starts dispatch (payments/service.markAuthorized).
+      const payment =
+        paymentsEnabled() && trip.estimated_fare
+          ? await createPaymentForTrip(trip.id, trip.customer_id, trip.estimated_fare)
+          : null
+
       // Dispatch runs out of band: booking must not block on driver search.
-      if (trip.status === 'REQUESTED') {
+      if (trip.status === 'REQUESTED' && (!payment || payment.status === 'AUTHORIZED')) {
         trackDispatch(
           startDispatch(trip.id).catch((err) =>
             app.log.error({ err, tripId: trip.id }, 'dispatch failed'),
@@ -223,7 +232,7 @@ export function registerTripRoutes(app: FastifyInstance): void {
         )
       }
 
-      return reply.status(201).send(trip)
+      return reply.status(201).send({ ...trip, payment })
     },
   )
 
