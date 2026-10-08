@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { SectionCard, Toggle } from '../../components/app/Primitives.jsx'
+import IdentityCard from '../../components/app/IdentityCard.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { useToast } from '../../context/toastStore.js'
 import { MAX_GUARDIANS } from '../../data/mock.js'
@@ -25,6 +26,8 @@ export default function Profile() {
   const [phone, setPhone] = useState('')
   const [busy, setBusy] = useState(false)
   const [consents, setConsents] = useState([])
+  const [verified, setVerified] = useState(false)
+  const onKyc = useCallback((k) => setVerified(k.verified), [])
 
   const reload = useCallback(async () => {
     try {
@@ -110,12 +113,16 @@ export default function Profile() {
               {user.phone ? `${user.phone} · ` : ''}Member since {user.memberSince}
             </p>
           </div>
-          <span className="flex shrink-0 items-center gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-xs font-black text-brand-600">
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-            MD Verified
-          </span>
+          {verified && (
+            <span className="flex shrink-0 items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white">
+              <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+              ID verified
+            </span>
+          )}
         </div>
       </SectionCard>
+
+      <IdentityCard onStatus={onKyc} />
 
       <SectionCard title={`Guardians · ${guardians.length}/${MAX_GUARDIANS}`}>
         {guardians.length === 0 && (

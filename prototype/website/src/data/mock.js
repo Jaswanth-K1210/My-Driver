@@ -16,11 +16,12 @@ export const TRUST_MARKS = [
   'Guardian live tracking',
 ]
 
+// Product facts, not traction numbers. Replace with audited figures once they exist.
 export const STATS = [
-  { value: '12,400+', label: 'Certified drivers' },
-  { value: '98.7%', label: 'On-time pickup' },
-  { value: '3.2L+', label: 'Safe trips completed' },
-  { value: '24x7', label: 'Safety desk monitoring' },
+  { value: '5', label: 'Certified driver tiers' },
+  { value: '8-point', label: 'Photo inspection per trip' },
+  { value: 'L0–L5', label: 'Incident escalation ladder' },
+  { value: '24x7', label: 'Safety Desk monitoring' },
 ]
 
 /* ── Booking ───────────────────────────────────────────────────────────── */
@@ -144,7 +145,7 @@ export const REQUIREMENTS = [
     label: 'Airport',
     tagline: 'Transfers & flight tracking',
     badge: 'Airport',
-    description: 'Guaranteed on-time arrivals & departure pickups with luggage assist.',
+    description: 'Airport drops and pickups with flight details shared with your driver.',
   },
   {
     id: 'full_time',
@@ -223,12 +224,6 @@ export const SKILLS = [
   { id: 'MD-Night', label: 'Highway & Night', rate: 19, hourlyRate: 280, eta: '4 min away', tagline: 'Outstation & Night', description: 'Night and long-distance highway specialists with 24x7 Safety Desk live monitoring.' },
 ]
 
-export const VISION_MODES = [
-  { id: 'R', name: 'Road', desc: 'Road & traffic recording' },
-  { id: 'D', name: 'Driver', desc: 'Driver-focused cabin cam' },
-  { id: 'F', name: 'Full cabin', desc: 'Complete interior coverage' },
-]
-
 export const PLATFORM_FEE = 19
 export const NIGHT_FEE = 30
 
@@ -256,36 +251,30 @@ export const PAST_TRIPS = [
 /* ── Marketing sections ────────────────────────────────────────────────── */
 
 export const SAFETY_FEATURES = [
-  { title: 'Speed Ceiling', icon: 'gauge', description: 'You set the limit before the trip starts. The vehicle alerts and logs every breach past your chosen ceiling — default 60 km/h in city.' },
-  { title: 'VisionCam Modes', icon: 'camera', description: 'Choose Mode R (road), Mode D (driver) or Mode F (full cabin) recording before every ride. Footage is sealed into the Trip Vault.' },
-  { title: 'Guardian Link', icon: 'users', description: 'Share a live trip link with up to 3 emergency contacts over SMS or WhatsApp. They see route, speed and stops in real time.' },
-  { title: 'Silent SOS', icon: 'siren', description: 'Triple-press the volume button to silently alert our 24x7 Safety Desk, stream location and notify guardians — without the driver knowing.' },
-  { title: '8-Point Inspection', icon: 'clipboard', description: 'Drivers capture watermarked photos of 8 car zones before engine start. Pre and post-ride condition is timestamped and immutable.' },
-  { title: 'Trip Vault', icon: 'archive', description: 'Every trip is archived with route, telematics, inspection photos and an exportable certificate for insurance or legal use.' },
+  { title: 'Speed limit', icon: 'gauge', description: 'You set the limit before the trip starts. Every reading above it is logged and flagged to the Safety Desk. The city default is 60 km/h.' },
+  { title: 'Verified identity', icon: 'fingerprint', description: 'Every driver clears PAN and Aadhaar checks and a licence review before their first trip, then takes a face-matched selfie at your pickup.' },
+  { title: 'Guardian link', icon: 'users', description: 'Text a private live link to up to 3 trusted contacts. They see your route and speed until the trip ends, with no app or login needed.' },
+  { title: 'SOS', icon: 'siren', description: 'Press and hold SOS to alert the 24x7 Safety Desk and your guardians at once. The desk calls you and can escalate to emergency services.' },
+  { title: '8-point inspection', icon: 'clipboard', description: 'Before the trip starts, the driver photographs 8 zones of your car. Each photo is watermarked with time and place and sealed.' },
+  { title: 'Trip Vault', icon: 'archive', description: 'Each trip is archived with its route, telemetry and inspection photos, plus a signed PDF certificate you can share with your insurer.' },
 ]
 
 export const STEPS = [
-  { step: '01', title: 'Book & configure', description: 'Pick a skill certification, set your speed ceiling and choose a VisionCam mode. Fare is locked upfront.' },
-  { step: '02', title: 'Verified pickup', description: 'Your driver passes a live face-match check and enters your OTP before the engine can start. Car condition is photographed.' },
-  { step: '03', title: 'Monitored ride', description: 'Telematics score the drive while guardians track live. The Safety Desk escalates any anomaly from L0 to L5 within minutes.' },
+  { step: '01', title: 'Book and confirm', description: 'Choose a driver tier and your speed limit. We place a refundable hold for the quoted fare and charge the final fare at the end.' },
+  { step: '02', title: 'Verified pickup', description: 'Your driver takes a face-matched selfie and enters your one-time code before the trip can start, then photographs your car.' },
+  { step: '03', title: 'Monitored trip', description: 'GPS and motion data are checked live while your guardians follow along. The Safety Desk steps in on any anomaly.' },
 ]
 
 export const PRICING = [
-  { name: 'Essential', price: '₹16', unit: '/km', blurb: 'Daily commutes with full safety stack.', features: ['MD-Standard drivers', 'Speed ceiling control', 'Guardian link (2 contacts)', 'Trip Vault 30-day archive'], cta: 'Ride Essential', featured: false },
-  { name: 'Comfort+', price: '₹22', unit: '/km', blurb: 'Family rides with priority response.', features: ['MD-SUV & MD-Night access', 'VisionCam all modes', 'Guardian link (3 contacts)', 'Priority Safety Desk SLA', 'Trip Vault 1-year archive'], cta: 'Ride Comfort+', featured: true },
-  { name: 'Corporate', price: 'Custom', unit: '', blurb: 'Employee transport with compliance.', features: ['Dedicated account manager', 'Policy-based speed ceilings', 'Consolidated billing & GST', 'Audit-grade Trip Vault export', 'API & SSO integration'], cta: 'Talk to sales', featured: false },
-]
-
-export const TESTIMONIALS = [
-  { quote: 'My daughter travels back from college at night. The speed ceiling and guardian link mean I can finally sleep before she is home.', name: 'Lakshmi Narayanan', role: 'Parent, Jubilee Hills' },
-  { quote: 'The Trip Vault certificate settled an insurance claim in days instead of months. The photo evidence was undeniable.', name: 'Arjun Mehta', role: 'MD-Lux subscriber, Banjara Hills' },
-  { quote: 'We moved 400 employee pickups to MyDriver. Policy ceilings and audit exports made our compliance team very happy.', name: 'Sravani Reddy', role: 'Admin Head, IT park, Gachibowli' },
+  { name: 'Standard', price: '₹16', unit: '/km', blurb: 'Everyday trips with the full safety stack.', features: ['Verified MD-Standard drivers', 'Speed limit on every trip', 'Guardian link for up to 3 contacts', 'Trip Vault and PDF certificate'], cta: 'Book Standard', featured: false },
+  { name: 'SUV & Night', price: '₹22', unit: '/km', blurb: 'Large cars, highways and late-night trips.', features: ['MD-SUV and Night Shield drivers', 'Everything in Standard', 'Welfare call after night drop-offs', 'Same refundable-hold payment'], cta: 'Book SUV & Night', featured: true },
+  { name: 'Corporate', price: 'Custom', unit: '', blurb: 'Employee transport with compliance reporting.', features: ['Dedicated account manager', 'Policy-based speed limits', 'Consolidated billing with GST', 'Trip Vault exports for audit'], cta: 'Talk to sales', featured: false },
 ]
 
 export const FAQS = [
-  { q: 'How are MyDriver drivers verified?', a: 'Every driver clears a police background check, licence validation, in-person driving assessment and psychometric screening before earning any MD certification. Re-certification happens every 6 months.' },
-  { q: 'What happens when the speed ceiling is breached?', a: 'The driver gets an in-cab alert instantly, the event is logged to the immutable trip ledger, guardians are notified, and repeated breaches trigger L1 escalation to the Safety Desk which can pause the trip.' },
-  { q: 'Is my trip footage private?', a: 'Yes. VisionCam footage is encrypted and sealed into your Trip Vault. It is only released to you, or to law enforcement through a documented evidence packet that is itself audit-logged.' },
-  { q: 'Does Silent SOS work without internet?', a: 'The triple volume-press queues the alert locally and sends it over SMS fallback if data is unavailable, so the Safety Desk still receives it.' },
-  { q: 'Which cities is MyDriver available in?', a: 'We currently operate across Hyderabad with Chennai, Bengaluru and Pune launching next quarter.' },
+  { q: 'How are MyDriver drivers verified?', a: 'Every driver verifies their PAN and Aadhaar through a licensed verification partner, and has their driving licence reviewed by our operations team before they can accept a trip. Night Shield drivers are re-checked every 90 days.' },
+  { q: 'What happens if my driver goes over the speed limit?', a: 'The reading is logged against the trip and flagged to the Safety Desk. Sustained or repeated breaches escalate, and the desk can call you or the driver directly.' },
+  { q: 'How does payment work?', a: 'When you book, we place a refundable hold for the quoted fare. When the trip ends, we charge the final fare. If you cancel, or no driver is available, the hold is released. Payments are processed securely by Razorpay.' },
+  { q: 'How does SOS work?', a: 'Press and hold SOS during a trip. The Safety Desk and your guardians are alerted immediately, the desk calls you, and they can share your trip evidence with the police if needed.' },
+  { q: 'Which cities is MyDriver available in?', a: 'MyDriver currently operates in Hyderabad.' },
 ]

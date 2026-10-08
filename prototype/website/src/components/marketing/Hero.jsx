@@ -256,7 +256,7 @@ export default function Hero() {
                 <Star className="h-3.5 w-3.5 fill-brand-500 text-brand-500" aria-hidden="true" />
                 4.9 average across 3.2L+ trips
               </p>
-              <p className="text-xs text-slate-500">Every driver re-certified every 6 months</p>
+              <p className="text-xs text-slate-500">Every driver PAN, Aadhaar and licence verified</p>
             </div>
           </div>
 

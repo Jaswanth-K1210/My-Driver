@@ -305,26 +305,17 @@ so the auth path is exercised on every run.
 
 ## Not built yet
 
-Phase 2: dual-GPS integrity evaluation (3 s haversine loop, 150 m / 60 s
-threshold), L0–L5 escalation, guardian link dispatch, silent SOS, the
-`ESCALATED` transition, `ANOMALY_TRIGGERED` emission, Admin CRM endpoints.
+Stated plainly so nobody mistakes these for done:
 
-Phase 3: Trip Vault — 8-point inspection capture, watermarking, immutable
-archival, exportable trip certificates.
-
-Known gaps in Phase 1, stated rather than hidden:
-
-- **Push has no device-token storage**, so `getPushProvider().send()` cannot
-  reach a real device.
-- **`TRIP_OFFER` does not reach the offered driver over the WebSocket.** It is
-  published to the trip channel, but the gateway only admits trip participants
-  and `trips.driver_id` stays NULL until the offer is accepted — so the driver
-  cannot subscribe, and would not know the trip id if they could. Drivers
-  discover offers by polling `GET /v1/driver/offers` instead. The frame is
-  still published, so a future per-driver channel needs no client change.
-- **The `AGENT` role is grantable but has no endpoints.** The agent
-  field-recruitment app is out of scope; the enum value exists so the schema
-  does not change later.
-- **`face_reference_key` is never populated** — driver onboarding is not built —
-  so the handshake gates on the mock liveness provider. That provider is a real
-  interface with a real confidence threshold rather than a hardcoded `true`.
+- **Live provider keys.** KYC and payments run on mock adapters until
+  `KYC_PROVIDER=cashfree` and `PAYMENTS_PROVIDER=razorpay` are set with real
+  keys. The Cashfree endpoint paths in `providers/kyc/cashfree.ts` must be
+  confirmed against Cashfree's current docs in sandbox before go-live.
+- **Overtime above the hold** is recorded as `payments.amount_due`, not
+  charged. A second order for the difference is the upgrade path.
+- **Face matching** still uses the mock liveness provider; the selfie is real,
+  the comparison is not. `face_reference_key` needs a vendor.
+- **Legal pages** (privacy notice, terms, grievance officer) do not exist yet
+  and are required before collecting Aadhaar or payments from the public.
+- **Masked calling / in-app chat** between rider and driver is not built; the
+  buttons were removed rather than left as dead ends.

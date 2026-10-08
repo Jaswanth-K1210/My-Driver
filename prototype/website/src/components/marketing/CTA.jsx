@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowRight, ShieldCheck, Smartphone } from 'lucide-react'
+import { ArrowRight, Globe, ShieldCheck } from 'lucide-react'
 import Reveal from './Reveal.jsx'
 
 export default function CTA() {
@@ -23,15 +23,14 @@ export default function CTA() {
                 Create free account
                 <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" aria-hidden="true" />
               </Link>
-              <button
-                type="button"
+              <Link
+                to="/app/book"
                 className="flex items-center gap-2 rounded-full border border-slate-300 bg-white px-7 py-3.5 text-sm font-bold text-slate-900 transition-colors hover:border-slate-400"
               >
-                <Smartphone className="h-4 w-4" aria-hidden="true" />
-                Get the app
-              </button>
+                <Globe className="h-4 w-4" aria-hidden="true" />
+                Book on the web
+              </Link>
             </div>
-            <p className="mt-7 text-xs text-slate-500">Prototype build — store buttons are placeholders.</p>
           </div>
         </Reveal>
       </div>

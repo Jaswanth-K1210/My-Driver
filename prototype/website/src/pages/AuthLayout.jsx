@@ -20,7 +20,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
           </div>
         </div>
 
-        <p className="text-xs text-slate-400">Prototype build — no real account is created and no password is stored.</p>
+        <p className="text-xs text-slate-400">We sign you in with a one-time code. MyDriver never asks for a password.</p>
       </div>
 
       {/* Reassurance panel. Hidden on small screens so the form stays the focus. */}

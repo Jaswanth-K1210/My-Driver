@@ -16,9 +16,6 @@ import {
   X,
 } from 'lucide-react'
 import RoadMap from '../../components/app/RoadMap.jsx'
-import PhoneFrame from '../../components/app/PhoneFrame.jsx'
-import MobileTrackScreen from '../../components/app/mobile/MobileTrackScreen.jsx'
-import MobileDriverAcceptScreen from '../../components/app/mobile/MobileDriverAcceptScreen.jsx'
 import { Modal, SectionCard, StatCard } from '../../components/app/Primitives.jsx'
 import { useTrip } from '../../context/tripStore.js'
 import { useToast } from '../../context/toastStore.js'
@@ -48,10 +45,10 @@ function EmptyState() {
   )
 }
 
-function Matching({ label, trip }) {
+function Matching({ label }) {
   return (
-    <div className="grid gap-6 xl:grid-cols-[1fr_auto]">
-      <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white px-6 py-24 text-center h-[500px]">
+    <div className="mx-auto max-w-2xl">
+      <div className="flex flex-col items-center justify-center rounded-3xl border border-slate-200 bg-white px-6 py-20 text-center">
         <span className="relative flex h-20 w-20 text-brand-500">
           <span className="pulse-ring absolute inline-flex h-20 w-20 rounded-full" />
           <span className="flex h-20 w-20 items-center justify-center rounded-full bg-brand-50">
@@ -68,13 +65,6 @@ function Matching({ label, trip }) {
             </li>
           ))}
         </ul>
-      </div>
-      
-      {/* Driver App Preview */}
-      <div className="hidden xl:block">
-        <PhoneFrame label="Driver App Preview (Accepting)">
-          <MobileDriverAcceptScreen trip={trip} />
-        </PhoneFrame>
       </div>
     </div>
   )
@@ -278,7 +268,7 @@ export default function Track() {
   if (phase === 'payment' && payment) {
     return <PaymentStep payment={payment} trip={trip} onPay={openCheckout} onCancel={() => cancelTrip('Payment not completed')} />
   }
-  if (phase === 'matching') return <Matching label={trip?.statusLabel} trip={trip} />
+  if (phase === 'matching') return <Matching label={trip?.statusLabel} />
   if (phase === 'complete' && trip) {
     return (
       <TripComplete
@@ -388,7 +378,7 @@ export default function Track() {
         </div>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[1fr_auto]">
+      <div className="grid gap-6">
         <div className="min-w-0 space-y-5">
           <div className="relative h-96 overflow-hidden rounded-3xl border border-slate-200 bg-white">
             <RoadMap points={mapPoints} className="h-full w-full" label="Live trip map" />
@@ -465,27 +455,14 @@ export default function Track() {
               className="flex flex-1 select-none items-center justify-center gap-2 rounded-2xl bg-brand-800 py-4 text-sm font-black text-white transition-colors hover:bg-brand-700"
             >
               <Siren className="h-4 w-4" aria-hidden="true" />
-              Hold for Silent SOS
+              Hold for SOS
             </button>
           </div>
           <p className="text-center text-xs text-slate-500">
-            Press and hold for 1.2s to arm. Guardians see route, speed and stops live.
+            Press and hold to alert the Safety Desk and your guardians.
           </p>
         </div>
 
-        {/* The same live trip, rendered as it appears in the mobile app. */}
-        <div className="hidden xl:block">
-          <div className="sticky top-10">
-            <PhoneFrame label="Same trip in the MyDriver app">
-              <MobileTrackScreen
-                trip={trip}
-                points={mapPoints}
-                live={{ speed, maxSpeed, breaches, overCeiling, status }}
-                sharedCount={shared ? guardians.length : 0}
-              />
-            </PhoneFrame>
-          </div>
-        </div>
       </div>
 
       <Modal open={guardianOpen} onClose={() => setGuardianOpen(false)} title="Share guardian link">

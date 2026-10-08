@@ -5,7 +5,7 @@ const PERKS = [
   { icon: BadgeCheck, title: 'Earn a trusted badge', description: 'MD certification puts you in the top 5% of drivers and unlocks premium Lux and Night fares.' },
   { icon: TrendingUp, title: 'Score-based rewards', description: 'Telematics scoring rewards smooth driving. Higher scores mean lower commission and priority dispatch.' },
   { icon: ShieldCheck, title: 'You are protected too', description: 'Trip evidence guards you against false accusations. Every ride is witnessed by the vault.' },
-  { icon: IndianRupee, title: 'Weekly payouts', description: 'Transparent earnings with weekly settlement, fuel card options and insurance support.' },
+  { icon: IndianRupee, title: 'Weekly payouts', description: 'Transparent earnings, settled to your bank account on a regular payout cycle.' },
 ]
 
 export default function DriverPitch() {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
-import { Archive, Bell, CarFront, LayoutDashboard, LogOut, Menu, Radio, UserRound, X } from 'lucide-react'
+import { Archive, ArrowUpRight, CarFront, LayoutDashboard, LogOut, Menu, Radio, UserRound, X } from 'lucide-react'
 import { Wordmark } from '../marketing/Navbar.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { useTrip } from '../../context/tripStore.js'
@@ -9,7 +9,7 @@ import { cn } from '../../lib/utils.js'
 
 const NAV = [
   { to: '/app', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/app/book', label: 'Book a ride', icon: CarFront },
+  { to: '/app/book', label: 'Book a driver', icon: CarFront },
   { to: '/app/track', label: 'Live tracking', icon: Radio },
   { to: '/app/vault', label: 'Trip Vault', icon: Archive },
   { to: '/app/profile', label: 'Profile', icon: UserRound },
@@ -42,6 +42,17 @@ function NavItems({ onNavigate, hasActiveTrip }) {
   )
 }
 
+const PublicSiteLink = ({ onNavigate }) => (
+  <Link
+    to="/"
+    onClick={onNavigate}
+    className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+  >
+    <ArrowUpRight className="h-4.5 w-4.5" aria-hidden="true" />
+    Public website
+  </Link>
+)
+
 export default function DashboardLayout() {
   const { user, signOut } = useAuth()
   const { hasActiveTrip } = useTrip()
@@ -66,6 +77,7 @@ export default function DashboardLayout() {
           <NavItems hasActiveTrip={hasActiveTrip} />
         </div>
         <div className="border-t border-slate-200 pt-4">
+          <PublicSiteLink />
           <div className="flex items-center gap-3 rounded-2xl px-3 py-2.5">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-50 text-sm font-black text-brand-600">
               {user.initials}
@@ -99,15 +111,13 @@ export default function DashboardLayout() {
         <Link to="/" aria-label="MyDriver home">
           <Wordmark />
         </Link>
-        <button
-          type="button"
-          onClick={() => toast('No new alerts — all trips sealed', 'info')}
-          aria-label="Notifications"
-          className="relative rounded-xl p-2 text-slate-700 transition-colors hover:bg-slate-100"
+        <Link
+          to="/app/book"
+          aria-label="Book a driver"
+          className="rounded-xl p-2 text-brand-600 transition-colors hover:bg-brand-50"
         >
-          <Bell className="h-5 w-5" />
-          <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-brand-500" aria-hidden="true" />
-        </button>
+          <CarFront className="h-5 w-5" />
+        </Link>
       </header>
 
       {/* Mobile drawer */}
@@ -124,6 +134,7 @@ export default function DashboardLayout() {
             <div className="mt-8 flex-1">
               <NavItems hasActiveTrip={hasActiveTrip} onNavigate={() => setMenuOpen(false)} />
             </div>
+            <PublicSiteLink onNavigate={() => setMenuOpen(false)} />
             <button
               type="button"
               onClick={handleSignOut}

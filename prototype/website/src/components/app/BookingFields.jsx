@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  AlertCircle,
   Bus,
-  Calendar,
   CalendarDays,
   Car,
   Check,
@@ -16,7 +14,6 @@ import {
   Navigation,
   Plane,
   Plus,
-  ShieldCheck,
   Sparkles,
   Tent,
 } from 'lucide-react'
@@ -35,8 +32,6 @@ import {
   SKILLS,
   TRANSMISSIONS,
   VEHICLE_TYPES,
-  VISION_MODES,
-  START_LOCATIONS,
 } from '../../data/mock.js'
 import { getMinDurationForConfig, getRecommendedSkillId, getRouteLegTelemetry } from '../../lib/booking.js'
 import { clamp, cn } from '../../lib/utils.js'
@@ -113,7 +108,6 @@ export function VehicleTypeSelector({ value, onChange }) {
 /* ── 2. Car Specs & Garage Picker ───────────────────────────────────────── */
 
 export function CarSpecPicker({ carDetails, onChange, onAutoMatchSkill }) {
-  const [showCustomModal, setShowCustomModal] = useState(false)
   const currentBrand = CAR_BRANDS.find((b) => b.company === carDetails.company) ?? CAR_BRANDS[0]
 
   const handleSavedSelect = (saved) => {
@@ -1500,36 +1494,6 @@ export function CeilingSlider({ value, onChange }) {
   )
 }
 
-export function VisionPicker({ value, onChange }) {
-  const active = VISION_MODES.find((m) => m.id === value)
-  return (
-    <div>
-      <div className="grid grid-cols-3 gap-2">
-        {VISION_MODES.map((mode) => {
-          const selected = mode.id === value
-          return (
-            <button
-              key={mode.id}
-              type="button"
-              onClick={() => onChange(mode.id)}
-              className={cn(
-                'relative rounded-2xl border p-3 text-center transition-colors',
-                selected ? 'border-brand-500 bg-brand-50' : 'border-slate-200 bg-white hover:border-slate-300',
-              )}
-            >
-              {selected && <Check className="absolute right-2 top-2 h-3.5 w-3.5 text-brand-500" />}
-              <span className={cn('block text-sm font-black', selected ? 'text-brand-600' : 'text-slate-900')}>
-                Mode {mode.id}
-              </span>
-              <span className="block text-[10px] font-semibold text-slate-500">{mode.name}</span>
-            </button>
-          )
-        })}
-      </div>
-      <p className="mt-1.5 text-xs text-slate-500">{active?.desc} · sealed into Trip Vault</p>
-    </div>
-  )
-}
 
 export function PackagePicker({ value, onChange }) {
   return (

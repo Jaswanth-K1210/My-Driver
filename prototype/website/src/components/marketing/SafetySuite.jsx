@@ -1,8 +1,8 @@
-import { Gauge, Camera, Users, Siren, ClipboardCheck, Archive } from 'lucide-react'
+import { Gauge, Fingerprint, Users, Siren, ClipboardCheck, Archive } from 'lucide-react'
 import Reveal from './Reveal.jsx'
 import { SAFETY_FEATURES } from '../../data/mock.js'
 
-const ICONS = { gauge: Gauge, camera: Camera, users: Users, siren: Siren, clipboard: ClipboardCheck, archive: Archive }
+const ICONS = { gauge: Gauge, fingerprint: Fingerprint, users: Users, siren: Siren, clipboard: ClipboardCheck, archive: Archive }
 
 export default function SafetySuite() {
   return (
