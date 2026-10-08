@@ -64,8 +64,9 @@ export async function ensureDriverProfile(userId: string): Promise<void> {
   // Test keeps the real default so the gate stays under test.
   const autoApprove = env.NODE_ENV === 'development'
   await pool.query(
-    `INSERT INTO driver_profiles (user_id, onboarding_status, onboarded_at)
-     VALUES ($1, COALESCE($2::onboarding_status, 'PENDING'), now())
+    // Night Shield too, or local dispatch silently finds nobody after 22:00 IST.
+    `INSERT INTO driver_profiles (user_id, onboarding_status, onboarded_at, night_shield_certified)
+     VALUES ($1, COALESCE($2::onboarding_status, 'PENDING'), now(), $2 IS NOT NULL)
      ON CONFLICT (user_id) DO NOTHING`,
     [userId, autoApprove ? 'APPROVED' : null],
   )

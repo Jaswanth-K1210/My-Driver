@@ -4,6 +4,7 @@ import {
   ArrowLeft, CheckCircle2, FileLock2, PhoneCall, ShieldAlert, TrendingUp, Users,
 } from 'lucide-react'
 import { api, ApiError } from '../../lib/apiClient.js'
+import { ask } from '../../components/admin/PromptDialog.jsx'
 import { SectionCard } from '../../components/app/Primitives.jsx'
 import { useToast } from '../../context/toastStore.js'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
@@ -127,12 +128,16 @@ export default function Incident() {
               label="Release evidence"
               tone="danger"
               busy={busy}
-              onClick={() => {
+              onClick={async () => {
                 // L5 is a law-enforcement handoff and is not reversible, so it
                 // is the one action behind an explicit confirmation.
-                const recipient = window.prompt(
-                  'Release the Trip Vault evidence packet to which authority?\n(e.g. "Dial 112", "T-Safe")',
-                )
+                const recipient = await ask({
+                  title: 'Release evidence to law enforcement',
+                  label: 'Receiving authority',
+                  placeholder: 'e.g. Dial 112, T-Safe, Madhapur PS',
+                  confirmLabel: 'Release evidence',
+                  danger: true,
+                })
                 if (recipient) {
                   void run('Evidence released', () => api.admin.releaseEvidence(id, recipient))
                 }
@@ -155,8 +160,8 @@ export default function Incident() {
                     key={level}
                     type="button"
                     disabled={busy}
-                    onClick={() => {
-                      const note = window.prompt(`Promote to ${level} — why?`)
+                    onClick={async () => {
+                      const note = await ask({ title: `Promote to ${level}`, placeholder: 'What did you observe?', confirmLabel: `Promote to ${level}`, danger: level >= 'L4' })
                       if (note) void run(`Promoted to ${level}`, () => api.admin.promote(id, level, note))
                     }}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
@@ -173,8 +178,8 @@ export default function Incident() {
             <button
               type="button"
               disabled={busy}
-              onClick={() => {
-                const resolution = window.prompt('Resolution — what happened?')
+              onClick={async () => {
+                const resolution = await ask({ title: 'Resolve incident', label: 'Resolution', placeholder: 'What happened, and how was it closed?', confirmLabel: 'Resolve' })
                 if (resolution) void run('Resolved', () => api.admin.resolve(id, resolution))
               }}
               className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50"

@@ -58,6 +58,12 @@ const STATUS_STYLES = {
   FAILED: 'bg-brand-100 text-brand-700',
   NO_ANSWER: 'bg-brand-100 text-brand-700',
   ESCALATED: 'bg-brand-500 text-white',
+  NOT_STARTED: 'bg-slate-100 text-slate-500',
+  CREATED: 'bg-slate-100 text-slate-600',
+  AUTHORIZED: 'bg-sky-100 text-sky-800',
+  CAPTURED: 'bg-emerald-100 text-emerald-800',
+  RELEASED: 'bg-slate-200 text-slate-600',
+  REFUNDED: 'bg-violet-100 text-violet-800',
 }
 
 export function StatusPill({ status, className }) {

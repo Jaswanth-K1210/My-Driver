@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Banknote, Calculator } from 'lucide-react'
 import { api, ApiError } from '../../lib/apiClient.js'
+import PageHeader from '../../components/admin/PageHeader.jsx'
+import { ask } from '../../components/admin/PromptDialog.jsx'
 import { SectionCard } from '../../components/app/Primitives.jsx'
 import { useToast } from '../../context/toastStore.js'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
@@ -49,12 +51,7 @@ export default function Payouts() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Payouts</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Settle completed trips · a trip can only ever be settled once
-        </p>
-      </header>
+      <PageHeader title="Payouts" subtitle="Settle completed trips · a trip can only ever be settled once" />
 
       <SectionCard title="Period" icon={Calculator}>
         <div className="flex flex-wrap items-end gap-3">
@@ -160,8 +157,8 @@ export default function Payouts() {
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => {
-                            const reference = window.prompt('Bank transaction reference')
+                          onClick={async () => {
+                            const reference = await ask({ title: 'Mark payout as paid', label: 'Bank transaction reference', placeholder: 'e.g. UTR 4012 8834 1123', confirmLabel: 'Mark paid' })
                             if (reference) {
                               void act('Marked paid', () =>
                                 api.admin.advancePayout(run.id, 'PAID', reference),

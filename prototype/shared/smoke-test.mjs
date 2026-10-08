@@ -172,6 +172,18 @@ try {
   )
   check('booking is idempotent', repeat.id === booked.id)
 
+  /* ── Payment hold (when the server has payments on) ────────────────── */
+  if (booked.payment) {
+    check('booking returns a checkout link', booked.payment.checkout_url.includes('/checkout'))
+    check('idempotent booking reuses the same hold', repeat.payment?.id === booked.payment.id)
+    const page = await fetch(booked.payment.checkout_url).then((r) => r.text())
+    check('checkout page renders', page.includes('Confirm your trip'))
+    // The mock checkout's Approve button; a real run would go through Razorpay.
+    await customer.request(`/v1/payments/${booked.payment.id}/mock/approve`, { method: 'POST', auth: false })
+    const { payment } = await customer.payments.forTrip(booked.id)
+    check('hold is authorized', payment.status === 'AUTHORIZED')
+  }
+
   /* ── Customer watches over the socket ──────────────────────────────── */
   const seen = []
   const customerRt = customer.realtime({})
@@ -301,6 +313,9 @@ try {
     },
     `smoke-p2-${stamp}`,
   )
+  if (trip2.payment) {
+    await customer.request(`/v1/payments/${trip2.payment.id}/mock/approve`, { method: 'POST', auth: false })
+  }
   await waitFor(() => customer.trips.get(trip2.id), (t) => t.status !== 'REQUESTED')
   await driver.driver.respondToOffer(trip2.id, true)
   const { otp: otp2 } = await customer.trips.handshakeOtp(trip2.id)

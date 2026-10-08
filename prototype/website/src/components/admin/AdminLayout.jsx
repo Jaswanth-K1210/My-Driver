@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
-  BadgeCheck, Banknote, LogOut, MapPinned, Menu, Moon, PhoneCall, Radio, ScrollText, UserRoundCheck, X,
+  ArrowUpRight, BadgeCheck, Banknote, CreditCard, LogOut, MapPinned, Menu, Moon, PhoneCall, Radio, ScrollText, UserRoundCheck, X,
 } from 'lucide-react'
 import { Wordmark } from '../marketing/Navbar.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { useToast } from '../../context/toastStore.js'
 import { cn } from '../../lib/utils.js'
 import { DESK_ROLES, FINANCE_ROLES, hasRole, OPS_ROLES } from './RequireRole.jsx'
+import { PromptHost } from './PromptDialog.jsx'
 
 /**
  * Nav is filtered by role rather than rendered-then-refused: showing an agent
@@ -20,6 +21,7 @@ const NAV = [
   { to: '/admin/drivers', label: 'Drivers', icon: UserRoundCheck, roles: [...OPS_ROLES, 'SAFETY_DESK_AGENT'] },
   { to: '/admin/night-shield', label: 'Night Shield', icon: Moon, roles: [...OPS_ROLES, 'SAFETY_DESK_AGENT'] },
   { to: '/admin/grading', label: 'Grading', icon: BadgeCheck, roles: OPS_ROLES },
+  { to: '/admin/payments', label: 'Payments', icon: CreditCard, roles: [...FINANCE_ROLES, 'OPS_MANAGER'] },
   { to: '/admin/payouts', label: 'Payouts', icon: Banknote, roles: FINANCE_ROLES },
   { to: '/admin/audit', label: 'Audit ledger', icon: ScrollText, roles: ['SUPER_ADMIN'] },
 ]
@@ -71,6 +73,16 @@ export default function AdminLayout() {
     </div>
   )
 
+  const publicSite = (
+    <Link
+      to="/"
+      className="flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+    >
+      <ArrowUpRight className="h-4.5 w-4.5" aria-hidden="true" />
+      Public website
+    </Link>
+  )
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Desk chrome is deliberately darker than the customer dashboard: an
@@ -80,10 +92,11 @@ export default function AdminLayout() {
           <Wordmark />
         </Link>
         <p className="mb-6 text-[11px] font-bold uppercase tracking-[0.18em] text-brand-600">
-          Safety Desk
+          Operations console
         </p>
         <NavItems user={user} />
         <div className="mt-auto space-y-2">
+          {publicSite}
           {identity}
           <button
             type="button"
@@ -114,6 +127,7 @@ export default function AdminLayout() {
         <div className="border-b border-slate-200 bg-white px-4 py-4 lg:hidden">
           <NavItems user={user} onNavigate={() => setMenuOpen(false)} />
           <div className="mt-4 space-y-2">
+            {publicSite}
             {identity}
             <button
               type="button"
@@ -128,8 +142,11 @@ export default function AdminLayout() {
       )}
 
       <main className="px-4 py-6 lg:ml-64 lg:px-8 lg:py-8">
-        <Outlet />
+        <div className="mx-auto max-w-6xl">
+          <Outlet />
+        </div>
       </main>
+      <PromptHost />
     </div>
   )
 }

@@ -27,6 +27,7 @@ const NightShield = lazy(() => import('./pages/admin/NightShield.jsx'))
 const Checkins = lazy(() => import('./pages/admin/Checkins.jsx'))
 const Grading = lazy(() => import('./pages/admin/Grading.jsx'))
 const Payouts = lazy(() => import('./pages/admin/Payouts.jsx'))
+const Payments = lazy(() => import('./pages/admin/Payments.jsx'))
 const Audit = lazy(() => import('./pages/admin/Audit.jsx'))
 const AdminLogin = lazy(() => import('./pages/admin/Login.jsx'))
 const GuardianTrack = lazy(() => import('./pages/GuardianTrack.jsx'))
@@ -120,6 +121,7 @@ export default function App() {
                 <Route path="night-shield" element={<RequireRole any={[...OPS_ROLES, 'SAFETY_DESK_AGENT']}><NightShield /></RequireRole>} />
                 <Route path="grading" element={<RequireRole any={OPS_ROLES}><Grading /></RequireRole>} />
                 <Route path="payouts" element={<RequireRole any={FINANCE_ROLES}><Payouts /></RequireRole>} />
+                <Route path="payments" element={<RequireRole any={[...FINANCE_ROLES, 'OPS_MANAGER']}><Payments /></RequireRole>} />
                 <Route path="audit" element={<RequireRole any={['SUPER_ADMIN']}><Audit /></RequireRole>} />
               </Route>
 

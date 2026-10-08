@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FileText, Moon, UserRoundCheck } from 'lucide-react'
 import { api } from '../../lib/apiClient.js'
+import PageHeader from '../../components/admin/PageHeader.jsx'
 import { SectionCard } from '../../components/app/Primitives.jsx'
 import { Segmented } from '../../components/app/Primitives.jsx'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
@@ -29,12 +30,7 @@ export default function Drivers() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Drivers</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Onboarding review, assessments, badges and Night Shield certification.
-        </p>
-      </header>
+      <PageHeader title="Drivers" subtitle="Onboarding review, identity checks, assessments, badges and Night Shield" />
 
       <Segmented options={FILTERS} value={status} onChange={setStatus} className="max-w-md" />
 

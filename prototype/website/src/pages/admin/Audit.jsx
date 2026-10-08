@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ScrollText, Search } from 'lucide-react'
 import { api } from '../../lib/apiClient.js'
+import PageHeader from '../../components/admin/PageHeader.jsx'
 import { SectionCard } from '../../components/app/Primitives.jsx'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
 import { Empty, relative } from '../../components/admin/Indicators.jsx'
@@ -24,12 +25,7 @@ export default function Audit() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Audit ledger</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Every desk and ops action, including reads. Append-only — enforced by the database.
-        </p>
-      </header>
+      <PageHeader title="Audit ledger" subtitle="Every desk and ops action, including reads · append-only, enforced by the database" />
 
       <SectionCard title="Filter" icon={Search}>
         <form

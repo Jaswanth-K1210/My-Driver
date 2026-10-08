@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { ClipboardCheck } from 'lucide-react'
 import { api, ApiError } from '../../lib/apiClient.js'
+import PageHeader from '../../components/admin/PageHeader.jsx'
+import { ask } from '../../components/admin/PromptDialog.jsx'
 import { SectionCard } from '../../components/app/Primitives.jsx'
 import { useToast } from '../../context/toastStore.js'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
@@ -26,10 +28,11 @@ export default function Grading() {
       toast('Enter a score between 0 and 100', 'error')
       return
     }
-    const notes = window.prompt('Grader notes (optional)') ?? undefined
+    const notes = await ask({ title: `Submit score of ${score}`, label: 'Grader notes (optional)', required: false, confirmLabel: 'Submit grade' })
+    if (notes === null) return
     setBusy(true)
     try {
-      const result = await api.admin.gradeAttempt(attempt.id, score, notes)
+      const result = await api.admin.gradeAttempt(attempt.id, score, notes || undefined)
       toast(`Graded ${score} — ${result.passed ? 'passed' : 'failed'}`, result.passed ? 'success' : 'info')
       setScores((prev) => ({ ...prev, [attempt.id]: '' }))
       await refresh()
@@ -42,12 +45,7 @@ export default function Grading() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Grading</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Submitted assessments awaiting a score
-        </p>
-      </header>
+      <PageHeader title="Grading" subtitle="Submitted assessments awaiting a score" />
 
       <SectionCard title={`${items.length} awaiting`} icon={ClipboardCheck}>
         {items.length === 0 ? (

@@ -5,6 +5,7 @@ import {
   Car,
   CarFront,
   CheckCircle2,
+  CreditCard,
   Gauge,
   Copy,
   MessageSquare,
@@ -60,7 +61,7 @@ function Matching({ label, trip }) {
         <h2 className="mt-6 text-lg font-bold text-slate-900">{label ?? 'Matching a certified driver…'}</h2>
         <p className="mt-1.5 text-sm text-slate-500">Drivers have 20 seconds to accept</p>
         <ul className="mt-6 w-full max-w-xs space-y-2">
-          {['Police background check', 'Face-match handshake armed', 'VisionCam standby'].map((item) => (
+          {['Police-verified drivers only', 'Face-match handshake armed', 'Live GPS integrity check on'].map((item) => (
             <li key={item} className="flex items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-semibold text-slate-700">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brand-500" aria-hidden="true" />
               {item}
@@ -75,6 +76,54 @@ function Matching({ label, trip }) {
           <MobileDriverAcceptScreen trip={trip} />
         </PhoneFrame>
       </div>
+    </div>
+  )
+}
+
+function PaymentStep({ payment, trip, onPay, onCancel }) {
+  const failed = payment.status === 'FAILED'
+  return (
+    <div className="mx-auto max-w-lg rounded-3xl border border-slate-200 bg-white p-8 text-center">
+      <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-brand-50">
+        <CreditCard className="h-8 w-8 text-brand-500" aria-hidden="true" />
+      </span>
+      <h2 className="mt-6 text-2xl font-black tracking-tight text-slate-900">Confirm and pay</h2>
+      {trip?.from && (
+        <p className="mt-1.5 text-sm text-slate-600">
+          {trip.from}{trip.to ? ` → ${trip.to}` : ''}
+        </p>
+      )}
+      <p className="mt-6 text-4xl font-black tracking-tight text-slate-900">
+        ₹{payment.amount_authorized.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+      </p>
+      <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Refundable hold</p>
+      <p className="mx-auto mt-5 max-w-sm text-sm text-slate-600">
+        We hold the quoted fare now and charge the final fare when your trip ends. If you cancel, or no
+        driver is available, the hold is released.
+      </p>
+      {failed && (
+        <p className="mt-5 rounded-xl bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700">
+          {payment.failure_reason ?? 'That payment did not go through.'} Please try again.
+        </p>
+      )}
+      <button
+        type="button"
+        onClick={onPay}
+        className="mt-6 w-full rounded-2xl bg-brand-500 px-6 py-4 text-sm font-bold text-white shadow-lg shadow-brand-500/25 transition-colors hover:bg-brand-600"
+      >
+        {failed ? 'Try payment again' : 'Pay securely'}
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="mt-2 w-full rounded-2xl px-6 py-3 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+      >
+        Cancel booking
+      </button>
+      <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-slate-500">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" aria-hidden="true" />
+        Checkout opens in a new tab. This page updates on its own when you're done.
+      </p>
     </div>
   )
 }
@@ -156,7 +205,7 @@ function TripComplete({ trip, summary, onSave, onRate }) {
 
 export default function Track() {
   const {
-    phase, trip, summary, driverPosition, alerts, maxSpeed, connection, cancelTrip, rateTrip, saveToVault,
+    phase, payment, openCheckout, trip, summary, driverPosition, alerts, maxSpeed, connection, cancelTrip, rateTrip, saveToVault,
   } = useTrip()
   const { toast } = useToast()
   const navigate = useNavigate()
@@ -226,6 +275,9 @@ export default function Track() {
   }, [sosStage, countdown, toast, trip?.serverId])
 
   if (phase === 'idle') return <EmptyState />
+  if (phase === 'payment' && payment) {
+    return <PaymentStep payment={payment} trip={trip} onPay={openCheckout} onCancel={() => cancelTrip('Payment not completed')} />
+  }
   if (phase === 'matching') return <Matching label={trip?.statusLabel} trip={trip} />
   if (phase === 'complete' && trip) {
     return (

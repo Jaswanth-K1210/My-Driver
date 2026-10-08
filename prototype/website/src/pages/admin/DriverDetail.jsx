@@ -1,13 +1,21 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Award, ArrowLeft, Eye, FileText, Moon, ShieldCheck } from 'lucide-react'
+import { Award, ArrowLeft, Eye, FileText, Fingerprint, Moon, ShieldCheck } from 'lucide-react'
 import { api, ApiError } from '../../lib/apiClient.js'
+import { ask } from '../../components/admin/PromptDialog.jsx'
 import { SectionCard } from '../../components/app/Primitives.jsx'
 import { useToast } from '../../context/toastStore.js'
 import { Empty, relative, StatusPill } from '../../components/admin/Indicators.jsx'
 import { hasRole, OPS_ROLES } from '../../components/admin/RequireRole.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { cn } from '../../lib/utils.js'
+
+const BLOCKER_TEXT = {
+  PAN_NOT_VERIFIED: 'PAN verification',
+  AADHAAR_NOT_VERIFIED: 'Aadhaar verification',
+  LICENCE_MISSING: 'Driving licence upload',
+  LICENCE_NOT_VERIFIED: 'Driving licence review',
+}
 
 export default function DriverDetail() {
   const { id } = useParams()
@@ -60,7 +68,7 @@ export default function DriverDetail() {
 
   if (!data) return <p className="py-12 text-center text-sm text-slate-500">Loading driver…</p>
 
-  const { profile, documents, attempts, badges: held, night_shield: nightShield } = data
+  const { profile, documents, attempts, badges: held, night_shield: nightShield, kyc, approval_blockers: blockers = [] } = data
   const liveNightShield = nightShield.find((q) => !q.revoked_at && new Date(q.expires_at) > new Date())
   const heldCodes = new Set(held.filter((b) => !b.revoked_at).map((b) => b.badge_code))
 
@@ -99,10 +107,17 @@ export default function DriverDetail() {
               <button
                 key={status}
                 type="button"
-                disabled={busy || profile.onboarding_status === status}
-                onClick={() => {
-                  const note = window.prompt(`Set status to ${status} — note (optional)`) ?? undefined
-                  void run(`Set ${status}`, () => api.admin.setDriverStatus(id, status, note))
+                disabled={busy || profile.onboarding_status === status || (status === 'APPROVED' && blockers.length > 0)}
+                title={status === 'APPROVED' && blockers.length > 0 ? 'Complete identity checks first' : undefined}
+                onClick={async () => {
+                  const note = await ask({
+                    title: `Set driver to ${status.replace(/_/g, ' ').toLowerCase()}`,
+                    required: status === 'REJECTED' || status === 'SUSPENDED',
+                    confirmLabel: 'Update status',
+                    danger: status === 'REJECTED' || status === 'SUSPENDED',
+                  })
+                  if (note === null) return
+                  void run(`Set ${status}`, () => api.admin.setDriverStatus(id, status, note || undefined))
                 }}
                 className={cn(
                   'rounded-xl border px-3 py-2 text-xs font-bold transition-colors disabled:opacity-40',
@@ -117,10 +132,16 @@ export default function DriverDetail() {
               </button>
             ))}
           </div>
-          <p className="mt-3 text-xs text-slate-500">
-            Approval is refused while any document is still unreviewed — verify or reject every
-            submission first.
-          </p>
+          {blockers.length > 0 ? (
+            <p className="mt-3 text-xs text-slate-500">
+              Approval unlocks when these are done:{' '}
+              <span className="font-semibold text-slate-700">{blockers.map((b) => BLOCKER_TEXT[b] ?? b).join(' · ')}</span>
+            </p>
+          ) : (
+            <p className="mt-3 text-xs text-slate-500">
+              Identity checks are complete. Review any remaining documents before approving.
+            </p>
+          )}
           {profile.review_note && (
             <p className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
               Last note: {profile.review_note}
@@ -128,6 +149,29 @@ export default function DriverDetail() {
           )}
         </SectionCard>
       )}
+
+      <SectionCard title="Identity verification" icon={Fingerprint}>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[
+            ['PAN', kyc?.pan],
+            ['Aadhaar', kyc?.aadhaar],
+          ].map(([label, check]) => (
+            <div key={label} className="rounded-2xl border border-slate-200 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-bold text-slate-900">{label}</p>
+                <StatusPill status={check?.status === 'NOT_STARTED' ? 'NOT_STARTED' : check?.status} />
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                {check?.last4 ? `Ending ${check.last4}` : 'Not submitted yet'}
+                {check?.name && <> · Name on record: <span className="font-semibold text-slate-700">{check.name}</span></>}
+              </p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Checked live with the issuing registry. MyDriver stores only the last four characters.
+        </p>
+      </SectionCard>
 
       <SectionCard title="Documents" icon={FileText}>
         {documents.length === 0 ? (
@@ -171,8 +215,8 @@ export default function DriverDetail() {
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => {
-                        const reason = window.prompt('Reject — why?')
+                      onClick={async () => {
+                        const reason = await ask({ title: `Reject ${doc.kind.replace(/_/g, ' ').toLowerCase()}`, placeholder: 'e.g. Photo is blurred; licence number unreadable', confirmLabel: 'Reject document', danger: true })
                         if (reason) {
                           void run('Rejected', () => api.admin.reviewDocument(doc.id, 'REJECTED', reason))
                         }
@@ -243,8 +287,8 @@ export default function DriverDetail() {
                 <button
                   type="button"
                   disabled={busy}
-                  onClick={() => {
-                    const reason = window.prompt(`Revoke ${badge.label} — why?`)
+                  onClick={async () => {
+                    const reason = await ask({ title: `Revoke ${badge.label}`, confirmLabel: 'Revoke badge', danger: true })
                     if (reason) {
                       void run('Badge revoked', () => api.admin.revokeBadge(id, badge.badge_code, reason))
                     }
@@ -305,8 +349,8 @@ export default function DriverDetail() {
               <button
                 type="button"
                 disabled={busy}
-                onClick={() => {
-                  const reason = window.prompt('Revoke Night Shield — why?')
+                onClick={async () => {
+                  const reason = await ask({ title: 'Revoke Night Shield', confirmLabel: 'Revoke', danger: true })
                   if (reason) void run('Night Shield revoked', () => api.admin.revokeNightShield(id, reason))
                 }}
                 className="mt-3 rounded-xl bg-white/10 px-3 py-2 text-xs font-bold hover:bg-white/20 disabled:opacity-50"

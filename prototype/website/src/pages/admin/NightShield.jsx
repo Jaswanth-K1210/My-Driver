@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { Moon, TimerReset, UserCheck } from 'lucide-react'
 import { api } from '../../lib/apiClient.js'
+import PageHeader from '../../components/admin/PageHeader.jsx'
 import { SectionCard } from '../../components/app/Primitives.jsx'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
 import { Empty, StatusPill } from '../../components/admin/Indicators.jsx'
@@ -24,12 +25,7 @@ export default function NightShield() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Night Shield</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Night protocol 22:00–05:00 IST · qualification re-verified every 90 days
-        </p>
-      </header>
+      <PageHeader title="Night Shield" subtitle="Night protocol 22:00–05:00 IST · qualification re-verified every 90 days" />
 
       <SectionCard title="Re-verification due" icon={TimerReset}>
         {lapsing.length === 0 ? (
