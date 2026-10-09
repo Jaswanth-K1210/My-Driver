@@ -364,6 +364,11 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
         request('/v1/me/devices', { method: 'POST', body: { platform, token } }),
     },
 
+    locations: {
+      search: (query) => request(`/v1/locations/search${qs({ q: query })}`),
+      get: (id) => request(`/v1/locations/${id}`),
+    },
+
     /** Safety Desk. Requires SAFETY_DESK_AGENT, OPS_MANAGER or SUPER_ADMIN. */
     admin: {
       stats: () => request('/v1/admin/stats'),

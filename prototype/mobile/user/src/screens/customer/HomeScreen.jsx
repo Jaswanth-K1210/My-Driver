@@ -16,9 +16,12 @@ import { Pressable, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Slider from '@react-native-community/slider'
 import { Bell, Check, Gauge, Search, Shield } from 'lucide-react-native'
-import { CUSTOMER, VISION_MODES } from '../../data/mock'
+import { VISION_MODES } from '../../data/mock'
 import { useTrip } from '../../context/TripContext'
-import { quoteFor } from '../../lib/booking'
+import { useAuth } from '../../context/AuthContext'
+import { useEffect, useState } from 'react'
+import { quoteFor, serverQuote } from '../../lib/booking'
+import { api } from '../../lib/apiClient'
 import { clamp, formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 import Button from '../../components/Button'
@@ -65,8 +68,35 @@ function SectionHeader({ step, children }) {
 export default function HomeScreen({ config, onChange, onFindDriver }) {
   const { toast } = useToast()
   const { skills } = useTrip()
+  const { user } = useAuth()
 
-  const quote = quoteFor(config, skills)
+  const [server, setServer] = useState(null)
+
+  const platformFee = server ? server.fare.platform_fee : 19
+  const baseNightFee = server ? (server.fare.night_fee > 0 ? server.fare.night_fee : 30) : 30
+  const local = quoteFor(config, skills, { platformFee, nightFee: baseNightFee })
+  const quote = local
+
+  useEffect(() => {
+    if (!local.ready) {
+      setServer(null)
+      return undefined
+    }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      serverQuote(api, config, skills)
+        .then((q) => {
+          if (!cancelled && q) setServer(q)
+        })
+        .catch(() => {
+          if (!cancelled) setServer(null)
+        })
+    }, 250)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+    }
+  }, [config, skills, local.ready])
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
@@ -96,11 +126,11 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
               justifyContent: 'center',
             }}
           >
-            <Text style={{ ...type.bodyBold, color: colors.brand }}>{CUSTOMER.initials}</Text>
+            <Text style={{ ...type.bodyBold, color: colors.brand }}>{(user?.full_name ?? 'MD').slice(0, 2).toUpperCase()}</Text>
           </View>
           <View>
             <Text style={{ ...type.tiny, color: colors.textMuted }}>{greeting}</Text>
-            <Text style={{ ...type.body, color: colors.text }}>{CUSTOMER.name}</Text>
+            <Text style={{ ...type.body, color: colors.text }}>{user?.full_name ?? 'MyDriver rider'}</Text>
           </View>
         </View>
         <Pressable

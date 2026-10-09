@@ -32,15 +32,32 @@ export default function ModalPicker({
 }) {
   const [visible, setVisible] = useState(false)
   const [query, setQuery] = useState('')
+  const [remoteOptions, setRemoteOptions] = useState(null)
 
-  const selected = options.find((o) => o.id === value)
-  const filtered =
+  useEffect(() => {
+    if (!searchable || !query) {
+      setRemoteOptions(null)
+      return
+    }
+    const timer = setTimeout(() => {
+      import('../../../lib/apiClient').then(({ api }) => {
+        api.locations.search(query).then(results => {
+          setRemoteOptions(results.map(r => ({ id: r.id, label: r.name, sublabel: r.address })))
+        }).catch(() => {})
+      })
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [query, searchable])
+
+  const selected = options.find((o) => o.id === value) || (remoteOptions && remoteOptions.find(o => o.id === value))
+  const filtered = remoteOptions ? remoteOptions : (
     searchable && query
       ? options.filter((o) =>
           o.label.toLowerCase().includes(query.toLowerCase()) ||
           (o.sublabel && o.sublabel.toLowerCase().includes(query.toLowerCase()))
         )
       : options
+  )
 
   const open = () => {
     setQuery('')

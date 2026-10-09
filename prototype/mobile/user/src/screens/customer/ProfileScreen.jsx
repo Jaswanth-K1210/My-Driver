@@ -6,13 +6,14 @@ import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
 import Toggle from '../../components/Toggle'
 import { useToast } from '../../components/Toast'
-import { MAX_GUARDIANS } from '../../data/mock'
 import { api } from '../../lib/apiClient'
 import { toE164 } from '../../lib/phone'
 import { useAuth } from '../../context/AuthContext'
 import DemoBadge from '../../components/DemoBadge'
 import { maskPhone } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
+
+const MAX_GUARDIANS = 5
 
 const QUICK_ACTIONS = [
   { icon: ShieldCheck, label: 'Safety centre' },

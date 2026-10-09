@@ -3,10 +3,11 @@ import { Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { SectionCard, Toggle } from '../../components/app/Primitives.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { useToast } from '../../context/toastStore.js'
-import { MAX_GUARDIANS } from '../../data/mock.js'
 import { api } from '../../lib/apiClient.js'
 import { toE164 } from '../../lib/phone.js'
 import { maskPhone } from '../../lib/utils.js'
+
+const MAX_GUARDIANS = 5
 
 const CONSENT_VERSION = '2026-09'
 

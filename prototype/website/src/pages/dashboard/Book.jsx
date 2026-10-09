@@ -29,7 +29,7 @@ import PhoneFrame from '../../components/app/PhoneFrame.jsx'
 import MobileBookScreen from '../../components/app/mobile/MobileBookScreen.jsx'
 import { useTrip } from '../../context/tripStore.js'
 import { useToast } from '../../context/toastStore.js'
-import { PLATFORM_FEE, REQUIREMENTS, SKILLS, VISION_MODES } from '../../data/mock.js'
+import { REQUIREMENTS, SKILLS, VISION_MODES } from '../../data/mock.js'
 import { getRecommendedSkillId, quoteFor, serverQuote } from '../../lib/booking.js'
 import { api } from '../../lib/apiClient.js'
 import DemoBadge from '../../components/app/DemoBadge.jsx'
@@ -54,9 +54,12 @@ export default function Book() {
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }))
   }
 
-  const local = quoteFor(config, skills)
   const [server, setServer] = useState(null)
   const [busy, setBusy] = useState(false)
+
+  const platformFee = server ? server.fare.platform_fee : 19
+  const baseNightFee = server ? (server.fare.night_fee > 0 ? server.fare.night_fee : 30) : 30
+  const local = quoteFor(config, skills, { platformFee, nightFee: baseNightFee })
 
   // Server quote debounce
   useEffect(() => {
