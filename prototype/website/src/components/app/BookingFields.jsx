@@ -28,7 +28,6 @@ import {
   PICKUP,
   PICKUP_TIMES,
   REQUIREMENTS,
-  SAVED_GARAGE,
   SKILLS,
   TRANSMISSIONS,
   VEHICLE_TYPES,
@@ -105,24 +104,10 @@ export function VehicleTypeSelector({ value, onChange }) {
   )
 }
 
-/* ── 2. Car Specs & Garage Picker ───────────────────────────────────────── */
+/* ── 2. Car details ─────────────────────────────────────────────────────── */
 
 export function CarSpecPicker({ carDetails, onChange, onAutoMatchSkill }) {
   const currentBrand = CAR_BRANDS.find((b) => b.company === carDetails.company) ?? CAR_BRANDS[0]
-
-  const handleSavedSelect = (saved) => {
-    const updated = {
-      company: saved.company,
-      model: saved.model,
-      engineType: saved.engineType,
-      transmission: saved.transmission,
-      plate: saved.plate,
-      isCustom: false,
-      savedVehicleId: saved.id,
-    }
-    onChange(updated)
-    if (onAutoMatchSkill) onAutoMatchSkill(updated)
-  }
 
   const handleFieldChange = (field, value) => {
     let updated = { ...carDetails, [field]: value, savedVehicleId: null }
@@ -139,53 +124,6 @@ export function CarSpecPicker({ carDetails, onChange, onAutoMatchSkill }) {
 
   return (
     <div className="space-y-4">
-      {/* Saved Garage Chips */}
-      <div>
-        <div className="mb-2 flex items-center justify-between">
-          <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-            My Garage (Saved Vehicles)
-          </label>
-          <span className="text-[11px] text-slate-400">Pre-configured & verified</span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-          {SAVED_GARAGE.map((v) => {
-            const isSelected = carDetails.savedVehicleId === v.id
-            return (
-              <button
-                key={v.id}
-                type="button"
-                onClick={() => handleSavedSelect(v)}
-                className={cn(
-                  'flex items-center gap-2.5 rounded-xl border p-2.5 text-left transition-all',
-                  isSelected
-                    ? 'border-brand-500 bg-brand-50/60 ring-1 ring-brand-500'
-                    : 'border-slate-200 bg-slate-50/60 hover:border-slate-300 hover:bg-white',
-                )}
-              >
-                <div
-                  className={cn(
-                    'flex h-8 w-8 shrink-0 items-center justify-center rounded-lg',
-                    isSelected ? 'bg-brand-500 text-white' : 'bg-slate-200 text-slate-700',
-                  )}
-                >
-                  <Car className="h-4 w-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <span className="block truncate text-xs font-bold text-slate-900">
-                    {v.company} {v.model}
-                  </span>
-                  <span className="block truncate text-[10px] text-slate-500">
-                    {v.transmission} · {v.engineType} · {v.plate}
-                  </span>
-                </div>
-                {isSelected && <Check className="h-3.5 w-3.5 shrink-0 text-brand-600" />}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
       {/* Manual / Custom Car Specs Details */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1328,7 +1266,7 @@ export function SmartDriverPicker({ config, onChange, skills = SKILLS }) {
               <p className="mt-1.5 text-xs text-slate-500 line-clamp-2">{s.description}</p>
 
               <div className="mt-3 flex w-full items-center justify-between border-t border-slate-100 pt-2 text-[11px] font-semibold text-slate-400">
-                <span>ETA: {s.eta}</span>
+                <span>₹{s.rate}/km · ₹{s.hourlyRate}/hr</span>
                 {isSelected ? (
                   <span className="flex items-center gap-1 font-bold text-brand-600">
                     <Check className="h-3.5 w-3.5" /> Selected

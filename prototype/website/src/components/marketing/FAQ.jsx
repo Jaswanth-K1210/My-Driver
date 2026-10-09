@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import Reveal from './Reveal.jsx'
+import SectionHeading from './SectionHeading.jsx'
 import { FAQS } from '../../data/mock.js'
 import { cn } from '../../lib/utils.js'
 
@@ -8,11 +9,9 @@ export default function FAQ() {
   const [openIndex, setOpenIndex] = useState(0)
 
   return (
-    <section id="faq" className="bg-white py-20 sm:py-28">
+    <section id="faq" className="bg-slate-50 py-20 sm:py-28">
       <div className="mx-auto max-w-3xl px-4 sm:px-6 lg:px-8">
-        <Reveal>
-          <h2 className="text-center text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Questions, answered</h2>
-        </Reveal>
+        <SectionHeading eyebrow="FAQ" title="Questions, answered" />
         <Reveal delay={100} className="mt-12 divide-y divide-slate-200 overflow-hidden rounded-3xl border border-slate-200">
           {FAQS.map((faq, index) => {
             const open = openIndex === index

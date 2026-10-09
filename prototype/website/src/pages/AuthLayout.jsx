@@ -8,7 +8,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
       <Navbar />
       <div className="grid flex-1 lg:grid-cols-2">
       <div className="flex flex-col px-4 py-10 sm:px-10 lg:px-16">
-        <div className="flex flex-1 items-center py-8">
+        <div className="flex flex-1 items-start py-4 lg:items-center lg:py-8">
           <div className="w-full max-w-md">
             <h1 className="text-3xl font-black tracking-tight text-slate-900">{title}</h1>
             <p className="mt-2 text-sm text-slate-600">{subtitle}</p>

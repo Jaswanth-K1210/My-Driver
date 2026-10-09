@@ -1,19 +1,15 @@
 import { Check } from 'lucide-react'
 import Reveal from './Reveal.jsx'
+import { PAGE_X } from './Navbar.jsx'
+import SectionHeading from './SectionHeading.jsx'
 import { PRICING } from '../../data/mock.js'
 import { cn } from '../../lib/utils.js'
 
 export default function Pricing() {
   return (
     <section id="pricing" className="bg-white py-20 sm:py-28">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <Reveal className="mx-auto max-w-2xl text-center">
-          <p className="text-sm font-bold uppercase tracking-widest text-brand-600">Pricing</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Safety included. Always.</h2>
-          <p className="mt-4 text-lg text-slate-600">
-            Every plan carries the full verification, ceiling and vault stack. Pay only for the class of ride.
-          </p>
-        </Reveal>
+      <div className={PAGE_X}>
+        <SectionHeading eyebrow="Pricing" title="Safety included. Always.">Every plan carries the full verification, ceiling and vault stack. Pay only for the class of ride.</SectionHeading>
 
         <div className="mt-14 grid gap-6 lg:grid-cols-3">
           {PRICING.map((plan, i) => (

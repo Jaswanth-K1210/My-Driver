@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { ArrowRight, Phone, ShieldCheck } from 'lucide-react'
 import { Field } from './Field.jsx'
 import { useToast } from '../../context/toastStore.js'
-import { GOOGLE_ENABLED } from '../../lib/config.js'
 import { ApiError } from '../../lib/apiClient.js'
 import { toE164 } from '../../lib/phone.js'
 
@@ -87,11 +86,6 @@ export default function OtpForm({ submitLabel, onVerified, extraFields, profile 
           <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" aria-hidden="true" />
         </button>
 
-        {!GOOGLE_ENABLED && (
-          <p className="text-center text-xs text-slate-500">
-            Google sign-in is not configured yet — set <code className="font-mono">VITE_GOOGLE_CLIENT_ID</code>.
-          </p>
-        )}
       </form>
     )
   }

@@ -18,9 +18,9 @@ export default function Landing() {
         <Skills />
         <SafetySuite />
         <HowItWorks />
-        <DriverPitch />
         <Pricing />
         <FAQ />
+        <DriverPitch />
         <CTA />
       </main>
       <Footer />
