@@ -5,6 +5,7 @@ import { useAuth } from './context/authStore.js'
 import { ToastProvider } from './context/ToastContext.jsx'
 import { TripProvider } from './context/TripContext.jsx'
 import DashboardLayout from './components/app/DashboardLayout.jsx'
+import { ScrollManager } from './components/marketing/Navbar.jsx'
 import Landing from './pages/Landing.jsx'
 import Login from './pages/Login.jsx'
 import Register from './pages/Register.jsx'
@@ -57,17 +58,19 @@ function RequireAuth({ children }) {
   return children
 }
 
-/** Keeps signed-in users out of the auth screens. */
+/** Keeps signed-in users out of the auth screens, sending them where they were headed. */
 function RedirectIfAuthed({ children }) {
   const { isAuthenticated, loading } = useAuth()
+  const location = useLocation()
   if (loading) return <SessionLoading />
-  if (isAuthenticated) return <Navigate to="/app" replace />
+  if (isAuthenticated) return <Navigate to={location.state?.from ?? '/app'} replace />
   return children
 }
 
 export default function App() {
   return (
     <BrowserRouter>
+      <ScrollManager />
       <ToastProvider>
         <AuthProvider>
           <TripProvider>

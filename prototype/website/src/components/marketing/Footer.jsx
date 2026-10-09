@@ -1,33 +1,33 @@
 import { Link } from 'react-router-dom'
 import { Mail, MapPin } from 'lucide-react'
-import { Wordmark } from './Navbar.jsx'
+import { PAGE_X, Wordmark } from './Navbar.jsx'
 
-// Only pages and sections that exist. A footer link that goes nowhere reads as
-// an unfinished site.
+// Only pages and sections that exist. Nothing here links to staff tools: the
+// operations portal is reached by its own internal address, never from here.
 const LINK_GROUPS = [
   {
     heading: 'Product',
     links: [
-      { label: 'How it works', href: '/#how' },
-      { label: 'Safety', href: '/#safety' },
-      { label: 'Driver tiers', href: '/#skills' },
-      { label: 'Pricing', href: '/#pricing' },
+      { label: 'How it works', to: { pathname: '/', hash: '#how' } },
+      { label: 'Safety', to: { pathname: '/', hash: '#safety' } },
+      { label: 'Driver tiers', to: { pathname: '/', hash: '#skills' } },
+      { label: 'Pricing', to: { pathname: '/', hash: '#pricing' } },
     ],
   },
   {
     heading: 'Account',
     links: [
       { label: 'Book a driver', to: '/app/book' },
-      { label: 'Sign in', to: '/login' },
+      { label: 'My trips', to: '/app' },
+      { label: 'Log in', to: '/login' },
       { label: 'Create an account', to: '/register' },
-      { label: 'Drive with MyDriver', href: '/#drivers' },
     ],
   },
   {
-    heading: 'Help',
+    heading: 'More',
     links: [
-      { label: 'FAQ', href: '/#faq' },
-      { label: 'Operator sign-in', to: '/admin/login' },
+      { label: 'FAQ', to: { pathname: '/', hash: '#faq' } },
+      { label: 'Join as a driver', to: { pathname: '/', hash: '#drivers' } },
     ],
   },
 ]
@@ -35,7 +35,7 @@ const LINK_GROUPS = [
 export default function Footer() {
   return (
     <footer className="border-t border-slate-200 bg-white py-16 text-slate-600">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className={PAGE_X}>
         <div className="grid gap-12 md:grid-cols-2 lg:grid-cols-5">
           <div className="lg:col-span-2">
             <Wordmark />
@@ -60,15 +60,9 @@ export default function Footer() {
               <ul className="mt-5 space-y-3">
                 {group.links.map((link) => (
                   <li key={link.label}>
-                    {link.to ? (
-                      <Link to={link.to} className="text-sm transition-colors hover:text-slate-900">
-                        {link.label}
-                      </Link>
-                    ) : (
-                      <a href={link.href} className="text-sm transition-colors hover:text-slate-900">
-                        {link.label}
-                      </a>
-                    )}
+                    <Link to={link.to} className="text-sm transition-colors hover:text-slate-900">
+                      {link.label}
+                    </Link>
                   </li>
                 ))}
               </ul>

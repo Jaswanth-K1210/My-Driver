@@ -1,11 +1,11 @@
 /* ── Marketing ─────────────────────────────────────────────────────────── */
 
 export const NAV_LINKS = [
-  { label: 'Skills', href: '#skills' },
-  { label: 'Safety', href: '#safety' },
-  { label: 'How it works', href: '#how' },
-  { label: 'Pricing', href: '#pricing' },
-  { label: 'FAQ', href: '#faq' },
+  { label: 'How it works', hash: '#how' },
+  { label: 'Safety', hash: '#safety' },
+  { label: 'Driver tiers', hash: '#skills' },
+  { label: 'Pricing', hash: '#pricing' },
+  { label: 'FAQ', hash: '#faq' },
 ]
 
 export const HERO_WORDS = ['daily commute', 'airport run', 'late night', 'family trip']

@@ -28,7 +28,7 @@ export default function Login() {
       footer={
         <>
           New to MyDriver?{' '}
-          <Link to="/register" className="font-bold text-brand-600 hover:text-brand-700">
+          <Link to="/register" state={{ from }} className="font-bold text-brand-600 hover:text-brand-700">
             Create an account
           </Link>
         </>

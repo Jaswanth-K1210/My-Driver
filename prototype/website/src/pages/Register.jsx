@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Mail, User } from 'lucide-react'
 import AuthLayout from './AuthLayout.jsx'
 import OtpForm from '../components/app/OtpForm.jsx'
@@ -12,12 +12,14 @@ export default function Register() {
   const { requestOtp, verifyOtp, signInWithGoogle } = useAuth()
   const { toast } = useToast()
   const navigate = useNavigate()
+  const location = useLocation()
+  const from = location.state?.from ?? '/app'
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
 
   const done = () => {
     toast('Account created', 'success')
-    navigate('/app', { replace: true })
+    navigate(from, { replace: true })
   }
 
   return (
@@ -27,7 +29,7 @@ export default function Register() {
       footer={
         <>
           Already have an account?{' '}
-          <Link to="/login" className="font-bold text-brand-600 hover:text-brand-700">
+          <Link to="/login" state={{ from }} className="font-bold text-brand-600 hover:text-brand-700">
             Log in
           </Link>
         </>

@@ -1,17 +1,14 @@
-import { Link } from 'react-router-dom'
 import { ShieldCheck } from 'lucide-react'
-import { Wordmark } from '../components/marketing/Navbar.jsx'
+import Navbar from '../components/marketing/Navbar.jsx'
 import { TRUST_MARKS } from '../data/mock.js'
 
 export default function AuthLayout({ title, subtitle, children, footer }) {
   return (
-    <div className="grid min-h-screen bg-white lg:grid-cols-2">
-      <div className="flex flex-col px-6 py-10 sm:px-10 lg:px-16">
-        <Link to="/" aria-label="MyDriver home" className="w-fit">
-          <Wordmark />
-        </Link>
-
-        <div className="flex flex-1 items-center py-12">
+    <div className="flex min-h-screen flex-col bg-white">
+      <Navbar />
+      <div className="grid flex-1 lg:grid-cols-2">
+      <div className="flex flex-col px-4 py-10 sm:px-10 lg:px-16">
+        <div className="flex flex-1 items-center py-8">
           <div className="w-full max-w-md">
             <h1 className="text-3xl font-black tracking-tight text-slate-900">{title}</h1>
             <p className="mt-2 text-sm text-slate-600">{subtitle}</p>
@@ -41,14 +38,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
             </li>
           ))}
         </ul>
-        <div className="mt-10 rounded-3xl border border-slate-200 bg-white p-6">
-          <p className="text-sm leading-relaxed text-slate-700">
-            “My daughter travels back from college at night. The speed ceiling and guardian link mean I can finally
-            sleep before she is home.”
-          </p>
-          <p className="mt-4 text-xs font-bold text-slate-900">Lakshmi Narayanan</p>
-          <p className="text-xs text-slate-500">Parent, Jubilee Hills</p>
-        </div>
+      </div>
       </div>
     </div>
   )

@@ -198,7 +198,7 @@ function HeroBooking() {
 
 export default function Hero() {
   return (
-    <section id="top" className="relative overflow-hidden bg-white pt-20">
+    <section id="top" className="relative overflow-hidden bg-white">
       {/* Soft red wash keeps the page white while still anchoring the brand. */}
       <div
         className="pointer-events-none absolute inset-0"
