@@ -562,33 +562,40 @@ export function bookingPayloadFor(config, skills = SKILLS) {
     trip_type: config.tripType,
   }
 
+  // The customer's chosen pickup. This used to be the fixed PICKUP constant,
+  // which sent every driver to Cyber Towers whatever the customer picked.
+  const chosenPickup = getLocationById(config.pickupId) ?? PICKUP
+
   if (config.requirement === 'full_time' || config.durationHours > 8) {
     return {
       booking_type: 'HOURLY',
       hours: Math.min(12, config.durationHours || 4),
-      pickup: { lat: PICKUP.lat, lng: PICKUP.lng },
-      pickup_address: PICKUP.address,
+      pickup: { lat: chosenPickup.lat, lng: chosenPickup.lng },
+      pickup_address:
+        config.requirement === 'full_time' && config.fullTimeDetails?.locality
+          ? config.fullTimeDetails.locality
+          : chosenPickup.address || chosenPickup.name,
       required_certification: skill.id,
       speed_ceiling_kmh: config.ceiling,
       ...basePayload,
     }
   }
 
-  let pickup = { lat: PICKUP.lat, lng: PICKUP.lng }
-  let pickup_address = PICKUP.address
+  let pickup = { lat: chosenPickup.lat, lng: chosenPickup.lng }
+  let pickup_address = chosenPickup.address || chosenPickup.name
   let drop = null
   let drop_address = ''
 
   if (config.requirement === 'inter_city') {
     const startLocId = config.interCityDetails?.startLocationId || 'start_hitec'
-    const startLoc = START_LOCATIONS.find((s) => s.id === startLocId) ?? START_LOCATIONS[0]
+    const startLoc = getLocationById(startLocId) ?? START_LOCATIONS[0]
     pickup = { lat: startLoc.lat, lng: startLoc.lng }
     pickup_address = startLoc.address || startLoc.name
 
     const destId = config.interCityDetails?.destinationId || config.interCityDestination || 'vijayawada'
-    const dest = INTERCITY_DESTINATIONS.find((d) => d.id === destId) ?? INTERCITY_DESTINATIONS[0]
+    const dest = getLocationById(destId) ?? INTERCITY_DESTINATIONS[0]
     drop = { lat: dest.lat, lng: dest.lng }
-    drop_address = dest.name
+    drop_address = dest.address || dest.name
     basePayload.stops = config.interCityDetails?.stops || config.stops
     basePayload.return_stops = config.interCityDetails?.returnStops || config.returnStops
   } else if (config.requirement === 'airport') {

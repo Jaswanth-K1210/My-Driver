@@ -55,7 +55,7 @@ function AccountMenu({ user, onSignOut }) {
         className="inline-flex h-10 items-center gap-2 rounded-full border border-slate-200 pl-1 pr-3 text-sm font-semibold text-slate-800 transition-colors hover:border-slate-300"
       >
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-50 text-xs font-black text-brand-600">
-          {user.initials}
+          {user.initials || <UserRound className="h-4 w-4" aria-hidden="true" />}
         </span>
         <span className="max-w-[8rem] truncate">{user.name}</span>
         <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden="true" />

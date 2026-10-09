@@ -34,6 +34,8 @@ import {
 } from '../../data/mock.js'
 import { getMinDurationForConfig, getRecommendedSkillId, getRouteLegTelemetry } from '../../lib/booking.js'
 import { clamp, cn } from '../../lib/utils.js'
+import PlacePicker from './PlacePicker.jsx'
+import { GarageChips } from './Garage.jsx'
 
 /* ── 1. Vehicle Type Selector ───────────────────────────────────────────── */
 
@@ -122,8 +124,23 @@ export function CarSpecPicker({ carDetails, onChange, onAutoMatchSkill }) {
     if (onAutoMatchSkill) onAutoMatchSkill(updated)
   }
 
+  const pickSaved = (v) => {
+    const updated = {
+      company: v.company,
+      model: v.model,
+      engineType: v.engine_type,
+      transmission: v.transmission,
+      plate: v.plate ?? '',
+      isCustom: false,
+      savedVehicleId: v.id,
+    }
+    onChange(updated)
+    if (onAutoMatchSkill) onAutoMatchSkill(updated)
+  }
+
   return (
     <div className="space-y-4">
+      <GarageChips carDetails={carDetails} onPick={pickSaved} />
       {/* Manual / Custom Car Specs Details */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -422,18 +439,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
               Pickup
             </label>
-            <div className="relative">
-              <select
-                value={pickupId}
-                onChange={(e) => handlePickupChange(e.target.value)}
-                className="w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 py-2 text-sm font-semibold text-slate-900 focus:border-brand-400 focus:outline-none"
-              >
-                {pickupLocations.map((l) => (
-                  <option key={l.id} value={l.id}>{l.name}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            </div>
+            <div><PlacePicker value={pickupId} onChange={handlePickupChange} options={pickupLocations} placeholder="Choose pickup" label="Pickup" /></div>
           </div>
         </div>
 
@@ -444,19 +450,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
               <div className="h-1.5 w-1.5 rounded-full bg-slate-600" />
             </div>
             <div className="flex-1 flex items-center gap-2">
-              <div className="relative flex-1">
-                <select
-                  value={stop.locationId}
-                  onChange={(e) => updateStop(stop.id, e.target.value)}
-                  className="w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 py-2 text-sm font-semibold text-slate-900 focus:border-brand-400 focus:outline-none"
-                >
-                  <option value="" disabled>Select stop {i + 1}...</option>
-                  {pickupLocations.map((l) => (
-                    <option key={l.id} value={l.id}>{l.name}</option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              </div>
+              <div className="flex-1"><PlacePicker value={stop.locationId} onChange={(id) => updateStop(stop.id, id)} options={pickupLocations} placeholder={`Choose stop ${i + 1}`} /></div>
               <button
                 type="button"
                 onClick={() => removeStop(stop.id)}
@@ -494,18 +488,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
               {isTwoWay ? 'Turnaround point' : 'Drop'}
             </label>
-            <div className="relative">
-              <select
-                value={dropId}
-                onChange={(e) => updateState(isInterCity ? { destinationId: e.target.value } : { dropId: e.target.value })}
-                className="w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 py-2 text-sm font-semibold text-slate-900 focus:border-brand-400 focus:outline-none"
-              >
-                {locations.map((l) => (
-                  <option key={l.id} value={l.id}>{l.name} {l.distanceKm ? `(~${l.distanceKm}km)` : ''}</option>
-                ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            </div>
+            <div><PlacePicker value={dropId} onChange={(id) => updateState(isInterCity ? { destinationId: id } : { dropId: id })} options={locations} placeholder="Choose drop" label="Drop" /></div>
           </div>
         </div>
 
@@ -567,19 +550,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
                 <div className="h-1.5 w-1.5 rounded-full bg-brand-600" />
               </div>
               <div className="flex-1 flex items-center gap-2">
-                <div className="relative flex-1">
-                  <select
-                    value={stop.locationId}
-                    onChange={(e) => updateReturnStop(stop.id, e.target.value)}
-                    className="w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 py-2 text-sm font-semibold text-slate-900 focus:border-brand-400 focus:outline-none"
-                  >
-                    <option value="" disabled>Select return stop {i + 1}...</option>
-                    {pickupLocations.map((l) => (
-                      <option key={l.id} value={l.id}>{l.name}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                </div>
+                <div className="flex-1"><PlacePicker value={stop.locationId} onChange={(id) => updateReturnStop(stop.id, id)} options={pickupLocations} placeholder={`Choose return stop ${i + 1}`} /></div>
                 <button
                   type="button"
                   onClick={() => removeReturnStop(stop.id)}
@@ -624,20 +595,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
                   </span>
                 )}
               </div>
-              <div className="relative">
-                <select
-                  value={returnDropId}
-                  onChange={(e) => updateState(isInterCity ? { returnDropId: e.target.value } : { returnDropId: e.target.value })}
-                  className="w-full appearance-none rounded-xl border border-brand-300 bg-white pl-3 pr-8 py-2 text-sm font-semibold text-brand-950 focus:border-brand-500 focus:outline-none"
-                >
-                  {pickupLocations.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name} {l.id === pickupId ? '(Initial Pickup)' : ''}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-brand-400" />
-              </div>
+              <div><PlacePicker value={returnDropId} onChange={(id) => updateState({ returnDropId: id })} options={pickupLocations} placeholder="Choose return drop" tone="brand" label="Return drop" /></div>
             </div>
           </div>
 
@@ -1111,6 +1069,20 @@ export function TripDetailsForm({ config, setConfig }) {
                 <ChevronDown className="pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               </div>
             </div>
+          </div>
+
+          {/* The customer's own end of an airport trip. Without this every
+              airport booking silently used the default city location. */}
+          <div>
+            <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              {config.airportDetails.flow === 'arrival' ? 'Drop at' : 'Pickup from'}
+            </label>
+            <PlacePicker
+              value={config.dropId}
+              onChange={(dropId) => setConfig((c) => ({ ...c, dropId }))}
+              options={CITY_LOCATIONS}
+              placeholder={config.airportDetails.flow === 'arrival' ? 'Where should we drop you?' : 'Where should we pick you up?'}
+            />
           </div>
 
           {/* Flight Number Input (Optional) */}

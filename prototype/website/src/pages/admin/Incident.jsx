@@ -10,6 +10,8 @@ import { useToast } from '../../context/toastStore.js'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
 import { LevelBadge, LEVEL_MEANING, relative, SlaTimer, StatusPill } from '../../components/admin/Indicators.jsx'
 import { cn } from '../../lib/utils.js'
+import { useAuth } from '../../context/authStore.js'
+import { hasRole, OPS_ROLES } from '../../components/admin/RequireRole.jsx'
 
 const LEVELS = ['L0', 'L1', 'L2', 'L3', 'L4', 'L5']
 
@@ -33,6 +35,8 @@ function Action({ icon: Icon, label, onClick, busy, tone = 'default' }) {
 }
 
 export default function Incident() {
+  const { user } = useAuth()
+  const canRelease = hasRole(user, OPS_ROLES)
   const { id } = useParams()
   const { toast } = useToast()
   const [busy, setBusy] = useState(false)
@@ -123,6 +127,8 @@ export default function Incident() {
               busy={busy}
               onClick={() => run('Guardians notified', () => api.admin.notifyGuardians(id))}
             />
+            {/* The server allows OPS_MANAGER and SUPER_ADMIN only; agents never see it. */}
+            {canRelease && (
             <Action
               icon={FileLock2}
               label="Release evidence"
@@ -143,6 +149,7 @@ export default function Incident() {
                 }
               }}
             />
+            )}
           </div>
 
           <div className="mt-5 border-t border-slate-100 pt-5">
