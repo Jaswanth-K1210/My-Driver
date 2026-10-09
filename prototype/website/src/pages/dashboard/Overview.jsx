@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import PageHeader from '../../components/app/PageHeader.jsx'
 import { Archive, ArrowRight, CarFront, Gauge, Radio, ShieldCheck, TrendingUp } from 'lucide-react'
 import { SectionCard } from '../../components/app/Primitives.jsx'
 import { useAuth } from '../../context/authStore.js'
@@ -42,6 +43,11 @@ function QuickAction({ to, icon: Icon, title, description, primary }) {
   )
 }
 
+const greeting = () => {
+  const h = new Date().getHours()
+  return h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening'
+}
+
 export default function Overview() {
   const { user } = useAuth()
   const { vaultTrips, hasActiveTrip, trip } = useTrip()
@@ -53,18 +59,15 @@ export default function Overview() {
     : 60
 
   const summaryStats = [
-    { icon: Archive, label: 'Sealed trips', value: String(vaultTrips.length) },
+    { icon: Archive, label: 'Completed trips', value: String(vaultTrips.length) },
     { icon: TrendingUp, label: 'Total spend', value: formatINR(totalSpend) },
     { icon: ShieldCheck, label: 'Distance', value: `${totalKm.toFixed(0)} km` },
-    { icon: Gauge, label: 'Avg ceiling', value: `${avgCeiling} km/h` },
+    { icon: Gauge, label: 'Average speed limit', value: `${avgCeiling} km/h` },
   ]
 
   return (
-    <div className="space-y-8">
-      <header>
-        <p className="text-sm text-slate-500">Good evening</p>
-        <h1 className="mt-1 text-3xl font-black tracking-tight text-slate-900">{user.name}</h1>
-      </header>
+    <div className="space-y-6">
+      <PageHeader eyebrow={`${greeting()}, ${user.name.split(' ')[0]}`} title="My trips" />
 
       {hasActiveTrip && trip && (
         <Link
@@ -86,8 +89,8 @@ export default function Overview() {
       )}
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <QuickAction primary to="/app/book" icon={CarFront} title="Book a ride" description="By location or by the hour" />
-        <QuickAction to="/app/track" icon={Radio} title="Live tracking" description="Follow your driver in real time" />
+        <QuickAction primary to="/app/book" icon={CarFront} title="Book a driver" description="City, outstation, airport or full-time" />
+        <QuickAction to="/app/track" icon={Radio} title="Live trip" description="Follow your driver on the map" />
       </div>
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -115,7 +118,7 @@ export default function Overview() {
       >
         {vaultTrips.length === 0 && (
           <p className="py-6 text-center text-sm text-slate-500">
-            No trips yet — book your first ride to start your archive.
+            No trips yet. Book your first driver and the trip appears here.
           </p>
         )}
         <ul className="divide-y divide-slate-200">

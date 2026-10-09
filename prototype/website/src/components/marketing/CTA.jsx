@@ -11,9 +11,9 @@ export default function CTA() {
             <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-brand-500 shadow-lg shadow-brand-500/25">
               <ShieldCheck className="h-7 w-7 text-white" aria-hidden="true" />
             </span>
-            <h2 className="mt-6 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Ride with proof, tonight.</h2>
+            <h2 className="mt-6 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">Your car, a verified driver, every trip on record.</h2>
             <p className="mx-auto mt-4 max-w-xl text-lg text-slate-600">
-              Create your account, set your first speed ceiling and share a guardian link in under two minutes.
+              Create your account, set your speed limit and share a guardian link in under two minutes.
             </p>
             <div className="mt-9 flex flex-wrap items-center justify-center gap-3">
               <Link

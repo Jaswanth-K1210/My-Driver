@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import PageHeader from '../../components/app/PageHeader.jsx'
 import { Plus, ShieldCheck, Trash2 } from 'lucide-react'
 import { SectionCard, Toggle } from '../../components/app/Primitives.jsx'
 import IdentityCard from '../../components/app/IdentityCard.jsx'
@@ -7,13 +8,13 @@ import { useToast } from '../../context/toastStore.js'
 import { MAX_GUARDIANS } from '../../data/mock.js'
 import { api } from '../../lib/apiClient.js'
 import { toE164 } from '../../lib/phone.js'
-import { maskPhone } from '../../lib/utils.js'
+import { formatPhone, maskPhone } from '../../lib/utils.js'
 
 const CONSENT_VERSION = '2026-09'
 
 const CONSENTS = [
   { purpose: 'LOCATION_TRACKING', label: 'Live location during trips', description: 'Lets the Safety Desk see where your trip is in real time.' },
-  { purpose: 'TELEMATICS_COLLECTION', label: 'Speed and motion telemetry', description: 'Speed-ceiling and route-deviation alerts. Kept for 90 days.' },
+  { purpose: 'TELEMATICS_COLLECTION', label: 'Speed and motion telemetry', description: 'Speed-limit and route-deviation alerts. Kept for 90 days.' },
   { purpose: 'GUARDIAN_SHARING', label: 'Share trips with guardians', description: 'Your guardians can be texted a live link and alerted on an SOS.' },
   { purpose: 'BIOMETRIC_LIVENESS', label: 'Driver face-match at pickup', description: 'The driver selfie at handshake is compared to their verified photo.' },
 ]
@@ -96,10 +97,7 @@ export default function Profile() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-3xl font-black tracking-tight text-slate-900">Profile</h1>
-        <p className="mt-1.5 text-sm text-slate-600">Manage your identity, guardians and safety defaults.</p>
-      </header>
+      <PageHeader title="Profile" subtitle="Your details, identity check, guardians and privacy choices." />
 
       <SectionCard>
         <div className="flex flex-wrap items-center gap-4">
@@ -110,7 +108,7 @@ export default function Profile() {
             <p className="truncate text-lg font-bold text-slate-900">{user.name}</p>
             <p className="truncate text-sm text-slate-500">{user.email}</p>
             <p className="mt-0.5 text-xs text-slate-500">
-              {user.phone ? `${user.phone} · ` : ''}Member since {user.memberSince}
+              {[formatPhone(user.phone), user.memberSince && `Member since ${user.memberSince}`].filter(Boolean).join(' · ')}
             </p>
           </div>
           {verified && (
@@ -163,7 +161,7 @@ export default function Profile() {
               placeholder="Guardian name"
               maxLength={40}
               aria-label="Guardian name"
-              className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:outline-none"
+              className="flex-1 h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:outline-none"
             />
             <input
               type="tel"
@@ -173,13 +171,13 @@ export default function Profile() {
               inputMode="numeric"
               maxLength={14}
               aria-label="Guardian mobile number"
-              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:outline-none sm:w-44"
+              className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:outline-none sm:w-44"
             />
             <button
               type="button"
               onClick={addGuardian}
               disabled={busy}
-              className="flex items-center justify-center gap-2 rounded-2xl bg-brand-500 px-5 py-3 text-sm font-black text-white transition-colors hover:bg-brand-600"
+              className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-brand-500 px-5 text-sm font-bold text-white transition-colors hover:bg-brand-600"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Add

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import PageHeader from '../../components/app/PageHeader.jsx'
 import { Archive, BadgeCheck, Download } from 'lucide-react'
 import { Modal } from '../../components/app/Primitives.jsx'
 import { useTrip } from '../../context/tripStore.js'
@@ -133,22 +134,17 @@ export default function Vault() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="flex items-center gap-2.5 text-3xl font-black tracking-tight text-slate-900">
-          <Archive className="h-7 w-7 text-brand-500" aria-hidden="true" />
-          Trip Vault
-        </h1>
-        <p className="mt-1.5 text-sm text-slate-600">
-          {vaultTrips.length} sealed trips · tamper-proof archive
-        </p>
-      </header>
+      <PageHeader
+        title="Trip Vault"
+        subtitle={`${vaultTrips.length} sealed ${vaultTrips.length === 1 ? 'trip' : 'trips'} · route, inspection photos and certificate for each`}
+      />
 
       {vaultTrips.length === 0 && (
         <div className="rounded-3xl border border-dashed border-slate-300 bg-white px-6 py-20 text-center">
           <Archive className="mx-auto h-8 w-8 text-slate-300" aria-hidden="true" />
           <p className="mt-4 text-base font-bold text-slate-900">No sealed trips yet</p>
           <p className="mt-1 text-sm text-slate-600">
-            Complete a ride and its route, telematics and fare are archived here.
+            When a trip ends, its route, inspection photos and certificate are sealed here.
           </p>
         </div>
       )}

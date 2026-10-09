@@ -19,7 +19,7 @@ export function Field({ id, label, icon: Icon, error, trailing, className, ...re
           aria-invalid={Boolean(error)}
           aria-describedby={error ? `${id}-error` : undefined}
           className={cn(
-            'w-full rounded-2xl border bg-slate-50 py-3.5 text-sm font-medium text-slate-900 transition-colors placeholder:text-slate-400 focus:bg-white focus:outline-none',
+            'h-12 w-full rounded-2xl border bg-slate-50 text-sm font-medium text-slate-900 transition-colors placeholder:text-slate-400 focus:bg-white focus:outline-none',
             Icon ? 'pl-11' : 'pl-4',
             trailing ? 'pr-12' : 'pr-4',
             error ? 'border-brand-400 focus:border-brand-500' : 'border-slate-200 focus:border-brand-400',

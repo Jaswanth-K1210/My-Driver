@@ -10,11 +10,12 @@ export type MeResponse = {
   phone_number: string | null
   email: string | null
   full_name: string | null
+  created_at: string
 }
 
 export async function getMe(userId: string, role: Role): Promise<MeResponse> {
   const { rows } = await pool.query(
-    `SELECT id, phone_number, email, full_name FROM users WHERE id = $1`,
+    `SELECT id, phone_number, email, full_name, created_at FROM users WHERE id = $1`,
     [userId],
   )
   const user = rows[0]

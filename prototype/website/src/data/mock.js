@@ -12,7 +12,7 @@ export const HERO_WORDS = ['daily commute', 'airport run', 'late night', 'family
 
 export const TRUST_MARKS = [
   'Police-verified drivers',
-  'Speed ceiling on every trip',
+  'Speed limit on every trip',
   'Guardian live tracking',
 ]
 
@@ -128,14 +128,14 @@ export const SAVED_GARAGE = [
 export const REQUIREMENTS = [
   {
     id: 'within_city',
-    label: 'Within City',
+    label: 'Within city',
     tagline: 'Point-to-point & errands',
     badge: 'Local',
     description: 'Hourly or multi-stop city transfers with real-time tracking.',
   },
   {
     id: 'inter_city',
-    label: 'Inter City',
+    label: 'Outstation',
     tagline: 'Outstation trips & tours',
     badge: 'Highway',
     description: 'Highway-certified chauffeurs for multi-day outstation travel.',
@@ -149,7 +149,7 @@ export const REQUIREMENTS = [
   },
   {
     id: 'full_time',
-    label: 'Full Time',
+    label: 'Full-time',
     tagline: 'Dedicated private chauffeur',
     badge: 'Contract',
     description: 'Standard 12h/day dedicated private chauffeur for executive or family use.',

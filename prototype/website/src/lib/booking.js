@@ -205,7 +205,7 @@ export function getMinDurationForConfig(config) {
     return {
       minHours,
       label: minHours > 1 
-        ? `Travel time (~${driveMinutes} mins + 10 min buffer) requires min. ${minHours} hrs`
+        ? `Travel time (~${driveMinutes} mins + 10 min buffer) needs at least ${minHours} ${minHours === 1 ? 'hour' : 'hours'}`
         : '1 hour minimum package',
     }
   }
@@ -231,8 +231,8 @@ export function getMinDurationForConfig(config) {
       minHours: totalEstDriveHours,
       minDays: totalEstDriveHours > 24 ? Math.ceil(totalEstDriveHours / 24) : 0,
       label: isTwoWay
-        ? `${dest.name} Round Trip (~${(dest.distanceKm || 250) * 2}km) requires min. ${totalEstDriveHours} hrs driving time`
-        : `${dest.name} (~${dest.distanceKm || 250}km) requires min. ${totalEstDriveHours} hrs driving time`,
+        ? `${dest.name} round trip (~${(dest.distanceKm || 250) * 2}km) needs at least ${totalEstDriveHours} hours of driving`
+        : `${dest.name} (~${dest.distanceKm || 250}km) needs at least ${totalEstDriveHours} hours of driving`,
     }
   }
 
@@ -413,7 +413,7 @@ export function quoteFor(config, skills = SKILLS) {
     }
 
     lines.push(
-      { label: 'Route type', value: isTwoWay ? 'Round Trip (Two-way)' : 'One Way' },
+      { label: 'Route type', value: isTwoWay ? 'Round trip' : 'One way' },
       { label: 'Est. total distance', value: `~${totalKm} km` },
       { label: 'Total duration', value: durationText },
       { label: 'Driver allowance / batta', value: `₹${dailyBatta}` },
@@ -447,7 +447,7 @@ export function quoteFor(config, skills = SKILLS) {
       ready: true,
       lines: [
         { label: 'Corridor', value: `${airportLoc.name}` },
-        { label: 'Transfer type', value: isTwoWay ? 'Round-trip' : (config.airportDetails.flow === 'arrival' ? 'Airport Pickup' : 'Airport Drop') },
+        { label: 'Transfer type', value: isTwoWay ? 'Round-trip' : (config.airportDetails.flow === 'arrival' ? 'Airport pickup' : 'Airport drop') },
         { label: 'Estimated distance', value: `${distanceKm} km` },
         { label: 'Toll & parking allowance', value: `₹${tollAllowance}` },
         { label: 'Platform fee', value: `₹${PLATFORM_FEE}` },
@@ -526,7 +526,7 @@ export function quoteFor(config, skills = SKILLS) {
 
   lines.push(
     { label: 'Total distance', value: `~${totalKm} km` },
-    { label: 'Duration estimate', value: `${config.durationHours} hrs` },
+    { label: 'Duration', value: `${config.durationHours} ${config.durationHours === 1 ? 'hour' : 'hours'}` },
     { label: `${skill.label} rate`, value: `₹${skill.rate}/km` },
   )
 

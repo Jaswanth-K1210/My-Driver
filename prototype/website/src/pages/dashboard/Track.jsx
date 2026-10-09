@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import PageHeader from '../../components/app/PageHeader.jsx'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   BadgeCheck,
@@ -39,7 +40,7 @@ function EmptyState() {
         to="/app/book"
         className="mt-6 rounded-full bg-brand-500 px-6 py-3 text-sm font-bold text-white shadow-lg shadow-brand-500/25 transition-colors hover:bg-brand-600"
       >
-        Book a ride
+        Book a driver
       </Link>
     </div>
   )
@@ -264,11 +265,18 @@ export default function Track() {
     return () => clearTimeout(t)
   }, [sosStage, countdown, toast, trip?.serverId])
 
-  if (phase === 'idle') return <EmptyState />
+  // Every state shares the same page title, so the page never jumps.
+  const shell = (subtitle, node) => (
+    <div className="space-y-6">
+      <PageHeader title="Live trip" subtitle={subtitle} />
+      {node}
+    </div>
+  )
+  if (phase === 'idle') return shell('Your current trip appears here, with its live map and safety controls.', <EmptyState />)
   if (phase === 'payment' && payment) {
-    return <PaymentStep payment={payment} trip={trip} onPay={openCheckout} onCancel={() => cancelTrip('Payment not completed')} />
+    return shell('Confirm the fare hold to send your request to drivers.', <PaymentStep payment={payment} trip={trip} onPay={openCheckout} onCancel={() => cancelTrip('Payment not completed')} />)
   }
-  if (phase === 'matching') return <Matching label={trip?.statusLabel} />
+  if (phase === 'matching') return shell('We are finding you a verified driver.', <Matching label={trip?.statusLabel} />)
   if (phase === 'complete' && trip) {
     return (
       <TripComplete
@@ -282,7 +290,7 @@ export default function Track() {
       />
     )
   }
-  if (!trip) return <EmptyState />
+  if (!trip) return shell('Your current trip appears here, with its live map and safety controls.', <EmptyState />)
 
   const breaches = alerts.length
   const speed = driverPosition?.speed != null ? Math.round(driverPosition.speed) : null
@@ -316,13 +324,7 @@ export default function Track() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900">Live tracking</h1>
-          <p className="mt-1.5 text-sm text-slate-600">
-            Trip {trip.id} · {trip.skill} · {connection === 'open' ? 'Live' : 'Reconnecting…'}
-          </p>
-        </div>
+      <PageHeader title="Live trip" subtitle={`Trip ${trip.id} · ${trip.skill} · ${connection === 'open' ? 'Live' : 'Reconnecting…'}`}>
         <button
           type="button"
           onClick={() => setConfirmCancel(true)}
@@ -331,14 +333,14 @@ export default function Track() {
           <X className="h-4 w-4" aria-hidden="true" />
           Cancel trip
         </button>
-      </header>
+      </PageHeader>
 
       {confirmCancel && (
         <div className="rise-in flex flex-wrap items-center gap-4 rounded-2xl border border-brand-200 bg-brand-50 p-4">
           <p className="flex-1 text-sm font-bold text-brand-900">Cancel this trip?</p>
           <div className="flex gap-2">
             <button type="button" onClick={() => setConfirmCancel(false)} className="rounded-xl bg-white px-4 py-2 text-xs font-bold text-slate-900">
-              Keep riding
+              Keep trip
             </button>
             <button
               type="button"
@@ -424,7 +426,7 @@ export default function Track() {
               </div>
               <div>
                 <p className={cn('text-lg font-black', breaches > 0 ? 'text-brand-600' : 'text-slate-900')}>{breaches}</p>
-                <p className="text-xs text-slate-500">Ceiling breaches</p>
+                <p className="text-xs text-slate-500">Speed-limit breaches</p>
               </div>
             </div>
           </SectionCard>

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Mail, MapPin } from 'lucide-react'
 import { PAGE_X, Wordmark } from './Navbar.jsx'
+import { useAuth } from '../../context/authStore.js'
 
 // Only pages and sections that exist. Nothing here links to staff tools: the
 // operations portal is reached by its own internal address, never from here.
@@ -19,8 +20,8 @@ const LINK_GROUPS = [
     links: [
       { label: 'Book a driver', to: '/app/book' },
       { label: 'My trips', to: '/app' },
-      { label: 'Log in', to: '/login' },
-      { label: 'Create an account', to: '/register' },
+      { label: 'Log in', to: '/login', signedOut: true },
+      { label: 'Create an account', to: '/register', signedOut: true },
     ],
   },
   {
@@ -33,6 +34,7 @@ const LINK_GROUPS = [
 ]
 
 export default function Footer() {
+  const { isAuthenticated } = useAuth()
   return (
     <footer className="border-t border-slate-200 bg-white py-16 text-slate-600">
       <div className={PAGE_X}>
@@ -58,7 +60,7 @@ export default function Footer() {
             <nav key={group.heading} aria-label={group.heading}>
               <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900">{group.heading}</h3>
               <ul className="mt-5 space-y-3">
-                {group.links.map((link) => (
+                {group.links.filter((link) => !(link.signedOut && isAuthenticated)).map((link) => (
                   <li key={link.label}>
                     <Link to={link.to} className="text-sm transition-colors hover:text-slate-900">
                       {link.label}

@@ -17,6 +17,7 @@ const MeSchema = z.object({
   phone_number: z.string().nullable(),
   email: z.string().nullable(),
   full_name: z.string().nullable(),
+  created_at: z.coerce.string(),
 })
 
 const GuardianSchema = z.object({

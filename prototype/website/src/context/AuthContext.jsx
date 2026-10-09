@@ -24,8 +24,9 @@ function toViewUser(me) {
     role: me.role,
     roles: me.roles ?? [],
     initials: initialsOf(name),
-    memberSince: new Date().getFullYear().toString(),
-    rating: 5.0,
+    memberSince: me.created_at
+      ? new Date(me.created_at).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+      : null,
   }
 }
 

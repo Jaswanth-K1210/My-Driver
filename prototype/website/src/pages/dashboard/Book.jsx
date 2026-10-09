@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import PageHeader from '../../components/app/PageHeader.jsx'
 import { useNavigate } from 'react-router-dom'
 import {
   CalendarDays,
@@ -105,20 +106,17 @@ export default function Book() {
   const activeReq = REQUIREMENTS.find((r) => r.id === config.requirement) ?? REQUIREMENTS[0]
 
   return (
-    <div className="space-y-8 pb-12">
-      <header className="mx-auto max-w-3xl">
-        <div className="flex items-center gap-2.5">
-          <h1 className="text-3xl font-black tracking-tight text-slate-900">Book a driver</h1>
-        </div>
-        <p className="mt-1.5 text-sm text-slate-600">
-          Tell us about your car and your trip. We match you with a verified driver who drives your car, tracked live end to end.
-        </p>
-      </header>
+    <div className="space-y-6">
+      <PageHeader
+        title="Book a driver"
+        subtitle="Tell us about your car and your trip. We match you with a verified driver, and the trip is tracked end to end."
+      />
 
-      <div className="mx-auto max-w-3xl">
-        <form onSubmit={submit} className="min-w-0 space-y-4">
+      <div>
+        <form onSubmit={submit} className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="min-w-0 space-y-4">
           {/* ── CARD 1: VEHICLE TYPE ── */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition-all">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6">
             <button
               type="button"
               onClick={() => toggleSection('vehicle')}
@@ -155,7 +153,7 @@ export default function Book() {
           </div>
 
           {/* ── CARD 2: CAR SPECIFICATIONS & GARAGE ── */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition-all">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6">
             <button
               type="button"
               onClick={() => toggleSection('car')}
@@ -198,7 +196,7 @@ export default function Book() {
           </div>
 
           {/* ── CARD 3: TRIP REQUIREMENT ── */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition-all">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6">
             <button
               type="button"
               onClick={() => toggleSection('requirement')}
@@ -275,7 +273,7 @@ export default function Book() {
           </div>
 
           {/* ── CARD 4: SMART DRIVER SELECTION ── */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition-all">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6">
             <button
               type="button"
               onClick={() => toggleSection('driver')}
@@ -314,7 +312,7 @@ export default function Book() {
           </div>
 
           {/* ── CARD 5: SAFETY CONTROLS (COLLAPSED BY DEFAULT) ── */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition-all">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6">
             <button
               type="button"
               onClick={() => toggleSection('safety')}
@@ -347,8 +345,10 @@ export default function Book() {
             )}
           </div>
 
-          {/* ── CARD 6: FARE BREAKDOWN & BOOK BUTTON ── */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-md transition-all">
+          </div>
+
+          {/* ── FARE: sticky beside the form on wide screens ── */}
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 lg:sticky lg:top-24">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <CreditCard className="h-5 w-5 text-brand-600" />

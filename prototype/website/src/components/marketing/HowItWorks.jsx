@@ -7,7 +7,7 @@ export default function HowItWorks() {
   return (
     <section id="how" className="bg-slate-50 py-20 sm:py-28">
       <div className={PAGE_X}>
-        <SectionHeading eyebrow="How it works" title="Three steps to a provable ride" />
+        <SectionHeading eyebrow="How it works" title="Three steps to a safe trip" />
 
         <div className="relative mt-16">
           <div

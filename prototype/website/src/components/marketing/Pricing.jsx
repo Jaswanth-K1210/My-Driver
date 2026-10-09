@@ -9,7 +9,7 @@ export default function Pricing() {
   return (
     <section id="pricing" className="bg-white py-20 sm:py-28">
       <div className={PAGE_X}>
-        <SectionHeading eyebrow="Pricing" title="Safety included. Always.">Every plan carries the full verification, ceiling and vault stack. Pay only for the class of ride.</SectionHeading>
+        <SectionHeading eyebrow="Pricing" title="Safety included. Always.">Every tier includes verified drivers, a speed limit and the Trip Vault. You pay for the kind of driver you need.</SectionHeading>
 
         <div className="mt-14 grid gap-6 lg:grid-cols-3">
           {PRICING.map((plan, i) => (

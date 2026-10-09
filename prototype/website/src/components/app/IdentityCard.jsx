@@ -9,7 +9,7 @@ import { api } from '../../lib/apiClient.js'
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/
 
 const btn =
-  'rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40'
+  'inline-flex h-12 items-center justify-center rounded-2xl bg-slate-900 px-5 text-sm font-bold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40'
 
 /** Optional for customers: earns the "ID verified" badge. Same flow drivers use. */
 export default function IdentityCard({ onStatus }) {

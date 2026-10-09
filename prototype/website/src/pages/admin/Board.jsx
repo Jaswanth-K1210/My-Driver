@@ -111,7 +111,7 @@ export default function Board() {
                   <th className="pb-2 pr-3">Driver</th>
                   <th className="pb-2 pr-3">Vehicle</th>
                   <th className="pb-2 pr-3">Status</th>
-                  <th className="pb-2 pr-3">Ceiling</th>
+                  <th className="pb-2 pr-3">Speed limit</th>
                   <th className="pb-2">Last seen</th>
                 </tr>
               </thead>

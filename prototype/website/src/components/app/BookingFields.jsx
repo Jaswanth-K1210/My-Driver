@@ -129,7 +129,7 @@ export function CarSpecPicker({ carDetails, onChange, onAutoMatchSkill }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* Company Selector */}
           <div>
-            <label className="mb-1.5 block text-xs font-bold text-slate-700">Car Brand / Company</label>
+            <label className="mb-1.5 block text-xs font-bold text-slate-700">Make</label>
             <div className="relative">
               <select
                 value={carDetails.company}
@@ -148,7 +148,7 @@ export function CarSpecPicker({ carDetails, onChange, onAutoMatchSkill }) {
 
           {/* Model Selector */}
           <div>
-            <label className="mb-1.5 block text-xs font-bold text-slate-700">Car Model</label>
+            <label className="mb-1.5 block text-xs font-bold text-slate-700">Model</label>
             <div className="relative">
               {carDetails.company === 'Other / Custom' ? (
                 <input
@@ -182,7 +182,7 @@ export function CarSpecPicker({ carDetails, onChange, onAutoMatchSkill }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
           {/* Engine Type */}
           <div>
-            <label className="mb-1.5 block text-xs font-bold text-slate-700">Engine Type</label>
+            <label className="mb-1.5 block text-xs font-bold text-slate-700">Fuel</label>
             <div className="flex flex-wrap gap-1.5">
               {ENGINE_TYPES.map((eng) => {
                 const active = carDetails.engineType === eng
@@ -373,7 +373,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
     <div className="space-y-4">
       {/* Direction Toggle */}
       <div className="flex items-center justify-between">
-        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Trip Direction</span>
+        <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Trip type</span>
         <div className="flex rounded-xl bg-slate-100 p-1">
           <button
             type="button"
@@ -383,7 +383,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
               !isTwoWay ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
             )}
           >
-            One Way
+            One way
           </button>
           <button
             type="button"
@@ -393,7 +393,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
               isTwoWay ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
             )}
           >
-            Round Trip (Two Way)
+            Round trip
           </button>
         </div>
       </div>
@@ -403,7 +403,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
         <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
           <span className="text-[11px] font-black uppercase tracking-wider text-emerald-700 flex items-center gap-1.5">
             <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
-            {isTwoWay ? 'Leg 1: Outbound Journey' : 'Journey Route'}
+            {isTwoWay ? 'Outbound' : 'Route'}
           </span>
           <span className="text-[10px] font-bold text-slate-400">
             {stops.length > 0 ? `${stops.length} intermediate stop${stops.length > 1 ? 's' : ''}` : 'Direct'}
@@ -420,7 +420,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
           </div>
           <div className="flex-1">
             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
-              Pickup Location (From)
+              Pickup
             </label>
             <div className="relative">
               <select
@@ -478,7 +478,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
             className="flex items-center gap-1.5 text-xs font-bold text-brand-600 hover:text-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             <Plus className="h-3.5 w-3.5" />
-            Add Stop {stops.length > 0 ? `(${stops.length}/3)` : ''}
+            Add stop {stops.length > 0 ? `(${stops.length}/3)` : ''}
           </button>
           {!canAddStop && stops.length > 0 && stops.length < 3 && (
             <span className="text-[10px] text-amber-600 font-medium">Select location above first</span>
@@ -492,7 +492,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
           </div>
           <div className="flex-1">
             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
-              {isTwoWay ? 'Outbound Destination (Turnaround)' : 'Destination Location (To)'}
+              {isTwoWay ? 'Turnaround point' : 'Drop'}
             </label>
             <div className="relative">
               <select
@@ -534,7 +534,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
           <div className="flex items-center justify-between border-b border-brand-100/80 pb-2.5">
             <span className="text-[11px] font-black uppercase tracking-wider text-brand-700 flex items-center gap-1.5">
               <span className="flex h-2 w-2 rounded-full bg-brand-500" />
-              Leg 2: Return Journey
+              Return
             </span>
             <span className="text-[10px] font-bold text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full border border-brand-200/60">
               Starts from {outboundDestName}
@@ -669,7 +669,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
               <Compass className="h-4 w-4 text-emerald-400" />
             </div>
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Total Round Trip Route</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-300">Total round trip</p>
               <p className="text-xs font-semibold text-white">
                 Outbound + Return {stops.length + returnStops.length > 0 ? `(${stops.length + returnStops.length} stops total)` : ''}
               </p>
@@ -769,9 +769,9 @@ export function TripDetailsForm({ config, setConfig }) {
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <label className="text-xs font-bold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
                 <Clock className="h-4 w-4 text-brand-600" />
-                Estimated Duration
+                Duration
               </label>
-              <span className="text-xs font-black text-brand-600">{config.durationHours} Hours</span>
+              <span className="text-xs font-black text-brand-600">{config.durationHours} {config.durationHours === 1 ? 'hour' : 'hours'}</span>
             </div>
 
             {minDur.minHours > 1 && (
@@ -781,7 +781,7 @@ export function TripDetailsForm({ config, setConfig }) {
               </div>
             )}
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="grid flex-1 grid-cols-4 gap-2">
                 {[1, 2, 4, 8].map((h) => {
                   const isBelowMin = h < minDur.minHours
@@ -838,7 +838,7 @@ export function TripDetailsForm({ config, setConfig }) {
             <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
               <label className="text-xs font-bold uppercase tracking-wide text-slate-700 flex items-center gap-1.5">
                 <Clock className="h-4 w-4 text-brand-600" />
-                Trip Duration (Days + Hours)
+                Trip length
               </label>
               <span className="text-xs font-bold text-slate-500">Customizable</span>
             </div>
@@ -846,7 +846,7 @@ export function TripDetailsForm({ config, setConfig }) {
             {/* Minimum Travel Requirement Notification */}
             <div className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-200/80 px-3.5 py-2 text-xs text-blue-900">
               <Info className="h-4 w-4 shrink-0 text-blue-600" />
-              <span><strong>Travel Requirement:</strong> {minDur.label}</span>
+              <span><strong>Minimum:</strong> {minDur.label}</span>
             </div>
 
             {/* 1. Days Row */}
@@ -937,9 +937,9 @@ export function TripDetailsForm({ config, setConfig }) {
             {/* 2. Extra Hours Row */}
             <div>
               <div className="mb-2 flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700">+ Extra Hours:</span>
+                <span className="text-xs font-bold text-slate-700">Extra hours</span>
                 <span className="text-xs font-bold text-brand-600">
-                  {config.interCityDetails?.hours ?? 0} {(config.interCityDetails?.hours ?? 0) === 1 ? 'Hour' : 'Hours'}
+                  {config.interCityDetails?.hours ?? 0} {(config.interCityDetails?.hours ?? 0) === 1 ? 'hour' : 'hours'}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -1023,10 +1023,10 @@ export function TripDetailsForm({ config, setConfig }) {
               </span>
               <span className="text-sm font-black text-brand-700">
                 {(config.interCityDetails?.days ?? 1) > 0 && (config.interCityDetails?.hours ?? 0) > 0
-                  ? `${config.interCityDetails?.days ?? 1} Day${(config.interCityDetails?.days ?? 1) > 1 ? 's' : ''} ${config.interCityDetails?.hours ?? 0} Hour${(config.interCityDetails?.hours ?? 0) > 1 ? 's' : ''} (${(config.interCityDetails?.days ?? 1) * 24 + (config.interCityDetails?.hours ?? 0)} Hours total)`
+                  ? `${config.interCityDetails?.days ?? 1} day${(config.interCityDetails?.days ?? 1) > 1 ? 's' : ''} ${config.interCityDetails?.hours ?? 0} hour${(config.interCityDetails?.hours ?? 0) === 1 ? '' : 's'} (${(config.interCityDetails?.days ?? 1) * 24 + (config.interCityDetails?.hours ?? 0)} hours in total)`
                   : (config.interCityDetails?.days ?? 1) > 0
-                  ? `${config.interCityDetails?.days ?? 1} Day${(config.interCityDetails?.days ?? 1) > 1 ? 's' : ''} (${(config.interCityDetails?.days ?? 1) * 24} Hours)`
-                  : `${config.interCityDetails?.hours ?? 4} Hours`}
+                  ? `${config.interCityDetails?.days ?? 1} day${(config.interCityDetails?.days ?? 1) > 1 ? 's' : ''} (${(config.interCityDetails?.days ?? 1) * 24} hours)`
+                  : `${config.interCityDetails?.hours ?? 4} hours`}
               </span>
             </div>
           </div>
@@ -1074,7 +1074,7 @@ export function TripDetailsForm({ config, setConfig }) {
                   config.tripType === 'one_way' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600',
                 )}
               >
-                One Way
+                One way
               </button>
               <button
                 type="button"
@@ -1084,7 +1084,7 @@ export function TripDetailsForm({ config, setConfig }) {
                   config.tripType === 'two_way' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600',
                 )}
               >
-                Round Trip
+                Round trip
               </button>
             </div>
           </div>
@@ -1094,7 +1094,7 @@ export function TripDetailsForm({ config, setConfig }) {
             <PickupField />
             <div>
               <label className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                Airport Terminal
+                Terminal
               </label>
               <div className="relative">
                 <select
@@ -1116,7 +1116,7 @@ export function TripDetailsForm({ config, setConfig }) {
           {/* Flight Number Input (Optional) */}
           <div>
             <label className="mb-1 block text-xs font-bold text-slate-700">
-              Flight Number <span className="font-normal text-slate-400">(Optional - for automated flight tracking)</span>
+              Flight number <span className="font-normal text-slate-400">(optional, shared with your driver)</span>
             </label>
             <div className="relative">
               <Plane className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -1137,7 +1137,7 @@ export function TripDetailsForm({ config, setConfig }) {
         <div className="space-y-4">
           {/* Operational Locality */}
           <div>
-            <label className="mb-1 block text-xs font-bold text-slate-700">Primary Locality / Operational Area</label>
+            <label className="mb-1 block text-xs font-bold text-slate-700">Area</label>
             <div className="relative">
               <MapPin className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
@@ -1153,7 +1153,7 @@ export function TripDetailsForm({ config, setConfig }) {
           {/* Duration Selector (Days / Weeks / Months) */}
           <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Contract Duration</label>
+              <label className="text-xs font-bold uppercase tracking-wide text-slate-600">Contract length</label>
               <div className="flex rounded-xl bg-slate-200/80 p-1">
                 {['days', 'weeks', 'months'].map((unit) => (
                   <button
@@ -1202,7 +1202,7 @@ export function TripDetailsForm({ config, setConfig }) {
             <div className="flex items-start gap-2.5 rounded-xl bg-amber-50/80 border border-amber-200 p-3 text-xs text-amber-900">
               <Info className="h-4 w-4 shrink-0 text-amber-600 mt-0.5" />
               <div>
-                <span className="font-bold">12 Hours / Day Regular Baseline:</span> Full-time drivers are assigned for
+                <span className="font-bold">12 hours a day:</span> Full-time drivers are assigned for
                 up to 12 working hours daily. Any additional duty hour is billed transparently at{' '}
                 <span className="font-bold">₹150 / hour</span> overtime.
               </div>
@@ -1223,10 +1223,10 @@ export function SmartDriverPicker({ config, onChange, skills = SKILLS }) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <label className="text-xs font-bold uppercase tracking-wider text-slate-500">
-          Driver Certification & Tier
+          Choose a tier
         </label>
         <span className="flex items-center gap-1 text-[11px] font-bold text-brand-600">
-          <Sparkles className="h-3 w-3" /> Auto-matched for your vehicle
+          <Sparkles className="h-3 w-3" /> Recommended for your car
         </span>
       </div>
 
@@ -1412,7 +1412,7 @@ export function CeilingSlider({ value, onChange }) {
     <div>
       <div className="mb-2 flex items-center justify-between">
         <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide text-slate-500">
-          <Gauge className="h-3.5 w-3.5" /> Speed ceiling
+          <Gauge className="h-3.5 w-3.5" /> Speed limit
         </span>
         <span className="rounded-lg bg-brand-50 px-2.5 py-1 text-xs font-black text-brand-600">{value} km/h</span>
       </div>
