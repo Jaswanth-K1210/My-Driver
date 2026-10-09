@@ -57,7 +57,7 @@ export function Modal({ open, onClose, title, children, size = 'md' }) {
 
 export function Segmented({ options, value, onChange, className, size = 'md' }) {
   return (
-    <div className={cn('flex rounded-2xl bg-slate-100 p-1', className)} role="tablist">
+    <div className={cn('no-scrollbar flex overflow-x-auto rounded-2xl bg-slate-100 p-1', className)} role="tablist">
       {options.map((opt) => {
         const selected = value === opt.id
         return (
@@ -68,7 +68,7 @@ export function Segmented({ options, value, onChange, className, size = 'md' }) 
             aria-selected={selected}
             onClick={() => onChange(opt.id)}
             className={cn(
-              'flex flex-1 items-center justify-center gap-2 rounded-xl font-bold transition-colors',
+              'flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl font-bold transition-colors',
               size === 'lg' ? 'px-4 py-3 text-sm' : 'px-3 py-2 text-xs',
               selected ? 'bg-brand-500 text-white shadow-sm shadow-brand-500/25' : 'text-slate-600 hover:text-slate-900',
             )}

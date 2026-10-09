@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Activity, Car, Radio, Timer } from 'lucide-react'
 import { api } from '../../lib/apiClient.js'
+import PageHeader from '../../components/admin/PageHeader.jsx'
 import { StatCard, SectionCard } from '../../components/app/Primitives.jsx'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
 import { Empty, LevelBadge, relative, SlaTimer } from '../../components/admin/Indicators.jsx'
@@ -26,18 +27,12 @@ export default function Board() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900">Safety Desk</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Live board · refreshes every 4 seconds
-          </p>
-        </div>
+      <PageHeader title="Live board" subtitle="Safety Desk · refreshes every 4 seconds">
         <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
           <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
           Monitoring
         </span>
-      </header>
+      </PageHeader>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard icon={Car} label="Active trips" value={stats?.active_trips ?? '—'} />

@@ -39,6 +39,7 @@ export default function AdminLogin() {
 
   return (
     <AuthLayout
+      staff
       title="Admin portal sign-in"
       subtitle="For MyDriver staff. Use the credentials issued to you."
       footer={

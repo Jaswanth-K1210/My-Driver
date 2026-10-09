@@ -109,7 +109,7 @@ export default function Payments() {
     <div className="space-y-6">
       <PageHeader title="Payments" subtitle="Customer fares: holds placed at booking, captured when the trip ends" />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Captured" value={rupees(totals?.captured)} />
         <StatCard label="On hold" value={rupees(totals?.held)} />
         <StatCard label="Refunded" value={rupees(totals?.refunded)} />

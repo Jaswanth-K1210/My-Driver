@@ -23,6 +23,8 @@ function toViewUser(me) {
     phone: me.phone_number ?? '',
     role: me.role,
     roles: me.roles ?? [],
+    // Only a real name: greeting someone by their phone number reads as a bug.
+    firstName: me.full_name ? me.full_name.trim().split(/\s+/)[0] : null,
     initials: initialsOf(name),
     memberSince: me.created_at
       ? new Date(me.created_at).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })

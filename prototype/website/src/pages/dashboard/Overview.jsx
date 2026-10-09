@@ -62,12 +62,12 @@ export default function Overview() {
     { icon: Archive, label: 'Completed trips', value: String(vaultTrips.length) },
     { icon: TrendingUp, label: 'Total spend', value: formatINR(totalSpend) },
     { icon: ShieldCheck, label: 'Distance', value: `${totalKm.toFixed(0)} km` },
-    { icon: Gauge, label: 'Average speed limit', value: `${avgCeiling} km/h` },
+    { icon: Gauge, label: 'Average speed limit', value: vaultTrips.length ? `${avgCeiling} km/h` : '—' },
   ]
 
   return (
     <div className="space-y-6">
-      <PageHeader eyebrow={`${greeting()}, ${user.name.split(' ')[0]}`} title="My trips" />
+      <PageHeader eyebrow={user.firstName ? `${greeting()}, ${user.firstName}` : greeting()} title="My trips" />
 
       {hasActiveTrip && trip && (
         <Link
