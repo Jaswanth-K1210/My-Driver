@@ -95,9 +95,44 @@ services mechanical.
 | GET | `/v1/trips/:id/payment` | participant |
 | GET | `/v1/admin/payments` | FINANCE, OPS_MANAGER, SUPER_ADMIN |
 | POST | `/v1/admin/payments/:id/refund` | FINANCE, SUPER_ADMIN |
+| GET/POST/PATCH/DELETE | `/v1/me/vehicles[/:id]` (Garage, max 10) | any |
+| GET | `/v1/catalogue/trip-config` (ETag, 5 min cache) | **public** |
+| GET | `/v1/locations/search?q=&lat=&lng=` (cached proxy, 60/min) | any |
+| POST | `/v1/trips/:id/telemetry` (background batch, ≤300 points) | participant |
 | GET | `/health` · `/ready` · `/metrics` | — |
 
 Errors are always `{ "error": { "code", "message", "details"? } }`.
+
+## User app support (Garage, places, trip config, background tracking)
+
+**Garage** (`saved_vehicles`, migration 0016). Plates are stored normalised
+(`ts09 ab 1234` → `TS09AB1234`) and unique per person; fuel and transmission are
+checked against the app's own lists. The first car saved is the default, there
+is never more than one default, and deleting the default promotes the oldest
+remaining car.
+
+**Location search** (`MAPS_PROVIDER=mock|google`). Google Places Text Search
+(New), which returns coordinates in one call. Results are cached in Redis by
+normalised query plus the bias point rounded to ~1 km
+(`LOCATION_CACHE_TTL_SECONDS`, default 24 h; empty results 10 min), and
+identical in-flight searches share one upstream call. Signed-in only, 60
+searches per person per minute; an upstream failure is a 503, never a 500.
+
+**Trip config** — requirements with their duration rules, hour packages
+(included km from the rate card), pickup times, fees and rate cards. Car makes
+and fuel types stay in the app. VisionCam modes are listed with
+`available: false`: there is no recording backend, and booking ignores
+`vision_mode`.
+
+**Background tracking.** The WebSocket (`/v1/integrity`) is unchanged and is
+still the live path. When the app is backgrounded the OS suspends sockets, so a
+background location task posts buffered fixes to `POST /v1/trips/:id/telemetry`
+with the phone's `sent_at`. Both paths share `telemetry/ingest.ts`: same 1 fix
+per second ceiling, same hypertable, same integrity input. Point ages are
+rebased onto the server clock, so a phone with a wrong clock neither looks
+offline nor files its track at the wrong time. Only the newest point in a batch
+moves the live map. `wss://stream.mydriver.in` is a deployment hostname: point
+DNS and TLS at this service's `/v1/integrity`; nothing in this repo provisions it.
 
 ## KYC and payments
 

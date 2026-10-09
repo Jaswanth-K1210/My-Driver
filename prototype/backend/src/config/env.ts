@@ -83,6 +83,11 @@ const EnvSchema = z.object({
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
+  MAPS_PROVIDER: z.enum(['mock', 'google']).default('mock'),
+  GOOGLE_MAPS_API_KEY: z.string().optional(),
+  // Seconds a search result is served from Redis before asking Google again.
+  LOCATION_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
+
   // Public base URL of this API, used to build the hosted checkout link.
   PUBLIC_API_URL: z.string().url().default('http://localhost:4000'),
 })

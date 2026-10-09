@@ -345,6 +345,13 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
         update: (id, patch) => request(`/v1/me/guardians/${id}`, { method: 'PATCH', body: patch }),
         remove: (id) => request(`/v1/me/guardians/${id}`, { method: 'DELETE' }),
       },
+      /** The Garage: the customer's own cars. The first one saved is the default. */
+      vehicles: {
+        list: () => request('/v1/me/vehicles'),
+        add: (input) => request('/v1/me/vehicles', { method: 'POST', body: input }),
+        update: (id, patch) => request(`/v1/me/vehicles/${id}`, { method: 'PATCH', body: patch }),
+        remove: (id) => request(`/v1/me/vehicles/${id}`, { method: 'DELETE' }),
+      },
       consents: {
         list: () => request('/v1/me/consents'),
         record: (purpose, version, granted) =>
@@ -354,6 +361,18 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
 
     catalogue: {
       rateCards: () => request('/v1/rate-cards', { auth: false }),
+      /** Requirements, hour packages, pickup times, VisionCam modes, fees and rate cards. */
+      tripConfig: () => request('/v1/catalogue/trip-config', { auth: false }),
+    },
+
+    /**
+     * Place search through the backend's cached proxy. Debounce keystrokes on
+     * the client (300 ms is plenty): the server allows 60 searches a minute.
+     * Pass `near` ({ lat, lng }) to bias results towards the user.
+     */
+    locations: {
+      search: (q, near) =>
+        request(`/v1/locations/search${qs({ q, lat: near?.lat, lng: near?.lng })}`),
     },
 
     /** Public guardian view. No account, no token — the link is the audience. */
@@ -548,6 +567,16 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
         request(`/v1/trips/${id}/cancel`, { method: 'POST', body: { reason } }),
 
       handshakeOtp: (id) => request(`/v1/trips/${id}/handshake-otp`, { method: 'POST' }),
+
+      /**
+       * Background telemetry. Use this from a background location task
+       * (expo-task-manager), where the WebSocket is suspended: buffer fixes
+       * and post up to 300 at a time. Each point is
+       * { timestamp, coords: { lat, lng, speed?, heading? }, sensors? }.
+       * Live, foreground tracking should keep using the WebSocket.
+       */
+      sendTelemetryBatch: (id, points) =>
+        request(`/v1/trips/${id}/telemetry`, { method: 'POST', body: { sent_at: Date.now(), points } }),
 
       /** Silent SOS. Goes straight to L4 — an SOS is never a maybe. */
       sos: (id, { silent = true, note } = {}) =>

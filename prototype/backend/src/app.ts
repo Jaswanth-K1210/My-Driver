@@ -12,7 +12,10 @@ import { registerErrorHandler } from './lib/errors.js'
 import { gauge, renderMetrics } from './lib/metrics.js'
 import { registerAdminOpsRoutes } from './modules/admin-ops/routes.js'
 import { registerAuthRoutes } from './modules/auth/routes.js'
+import { registerCatalogueRoutes } from './modules/catalogue/routes.js'
 import { registerKycRoutes } from './modules/kyc/routes.js'
+import { registerLocationRoutes } from './modules/locations/routes.js'
+import { registerTelemetryRoutes } from './modules/trips/telemetry-routes.js'
 import { registerPaymentRoutes } from './modules/payments/routes.js'
 import { registerTripRoutes } from './modules/trips/routes.js'
 import { getIntegrityEngine } from './modules/integrity/engine.js'
@@ -53,7 +56,8 @@ export async function buildApp(): Promise<FastifyInstance> {
   await app.register(fastifyCors, {
     origin: env.NODE_ENV === 'production' ? corsOrigins() : true,
     credentials: false,
-    allowedHeaders: ['content-type', 'authorization', 'idempotency-key', 'x-razorpay-signature', 'x-razorpay-event-id'],
+    allowedHeaders: ['content-type', 'authorization', 'idempotency-key', 'if-none-match', 'x-razorpay-signature', 'x-razorpay-event-id'],
+    exposedHeaders: ['etag'],
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   })
 
@@ -68,6 +72,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerVaultRoutes(app)
   registerKycRoutes(app)
   registerPaymentRoutes(app)
+  registerCatalogueRoutes(app)
+  registerLocationRoutes(app)
+  registerTelemetryRoutes(app)
 
   // "Is this process alive" — for the container runtime.
   app.get('/health', async () => ({ status: 'ok', service: 'mydriver-backend' }))

@@ -4,9 +4,8 @@ import type { WebSocket } from 'ws'
 import { pool } from '../db/client.js'
 import { counter } from '../lib/metrics.js'
 import type { Role } from '../modules/auth/otp.js'
-import { upsertDriverLocation } from '../modules/trips/geo-index.js'
 import { redis } from '../redis/client.js'
-import { getTelemetryWriter } from '../telemetry/batch-writer.js'
+import { ingestTelemetry } from '../telemetry/ingest.js'
 import { getHub } from './hub.js'
 import { parseClientFrame, type ServerFrame } from './protocol.js'
 import { consumeTicket } from './ticket.js'
@@ -41,7 +40,7 @@ const fail = (socket: WebSocket, code: string, message: string): void =>
  * broadcast.ts drops this key on any status change so authorisation never
  * reads stale state.
  */
-async function loadTripRoles(tripId: string): Promise<TripRoles | null> {
+export async function loadTripRoles(tripId: string): Promise<TripRoles | null> {
   const key = `trip:{${tripId}}:roles`
 
   const cached = await redis.get(key)
@@ -61,7 +60,6 @@ export async function registerRealtimeGateway(app: FastifyInstance): Promise<voi
   await app.register(fastifyWebsocket, { options: { maxPayload: 16 * 1024 } })
 
   const hub = getHub()
-  const writer = getTelemetryWriter()
 
   /**
    * The handler is deliberately NOT async: the 'message' listener must be
@@ -152,48 +150,13 @@ export async function registerRealtimeGateway(app: FastifyInstance): Promise<voi
       }
       conn.lastFrameAt.set(frame.trip_id, now)
 
-      // Last-known position, read by the integrity engine on its 3-second
-      // pass. Kept in Redis rather than queried from the hypertable so
-      // evaluation costs nothing on the ingest path. TTL exceeds the
-      // staleness window so a dead stream expires rather than lingering.
-      await redis.set(
-        `trip:{${frame.trip_id}}:last:${isDriverFrame ? 'driver' : 'customer'}`,
-        JSON.stringify({
-          lat: frame.coords.lat,
-          lng: frame.coords.lng,
-          speed: frame.coords.speed,
-          at: Date.now(),
-        }),
-        'EX',
-        120,
-      )
-
-      writer.enqueue({
-        time: new Date(frame.timestamp),
-        tripId: frame.trip_id,
-        source: isDriverFrame ? 'DRIVER' : 'CUSTOMER',
-        lat: frame.coords.lat,
-        lng: frame.coords.lng,
-        speedKmh: frame.coords.speed,
-        heading: frame.coords.heading,
-        accelZ: frame.type === 'DRIVER_TELEMETRY' ? frame.sensors?.accel_z : undefined,
-        gyroZ: frame.type === 'DRIVER_TELEMETRY' ? frame.sensors?.gyro_z : undefined,
+      // The live stream's fix is the freshest there is, so it uses arrival
+      // time for staleness, exactly as before the shared ingest existed.
+      await ingestTelemetry(frame.trip_id, conn.userId, isDriverFrame ? 'DRIVER' : 'CUSTOMER', {
+        timestamp: frame.timestamp,
+        coords: frame.coords,
+        sensors: frame.type === 'DRIVER_TELEMETRY' ? frame.sensors : undefined,
       })
-
-      if (isDriverFrame) {
-        // Throttled to once per 10s inside upsertDriverLocation.
-        await upsertDriverLocation(conn.userId, frame.coords)
-        await hub.publish(frame.trip_id, {
-          type: 'DRIVER_LOCATION',
-          trip_id: frame.trip_id,
-          coords: {
-            lat: frame.coords.lat,
-            lng: frame.coords.lng,
-            speed: frame.coords.speed,
-            heading: frame.coords.heading,
-          },
-        })
-      }
     }
 
     void (async () => {
