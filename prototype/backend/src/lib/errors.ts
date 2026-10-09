@@ -51,11 +51,23 @@ export function registerErrorHandler(app: FastifyInstance): void {
       })
     }
 
-    const maybeHttp = error as { statusCode?: number; message?: string }
+    const maybeHttp = error as { statusCode?: number; message?: string; code?: string }
     if (maybeHttp.statusCode === 429) {
       return reply
         .status(429)
         .send({ error: { code: 'RATE_LIMITED', message: maybeHttp.message ?? 'Rate limited' } })
+    }
+
+    // Fastify's own client errors (malformed JSON, body too large, wrong
+    // content type) carry a 4xx status. They are the caller's mistake, not
+    // ours, and must not be reported as a 500.
+    if (maybeHttp.statusCode && maybeHttp.statusCode >= 400 && maybeHttp.statusCode < 500) {
+      return reply.status(maybeHttp.statusCode).send({
+        error: {
+          code: (maybeHttp.code ?? 'BAD_REQUEST').replace(/^FST_ERR_/, ''),
+          message: maybeHttp.message ?? 'Bad request',
+        },
+      })
     }
 
     // Anything unrecognised is a bug. Log it in full, tell the client nothing.

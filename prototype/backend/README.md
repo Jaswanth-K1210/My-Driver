@@ -17,6 +17,12 @@ What remains is listed honestly under "Not built yet" — chiefly the Safety Des
 Design: `docs/superpowers/specs/2026-08-25-mydriver-unified-backend-design.md`
 Plan: `docs/backend-implementation-plan.md`
 
+## Deploying
+
+Production runs from Docker: see [`deploy/README.md`](../../deploy/README.md).
+With `NODE_ENV=production` the API refuses to start on development secrets,
+mock payment/identity/SMS providers, plain-http URLs or a public `/metrics`.
+
 ## Quick start
 
 ```bash

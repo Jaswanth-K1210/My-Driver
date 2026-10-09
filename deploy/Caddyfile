@@ -1,0 +1,18 @@
+# Caddy obtains and renews TLS certificates automatically for both names.
+# Set WEB_DOMAIN and API_DOMAIN in .env.production.
+
+{$WEB_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:80
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	# WebSocket upgrades (/v1/integrity) pass through reverse_proxy as-is.
+	reverse_proxy api:4000 {
+		# The API reads X-Forwarded-For (trustProxy) for per-client rate limits.
+		header_up X-Real-IP {remote_host}
+		health_uri /ready
+		health_interval 10s
+	}
+}

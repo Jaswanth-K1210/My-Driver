@@ -13,7 +13,15 @@ import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { hashPassword } from '../lib/password.js'
 import type { Role } from '../modules/auth/roles.js'
+import { env } from '../config/env.js'
 import { closeDb, pool } from './client.js'
+
+// These are shared demo logins on a fake domain. Real staff get their own
+// account from create-staff.ts.
+if (env.NODE_ENV === 'production') {
+  console.error('seed-staff creates demo accounts and is disabled in production. Use create-staff instead.')
+  process.exit(1)
+}
 
 const STAFF: Array<{ email: string; name: string; role: Role; can: string }> = [
   { email: 'superadmin@mydriver.test', name: 'Super Admin', role: 'SUPER_ADMIN', can: 'Everything, including the audit ledger' },

@@ -42,7 +42,24 @@ export async function buildApp(): Promise<FastifyInstance> {
         env.NODE_ENV === 'development'
           ? { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss' } }
           : undefined,
+      // Bearer tokens, refresh tokens, OTPs and signatures must never reach
+      // the log store, even at debug level.
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'req.headers["x-razorpay-signature"]',
+          'req.query.ticket',
+          'body.otp',
+          'body.refresh_token',
+          'body.password',
+        ],
+        censor: '[redacted]',
+      },
     },
+    // Hard ceiling on a request body. Uploads that need more (documents,
+    // inspection photos) raise it on their own route.
+    bodyLimit: 1024 * 1024,
     // Trust the proxy so rate limiting sees the real client IP behind a load balancer.
     trustProxy: true,
   }).withTypeProvider<ZodTypeProvider>()
@@ -50,6 +67,19 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.setValidatorCompiler(validatorCompiler)
   app.setSerializerCompiler(serializerCompiler)
   registerErrorHandler(app)
+
+  // Baseline security headers on every response. The API serves JSON (and one
+  // checkout page that sets its own policy), so these are cheap and safe.
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('x-content-type-options', 'nosniff')
+    reply.header('referrer-policy', 'no-referrer')
+    reply.header('x-frame-options', 'DENY')
+    reply.header('cross-origin-resource-policy', 'same-site')
+    if (env.NODE_ENV === 'production') {
+      reply.header('strict-transport-security', 'max-age=31536000; includeSubDomains')
+    }
+    return payload
+  })
 
   // The website runs on a different origin from the API. Native apps are
   // unaffected — CORS is a browser policy.
@@ -97,9 +127,12 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   })
 
-  app.get('/metrics', async (_request, reply) =>
-    reply.type('text/plain; version=0.0.4').send(renderMetrics()),
-  )
+  app.get('/metrics', async (request, reply) => {
+    if (env.METRICS_TOKEN && request.headers.authorization !== `Bearer ${env.METRICS_TOKEN}`) {
+      return reply.status(401).send({ error: { code: 'UNAUTHENTICATED', message: 'Metrics require a token' } })
+    }
+    return reply.type('text/plain; version=0.0.4').send(renderMetrics())
+  })
 
   return app
 }
