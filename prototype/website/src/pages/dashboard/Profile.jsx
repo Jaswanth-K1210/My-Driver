@@ -7,10 +7,11 @@ import IdentityCard from '../../components/app/IdentityCard.jsx'
 import { GarageCard } from '../../components/app/Garage.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { useToast } from '../../context/toastStore.js'
-import { MAX_GUARDIANS } from '../../data/mock.js'
 import { api } from '../../lib/apiClient.js'
 import { toE164 } from '../../lib/phone.js'
 import { formatPhone, maskPhone } from '../../lib/utils.js'
+
+const MAX_GUARDIANS = 5
 
 const CONSENT_VERSION = '2026-09'
 

@@ -68,7 +68,8 @@ export default function DriverDetail() {
 
   if (!data) return <p className="py-12 text-center text-sm text-slate-500">Loading driver…</p>
 
-  const { profile, documents, attempts, badges: held, night_shield: nightShield, kyc, approval_blockers: blockers = [] } = data
+  // Defaults keep the page rendering if an older API omits a section.
+  const { profile, documents = [], attempts = [], badges: held = [], night_shield: nightShield = [], kyc, approval_blockers: blockers = [] } = data
   const liveNightShield = nightShield.find((q) => !q.revoked_at && new Date(q.expires_at) > new Date())
   const heldCodes = new Set(held.filter((b) => !b.revoked_at).map((b) => b.badge_code))
 

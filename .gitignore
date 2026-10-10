@@ -11,6 +11,7 @@ build/
 .next/
 out/
 .vercel/
+.vite/
 
 # Environment / secrets
 .env
@@ -93,6 +94,8 @@ coverage/
 .eslintcache
 scratch/
 
-
 # Generated staff passwords (npm run seed:staff)
 credentials.md
+
+# Agent directories / files
+.agents/

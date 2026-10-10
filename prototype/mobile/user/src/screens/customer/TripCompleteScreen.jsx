@@ -9,12 +9,13 @@ import { useTrip } from '../../context/TripContext'
 import { formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 
-export default function TripCompleteScreen({ trip, onSave }) {
+export default function TripCompleteScreen({ trip, summary, onSave }) {
   const { rateTrip } = useTrip()
   const [rating, setRating] = useState(0)
   const [saving, setSaving] = useState(false)
 
   // Every figure here is the server's frozen record of the completed trip.
+  // maxSpeed + breaches come from the live telemetry summary captured during the ride.
   const stats = [
     { label: 'Fare paid', value: formatINR(trip.fare), alert: false },
     { label: 'Distance', value: `${Number(trip.distanceKm).toFixed(1)} km`, alert: false },
@@ -24,7 +25,18 @@ export default function TripCompleteScreen({ trip, onSave }) {
       alert: false,
     },
     { label: 'Ceiling', value: `${trip.ceiling} km/h`, alert: false },
+    {
+      label: 'Max speed',
+      value: summary?.maxSpeed ? `${summary.maxSpeed} km/h` : '—',
+      alert: summary?.maxSpeed > trip.ceiling,
+    },
+    {
+      label: 'Ceiling breaches',
+      value: summary?.breaches != null ? String(summary.breaches) : '0',
+      alert: summary?.breaches > 0,
+    },
   ]
+
 
   const finish = async () => {
     setSaving(true)

@@ -53,6 +53,7 @@ export default function LiveMap() {
     if (!layer.current) return
     layer.current.clearLayers()
     for (const d of drivers) {
+      if (typeof d.lat !== 'number' || typeof d.lng !== 'number' || isNaN(d.lat) || isNaN(d.lng)) continue
       const marker = L.circleMarker([d.lat, d.lng], {
         radius: 8,
         color: '#fff',

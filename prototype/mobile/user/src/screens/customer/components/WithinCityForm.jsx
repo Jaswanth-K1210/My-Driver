@@ -1,129 +1,178 @@
-import { useState } from 'react'
+/**
+ * WithinCityForm — route planner + duration picker for "Within City" trips.
+ */
+import { useEffect } from 'react'
 import { Pressable, Text, View } from 'react-native'
-import { MapPin, Navigation, Plus, Minus, RotateCcw } from 'lucide-react-native'
-import { CITY_LOCATIONS } from '../../../data/mock'
+import { Clock, Info, Minus, Plus } from 'lucide-react-native'
+import { getMinDurationForConfig } from '../../../lib/booking'
 import { colors, radius, space, type } from '../../../theme/tokens'
+import RoutePlannerCard from './RoutePlannerCard'
 
-export function LocationDropdown({ value, options, onChange, placeholder }) {
-  const [open, setOpen] = useState(false)
-  const selected = options.find((o) => o.id === value)
-
-  return (
-    <View style={{ flex: 1, zIndex: 1 }}>
-      <Pressable
-        onPress={() => setOpen(!open)}
-        style={{ paddingVertical: space.sm, paddingHorizontal: space.sm, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border }}
-      >
-        <Text style={{ ...type.body, color: selected ? colors.text : colors.textMuted }}>
-          {selected ? selected.name : placeholder}
-        </Text>
-      </Pressable>
-      {open && (
-        <View style={{ position: 'absolute', top: 50, left: 0, right: 0, backgroundColor: colors.surface, zIndex: 10, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 10, elevation: 5 }}>
-          {options.map((opt) => (
-            <Pressable
-              key={opt.id}
-              onPress={() => { onChange(opt.id); setOpen(false) }}
-              style={{ padding: space.md, borderBottomWidth: 1, borderBottomColor: colors.border }}
-            >
-              <Text style={{ ...type.body }}>{opt.name}</Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
-    </View>
-  )
-}
+const DURATION_PRESETS = [1, 2, 4, 8]
 
 export default function WithinCityForm({ config, onChange }) {
-  const addStop = () => {
-    onChange({
-      ...config,
-      stops: [...(config.stops || []), { id: `stop_${Date.now()}`, locationId: '' }]
-    })
-  }
+  const minDur = getMinDurationForConfig(config)
 
-  const updateStop = (id, locationId) => {
-    onChange({
-      ...config,
-      stops: config.stops.map(s => s.id === id ? { ...s, locationId } : s)
-    })
-  }
+  // Auto-clamp duration if route requires more time
+  useEffect(() => {
+    if (config.durationHours < minDur.minHours) {
+      onChange({ ...config, durationHours: minDur.minHours })
+    }
+  }, [
+    minDur.minHours,
+    config.pickupId,
+    config.dropId,
+    config.stops,
+    config.returnStops,
+    config.returnDropId,
+    config.tripType,
+  ])
 
-  const removeStop = (id) => {
-    onChange({
-      ...config,
-      stops: config.stops.filter(s => s.id !== id)
-    })
-  }
+  const setDuration = (h) => onChange({ ...config, durationHours: h })
 
   return (
     <View style={{ gap: space.md }}>
-      {/* Pickup */}
-      <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center', zIndex: 3 }}>
-        <MapPin size={16} color={colors.graphite} />
-        <LocationDropdown 
-          value={config.pickupId} 
-          options={CITY_LOCATIONS} 
-          onChange={(v) => onChange({ ...config, pickupId: v })} 
-          placeholder="Select pickup" 
-        />
-      </View>
+      {/* Route Planner */}
+      <RoutePlannerCard config={config} onChange={onChange} isInterCity={false} />
 
-      {/* Stops */}
-      {(config.stops || []).map((stop, i) => (
-        <View key={stop.id} style={{ flexDirection: 'row', gap: space.md, alignItems: 'center', zIndex: 2 }}>
-          <View style={{ width: 16, alignItems: 'center' }}>
-            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.borderStrong }} />
+      {/* Duration Picker */}
+      <View
+        style={{
+          borderRadius: radius.lg,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surface,
+          padding: space.md,
+          gap: space.md,
+        }}
+      >
+        {/* Header */}
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingBottom: space.sm,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Clock size={15} color={colors.brand} />
+            <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5 }}>
+              ESTIMATED DURATION
+            </Text>
           </View>
+          <Text style={{ ...type.caption, color: colors.brand, fontWeight: '900' }}>
+            {config.durationHours} Hours
+          </Text>
+        </View>
+
+        {/* Minimum requirement notice */}
+        {minDur.minHours > 1 && (
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'flex-start',
+              gap: space.sm,
+              backgroundColor: colors.amberSoft,
+              borderRadius: radius.md,
+              borderWidth: 1,
+              borderColor: '#fcd34d',
+              padding: space.sm,
+            }}
+          >
+            <Info size={15} color={colors.amber} style={{ marginTop: 1 }} />
+            <Text style={{ ...type.tiny, color: '#92400e', flex: 1 }}>{minDur.label}</Text>
+          </View>
+        )}
+
+        {/* Preset buttons + ± stepper */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
           <View style={{ flex: 1, flexDirection: 'row', gap: space.sm }}>
-            <LocationDropdown 
-              value={stop.locationId} 
-              options={CITY_LOCATIONS} 
-              onChange={(v) => updateStop(stop.id, v)} 
-              placeholder={`Stop ${i + 1}`} 
-            />
-            <Pressable onPress={() => removeStop(stop.id)} style={{ padding: space.sm, justifyContent: 'center' }}>
-              <Minus size={16} color={colors.red} />
+            {DURATION_PRESETS.map((h) => {
+              const belowMin = h < minDur.minHours
+              const active = config.durationHours === h
+              return (
+                <Pressable
+                  key={h}
+                  onPress={() => !belowMin && setDuration(h)}
+                  disabled={belowMin}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 8,
+                    alignItems: 'center',
+                    borderRadius: radius.sm,
+                    borderWidth: 1,
+                    borderColor: active ? colors.brand : belowMin ? colors.surfaceSunken : colors.border,
+                    backgroundColor: active ? colors.brandSoft : belowMin ? colors.surfaceSunken : colors.surface,
+                    opacity: belowMin ? 0.45 : 1,
+                  }}
+                >
+                  <Text
+                    style={{
+                      ...type.caption,
+                      color: active ? colors.brand : belowMin ? colors.textFaint : colors.text,
+                      fontWeight: '800',
+                    }}
+                  >
+                    {h}{h === 1 ? ' hr' : ' hrs'}
+                  </Text>
+                </Pressable>
+              )
+            })}
+          </View>
+
+          {/* ± Stepper */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              borderRadius: radius.sm,
+              borderWidth: 1,
+              borderColor: colors.border,
+              backgroundColor: colors.surfaceAlt,
+              padding: 3,
+            }}
+          >
+            <Pressable
+              onPress={() => setDuration(Math.max(minDur.minHours, config.durationHours - 1))}
+              disabled={config.durationHours <= minDur.minHours}
+              style={{
+                width: 28,
+                height: 28,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: radius.sm - 2,
+                opacity: config.durationHours <= minDur.minHours ? 0.3 : 1,
+              }}
+            >
+              <Minus size={13} color={colors.textMuted} />
+            </Pressable>
+            <Text
+              style={{
+                width: 30,
+                textAlign: 'center',
+                ...type.bodyBold,
+                color: colors.text,
+              }}
+            >
+              {config.durationHours}h
+            </Text>
+            <Pressable
+              onPress={() => setDuration(Math.min(24, config.durationHours + 1))}
+              style={{
+                width: 28,
+                height: 28,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: radius.sm - 2,
+              }}
+            >
+              <Plus size={13} color={colors.textMuted} />
             </Pressable>
           </View>
         </View>
-      ))}
-
-      {/* Add Stop Button */}
-      {(config.stops || []).length < 2 && (
-        <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center' }}>
-          <View style={{ width: 16 }} />
-          <Pressable onPress={addStop} style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingVertical: space.xs }}>
-            <Plus size={14} color={colors.red} />
-            <Text style={{ ...type.caption, color: colors.red }}>Add stop</Text>
-          </Pressable>
-        </View>
-      )}
-
-      {/* Drop */}
-      <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center', zIndex: 1 }}>
-        <Navigation size={16} color={colors.red} />
-        <LocationDropdown 
-          value={config.dropId} 
-          options={CITY_LOCATIONS} 
-          onChange={(v) => onChange({ ...config, dropId: v })} 
-          placeholder="Destination" 
-        />
-      </View>
-
-      {/* Round Trip Toggle */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: space.sm, paddingTop: space.sm, borderTopWidth: 1, borderTopColor: colors.border }}>
-        <Text style={{ ...type.body }}>Return to pickup?</Text>
-        <Pressable 
-          onPress={() => onChange({ ...config, tripType: config.tripType === 'two_way' ? 'one_way' : 'two_way' })}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.sm, backgroundColor: config.tripType === 'two_way' ? colors.redSoft : colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: config.tripType === 'two_way' ? colors.red : colors.border }}
-        >
-          <RotateCcw size={14} color={config.tripType === 'two_way' ? colors.red : colors.textMuted} />
-          <Text style={{ ...type.caption, color: config.tripType === 'two_way' ? colors.red : colors.textMuted }}>
-            {config.tripType === 'two_way' ? 'Round Trip' : 'One Way'}
-          </Text>
-        </Pressable>
       </View>
     </View>
   )

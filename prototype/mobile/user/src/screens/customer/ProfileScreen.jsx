@@ -5,7 +5,6 @@ import { LogOut, Plus, Trash2 } from 'lucide-react-native'
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
 import { useToast } from '../../components/Toast'
-import { MAX_GUARDIANS } from '../../data/mock'
 import { api } from '../../lib/apiClient'
 import { toE164 } from '../../lib/phone'
 import { useAuth } from '../../context/AuthContext'
@@ -138,6 +137,9 @@ function IdentityCard() {
     </Card>
   )
 }
+
+const MAX_GUARDIANS = 5
+
 
 export default function ProfileScreen({ onLogout }) {
   const { toast } = useToast()

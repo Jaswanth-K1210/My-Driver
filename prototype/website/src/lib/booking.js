@@ -4,9 +4,7 @@ import {
   DROPS,
   HOUR_PACKAGES,
   INTERCITY_DESTINATIONS,
-  NIGHT_FEE,
   PICKUP,
-  PLATFORM_FEE,
   CAR_BRANDS,
   SKILLS,
   START_LOCATIONS,
@@ -314,9 +312,9 @@ export function getRouteLegTelemetry(startId, stops = [], destId, isInterCity = 
  * Supports Within City, Inter City, Airport, and Full Time contracts.
  * Accurately handles multi-stop waypoints and round-trip return legs.
  */
-export function quoteFor(config, skills = SKILLS) {
+export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nightFee: 30 }) {
   const skill = skillFor(config.skillId, skills)
-  const nightFee = config.skillId === 'MD-Night' ? NIGHT_FEE : 0
+  const nightFee = config.skillId === 'MD-Night' ? fees.nightFee : 0
 
   // 1. Full Time Contract
   if (config.requirement === 'full_time') {
@@ -432,7 +430,7 @@ export function quoteFor(config, skills = SKILLS) {
       { label: 'Est. total distance', value: `~${totalKm} km` },
       { label: 'Total duration', value: durationText },
       { label: 'Driver allowance / batta', value: `₹${dailyBatta}` },
-      { label: 'Platform & safety fee', value: `₹${PLATFORM_FEE}` },
+      { label: 'Platform & safety fee', value: `₹${fees.platformFee}` },
     )
 
     return {
@@ -441,7 +439,7 @@ export function quoteFor(config, skills = SKILLS) {
       ready: true,
       lines,
       base,
-      total: base + PLATFORM_FEE + nightFee,
+      total: base + fees.platformFee + nightFee,
       distanceKm: totalKm,
       durationLabel: durationText,
     }
@@ -465,10 +463,10 @@ export function quoteFor(config, skills = SKILLS) {
         { label: 'Transfer type', value: isTwoWay ? 'Round-trip' : (config.airportDetails.flow === 'arrival' ? 'Airport pickup' : 'Airport drop') },
         { label: 'Estimated distance', value: `${distanceKm} km` },
         { label: 'Toll & parking allowance', value: `₹${tollAllowance}` },
-        { label: 'Platform fee', value: `₹${PLATFORM_FEE}` },
+        { label: 'Platform fee', value: `₹${fees.platformFee}` },
       ],
       base,
-      total: base + PLATFORM_FEE + nightFee,
+      total: base + fees.platformFee + nightFee,
       distanceKm,
     }
   }
@@ -549,7 +547,7 @@ export function quoteFor(config, skills = SKILLS) {
     lines.push({ label: 'Stops convenience fee', value: `₹${stopsAllowance}` })
   }
 
-  lines.push({ label: 'Platform fee', value: `₹${PLATFORM_FEE}` })
+  lines.push({ label: 'Platform fee', value: `₹${fees.platformFee}` })
 
   return {
     skill,
@@ -557,7 +555,7 @@ export function quoteFor(config, skills = SKILLS) {
     ready: true,
     lines,
     base,
-    total: base + PLATFORM_FEE + nightFee,
+    total: base + fees.platformFee + nightFee,
     distanceKm: totalKm,
   }
 }

@@ -56,6 +56,8 @@ export async function listRateCards(): Promise<RateCard[]> {
   return rows
 }
 
+export const ALL_CERTIFICATIONS = ['MD-Standard', 'MD-Auto', 'MD-SUV', 'MD-Lux', 'MD-Night']
+
 export async function ensureDriverProfile(userId: string): Promise<void> {
   // New profiles default to PENDING, so a driver cannot be dispatched until
   // ops approves them in the admin portal. That gate is the point of the
@@ -64,10 +66,16 @@ export async function ensureDriverProfile(userId: string): Promise<void> {
   // Test keeps the real default so the gate stays under test.
   const autoApprove = env.NODE_ENV === 'development'
   await pool.query(
-    // Night Shield too, or local dispatch silently finds nobody after 22:00 IST.
-    `INSERT INTO driver_profiles (user_id, onboarding_status, onboarded_at, night_shield_certified)
-     VALUES ($1, COALESCE($2::onboarding_status, 'PENDING'), now(), $2 IS NOT NULL)
-     ON CONFLICT (user_id) DO NOTHING`,
-    [userId, autoApprove ? 'APPROVED' : null],
+    // Development also certifies every tier and Night Shield, so a local driver
+    // can take any booking at any hour. Real environments keep the
+    // certifications ops awards through badges: granting them all there would
+    // let an untrained driver take Lux or night trips.
+    `INSERT INTO driver_profiles (user_id, onboarding_status, onboarded_at, night_shield_certified, certifications)
+     VALUES ($1, COALESCE($2::onboarding_status, 'PENDING'), now(), $2 IS NOT NULL,
+             COALESCE($3::text[], ARRAY['MD-Standard']))
+     ON CONFLICT (user_id) DO UPDATE
+       SET certifications = $3::text[]
+     WHERE $3::text[] IS NOT NULL AND array_length(driver_profiles.certifications, 1) < 5`,
+    [userId, autoApprove ? 'APPROVED' : null, autoApprove ? ALL_CERTIFICATIONS : null],
   )
 }

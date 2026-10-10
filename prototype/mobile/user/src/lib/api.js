@@ -373,6 +373,7 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
     locations: {
       search: (q, near) =>
         request(`/v1/locations/search${qs({ q, lat: near?.lat, lng: near?.lng })}`),
+      get: (id) => request(`/v1/locations/${id}`),
     },
 
     /** Public guardian view. No account, no token — the link is the audience. */

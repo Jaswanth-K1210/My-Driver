@@ -37,7 +37,9 @@
         {
           "motionPermission": "MyDriver measures braking and cornering to keep trips safe."
         }
-      ]
+      ],
+      "expo-status-bar",
+      "expo-web-browser"
     ]
   }
 }
