@@ -36,7 +36,7 @@ export default function NightShield() {
               <li key={driver.driver_id}>
                 <button
                   type="button"
-                  onClick={() => navigate(`/admin/drivers/${driver.driver_id}`)}
+                  onClick={() => navigate(`/drivers/${driver.driver_id}`)}
                   className={cn(
                     'flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition-colors',
                     driver.days_remaining <= 3

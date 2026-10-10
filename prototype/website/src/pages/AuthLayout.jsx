@@ -1,26 +1,15 @@
 import { ShieldCheck } from 'lucide-react'
-import Navbar, { PAGE_X, Wordmark } from '../components/marketing/Navbar.jsx'
-import { cn } from '../lib/utils.js'
 import { TRUST_MARKS } from '../data/mock.js'
 
 /**
- * Customer sign-in pages carry the shared site header. The staff sign-in
- * (`staff`) deliberately does not: it has no links into the customer site and
- * the customer site has none into it.
+ * Shared sign-in layout. Each site passes its own `header`, so the customer
+ * build never contains the console header and the admin build never contains
+ * the customer navigation.
  */
-export default function AuthLayout({ title, subtitle, children, footer, staff = false }) {
+export default function AuthLayout({ title, subtitle, children, footer, header, footnote }) {
   return (
     <div className="flex min-h-screen flex-col bg-white">
-      {staff ? (
-        <header className="border-b border-slate-200 bg-white">
-          <div className={cn(PAGE_X, 'flex h-16 items-center gap-3')}>
-            <Wordmark />
-            <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-brand-600">Operations console</span>
-          </div>
-        </header>
-      ) : (
-        <Navbar />
-      )}
+      {header}
       <div className="grid flex-1 lg:grid-cols-2">
       {/* Left padding matches PAGE_X, so the form lines up with the header logo. */}
       <div className="flex flex-col px-4 py-10 sm:px-6 lg:pl-[max(2rem,calc((100vw-80rem)/2+2rem))] lg:pr-16">
@@ -33,11 +22,7 @@ export default function AuthLayout({ title, subtitle, children, footer, staff = 
           </div>
         </div>
 
-        <p className="text-xs text-slate-400">
-          {staff
-            ? 'Staff access only. Accounts are issued by an administrator.'
-            : 'We sign you in with a one-time code. MyDriver never asks for a password.'}
-        </p>
+        <p className="text-xs text-slate-400">{footnote}</p>
       </div>
 
       {/* Reassurance panel. Hidden on small screens so the form stays the focus. */}

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Mail, User } from 'lucide-react'
 import AuthLayout from './AuthLayout.jsx'
+import Navbar from '../components/marketing/Navbar.jsx'
 import OtpForm from '../components/app/OtpForm.jsx'
 import GoogleButton from '../components/app/GoogleButton.jsx'
 import { Field } from '../components/app/Field.jsx'
@@ -24,6 +25,8 @@ export default function Register() {
 
   return (
     <AuthLayout
+      header={<Navbar />}
+      footnote="We sign you in with a one-time code. MyDriver never asks for a password."
       title="Create your account"
       subtitle="Verify your mobile number and start booking police-verified drivers."
       footer={

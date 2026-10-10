@@ -69,6 +69,14 @@ jobs:
       - run: npm run build
         env:
           VITE_API_URL: https://api.example.invalid
+      - run: npm run build:admin
+        env:
+          VITE_API_URL: https://api.example.invalid
+      # The two sites must not leak into each other's bundles.
+      - name: Bundles are separated
+        run: |
+          ! grep -l "Operations console" dist/assets/*.js
+          ! grep -l "Book a driver" dist-admin/assets/*.js
 
   images:
     runs-on: ubuntu-latest
@@ -77,3 +85,4 @@ jobs:
       - uses: actions/checkout@v4
       - run: docker build -t mydriver-api:ci prototype/backend
       - run: docker build --build-arg VITE_API_URL=https://api.example.invalid -t mydriver-web:ci prototype/website
+      - run: docker build --build-arg VITE_APP_TARGET=admin --build-arg VITE_API_URL=https://api.example.invalid -t mydriver-admin:ci prototype/website

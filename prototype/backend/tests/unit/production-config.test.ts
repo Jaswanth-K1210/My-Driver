@@ -15,7 +15,8 @@ const SAFE: Env = {
   PAYMENTS_PROVIDER: 'razorpay',
   PUBLIC_WEB_URL: 'https://mydriver.in',
   PUBLIC_API_URL: 'https://api.mydriver.in',
-  CORS_ORIGINS: 'https://mydriver.in,https://www.mydriver.in',
+  ADMIN_WEB_URL: 'https://admin.mydriver.in',
+  CORS_ORIGINS: 'https://mydriver.in,https://www.mydriver.in,https://admin.mydriver.in',
   METRICS_TOKEN: 'm'.repeat(32),
   MAPS_PROVIDER: 'google',
   PUSH_PROVIDER: 'fcm',
@@ -37,6 +38,8 @@ describe('production configuration guard', () => {
     ['http public URL', { PUBLIC_API_URL: 'http://api.mydriver.in' }, 'PUBLIC_API_URL'],
     ['localhost CORS', { CORS_ORIGINS: 'https://mydriver.in,http://localhost:5173' }, 'CORS_ORIGINS'],
     ['public metrics', { METRICS_TOKEN: undefined }, 'METRICS_TOKEN'],
+    ['admin origin missing from CORS', { CORS_ORIGINS: 'https://mydriver.in' }, 'admin console origin'],
+    ['admin on the customer domain', { ADMIN_WEB_URL: 'https://mydriver.in' }, 'own subdomain'],
   ] as const)('refuses to start with %s', (_label, patch, mentions) => {
     const { errors } = productionProblems({ ...SAFE, ...patch } as Env)
     expect(errors.join('\n')).toContain(mentions)

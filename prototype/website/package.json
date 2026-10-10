@@ -8,7 +8,9 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "check": "node scripts/check-booking.mjs"
+    "check": "node scripts/check-booking.mjs",
+    "dev:admin": "VITE_APP_TARGET=admin vite",
+    "build:admin": "VITE_APP_TARGET=admin vite build"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

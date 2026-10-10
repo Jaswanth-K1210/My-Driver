@@ -65,7 +65,7 @@ export default function LiveMap() {
           (d.night_shield_certified ? ' · Night Shield' : '') +
           (d.escalation_level ? `<br>Escalation ${d.escalation_level}` : ''),
       )
-      marker.on('click', () => navigate(`/admin/drivers/${d.driver_id}`))
+      marker.on('click', () => navigate(`/drivers/${d.driver_id}`))
       marker.addTo(layer.current)
     }
     if (!fitted.current && drivers.length > 0) {
@@ -111,7 +111,7 @@ export default function LiveMap() {
             <li key={d.driver_id}>
               <button
                 type="button"
-                onClick={() => navigate(`/admin/drivers/${d.driver_id}`)}
+                onClick={() => navigate(`/drivers/${d.driver_id}`)}
                 className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-left text-sm hover:bg-slate-50"
               >
                 <LevelBadge level={d.escalation_level} />

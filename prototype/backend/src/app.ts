@@ -8,7 +8,7 @@ import {
 } from 'fastify-type-provider-zod'
 import { corsOrigins, env } from './config/env.js'
 import { pool } from './db/client.js'
-import { registerErrorHandler } from './lib/errors.js'
+import { forbidden, registerErrorHandler } from './lib/errors.js'
 import { gauge, renderMetrics } from './lib/metrics.js'
 import { registerAdminOpsRoutes } from './modules/admin-ops/routes.js'
 import { registerAuthRoutes } from './modules/auth/routes.js'
@@ -67,6 +67,24 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.setValidatorCompiler(validatorCompiler)
   app.setSerializerCompiler(serializerCompiler)
   registerErrorHandler(app)
+
+  // The customer website and the operations console are separate sites.
+  // Browsers send an Origin header, so a staff sign-in or admin call made from
+  // the customer site is refused outright, on top of the role checks. Calls
+  // with no Origin (servers, scripts, mobile apps) are judged by role alone.
+  const customerOrigin = new URL(env.PUBLIC_WEB_URL).origin
+  const adminOrigin = new URL(env.ADMIN_WEB_URL).origin
+  app.addHook('onRequest', async (request) => {
+    const origin = request.headers.origin
+    if (!origin) return
+    const path = request.url
+    if (path.startsWith('/v1/auth/staff/') && origin !== adminOrigin) {
+      throw forbidden('STAFF_SIGNIN_ORIGIN', 'Staff sign-in is only available on the operations console')
+    }
+    if (path.startsWith('/v1/admin/') && origin === customerOrigin) {
+      throw forbidden('WRONG_SITE', 'Admin APIs are not available from the customer website')
+    }
+  })
 
   // Baseline security headers on every response. The API serves JSON (and one
   // checkout page that sets its own policy), so these are cheap and safe.

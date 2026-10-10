@@ -1,7 +1,8 @@
 # Deploying MyDriver (API + website)
 
-One Docker host runs everything: Caddy (automatic HTTPS), the API, the website,
-Postgres/TimescaleDB, PgBouncer and Redis. Photos and documents go to external
+One Docker host runs everything: Caddy (automatic HTTPS), the API, the
+customer website, the operations console, Postgres/TimescaleDB, PgBouncer and
+Redis. Photos and documents go to external
 S3. Only ports 80 and 443 are published.
 
 ## Before the first deploy
@@ -19,8 +20,30 @@ and prints exactly what is wrong.
 | Photos, documents, certificates | S3 bucket (private) | `STORAGE_*` |
 | Push notifications (optional) | Firebase Cloud Messaging | `FCM_SERVICE_ACCOUNT_JSON` |
 
-DNS: point both `WEB_DOMAIN` and `API_DOMAIN` (A/AAAA records) at the host
-before starting, so Caddy can obtain certificates.
+DNS: point `WEB_DOMAIN`, `ADMIN_DOMAIN` and `API_DOMAIN` (A/AAAA records) at
+the host before starting, so Caddy can obtain certificates.
+
+## Two sites, kept apart
+
+| Site | Domain | Build |
+|---|---|---|
+| Customer website | `WEB_DOMAIN` (mydriver.in) | `VITE_APP_TARGET=customer` |
+| Operations console | `ADMIN_DOMAIN` (admin.mydriver.in) | `VITE_APP_TARGET=admin` |
+
+- **Separate bundles.** The customer site contains none of the console's code
+  and has no route to it; `/admin` there is just an unknown page. CI fails if
+  either bundle picks up the other's pages.
+- **Separate sessions.** Browsers keep sign-ins per domain, so a customer
+  session and a staff session never mix.
+- **API origin checks.** Browser staff sign-in is accepted only from
+  `ADMIN_WEB_URL`; `/v1/admin/*` refuses calls from the customer site. Role
+  checks apply on top. The API will not start if the console shares the
+  customer domain or is missing from `CORS_ORIGINS`.
+- **Not indexed.** The console sends `X-Robots-Tag: noindex, nofollow`.
+- **Optional network lock.** Set `ADMIN_ALLOWED_IPS` (space-separated CIDRs,
+  e.g. your office and VPN) and everyone else gets a 404 from Caddy.
+- **Keep it unlisted.** Share the console address only with staff (bookmark,
+  password manager, internal wiki); nothing public links to it.
 
 ## First deploy
 
@@ -46,7 +69,8 @@ Then:
    Roles: `SUPER_ADMIN`, `OPS_MANAGER`, `SAFETY_DESK_AGENT`, `FINANCE`.
    Running it again for the same email resets that password.
 3. **Smoke check.** `https://<API_DOMAIN>/ready` returns `{"status":"ready"}`
-   and the website loads at `https://<WEB_DOMAIN>`.
+   the website loads at `https://<WEB_DOMAIN>`, and the console sign-in loads
+   at `https://<ADMIN_DOMAIN>/login`.
 
 ## Updating
 

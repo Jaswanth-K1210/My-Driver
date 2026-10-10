@@ -1,5 +1,6 @@
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import AuthLayout from './AuthLayout.jsx'
+import Navbar from '../components/marketing/Navbar.jsx'
 import OtpForm from '../components/app/OtpForm.jsx'
 import GoogleButton from '../components/app/GoogleButton.jsx'
 import { useAuth } from '../context/authStore.js'
@@ -23,6 +24,8 @@ export default function Login() {
 
   return (
     <AuthLayout
+      header={<Navbar />}
+      footnote="We sign you in with a one-time code. MyDriver never asks for a password."
       title="Welcome back"
       subtitle="Log in to book a driver, track a live trip and open your Trip Vault."
       footer={

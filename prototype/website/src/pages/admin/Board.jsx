@@ -60,7 +60,7 @@ export default function Board() {
               <li key={item.id}>
                 <button
                   type="button"
-                  onClick={() => navigate(`/admin/incident/${item.id}`)}
+                  onClick={() => navigate(`/incident/${item.id}`)}
                   className={cn(
                     'flex w-full flex-wrap items-center gap-3 rounded-2xl border p-4 text-left transition-colors',
                     item.sla_breached

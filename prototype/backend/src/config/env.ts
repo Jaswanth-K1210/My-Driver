@@ -64,6 +64,9 @@ const EnvSchema = z.object({
 
   // Base URL the guardian tracking link points at (the public website).
   PUBLIC_WEB_URL: z.string().url().default('http://localhost:5173'),
+  // The operations console's own origin (its separate subdomain). Staff
+  // sign-in from a browser is accepted only from here.
+  ADMIN_WEB_URL: z.string().url().default('http://localhost:5174'),
 
   LIVENESS_PROVIDER: z.enum(['mock']).default('mock'),
   LIVENESS_MOCK_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.97),
@@ -120,12 +123,18 @@ export function productionProblems(e: Env): { errors: string[]; warnings: string
   if (e.SMS_PROVIDER === 'console') errors.push('SMS_PROVIDER=console prints OTPs to the log instead of sending them')
   if (e.KYC_PROVIDER === 'mock') errors.push('KYC_PROVIDER=mock accepts any PAN and a fixed Aadhaar OTP')
   if (e.PAYMENTS_PROVIDER !== 'razorpay') errors.push(`PAYMENTS_PROVIDER=${e.PAYMENTS_PROVIDER}: production must take real payments (razorpay)`)
-  for (const [name, url] of [['PUBLIC_WEB_URL', e.PUBLIC_WEB_URL], ['PUBLIC_API_URL', e.PUBLIC_API_URL]] as const) {
+  for (const [name, url] of [['PUBLIC_WEB_URL', e.PUBLIC_WEB_URL], ['PUBLIC_API_URL', e.PUBLIC_API_URL], ['ADMIN_WEB_URL', e.ADMIN_WEB_URL]] as const) {
     if (!url.startsWith('https://')) errors.push(`${name} must be an https:// URL`)
   }
   const origins = e.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean)
   if (origins.length === 0 || origins.some((o) => /localhost|127\.0\.0\.1/.test(o) || !o.startsWith('https://'))) {
     errors.push('CORS_ORIGINS must list only your https website origins')
+  }
+  if (!origins.includes(new URL(e.ADMIN_WEB_URL).origin)) {
+    errors.push('CORS_ORIGINS must include the admin console origin (ADMIN_WEB_URL)')
+  }
+  if (new URL(e.ADMIN_WEB_URL).origin === new URL(e.PUBLIC_WEB_URL).origin) {
+    errors.push('ADMIN_WEB_URL must be its own subdomain, not the customer website')
   }
   if (!e.METRICS_TOKEN) errors.push('METRICS_TOKEN is required so /metrics is not public')
 

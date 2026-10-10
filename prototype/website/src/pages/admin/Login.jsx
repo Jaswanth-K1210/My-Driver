@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ShieldCheck } from 'lucide-react'
 import AuthLayout from '../AuthLayout.jsx'
+import { PAGE_X, Wordmark } from '../../components/marketing/Navbar.jsx'
+import { cn } from '../../lib/utils.js'
 import { Field } from '../../components/app/Field.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { useToast } from '../../context/toastStore.js'
@@ -9,7 +11,7 @@ import { ApiError } from '../../lib/apiClient.js'
 
 /**
  * Operators sign in separately from customers, with credentials issued by
- * `npm run seed:staff`. There is no signup and no role picker: the server
+ * `create-staff` (or `npm run seed:staff` locally). There is no signup and no role picker: the server
  * starts the session in the broadest role the account holds.
  */
 export default function AdminLogin() {
@@ -28,7 +30,7 @@ export default function AdminLogin() {
     try {
       const me = await staffLogin(email, password)
       // Finance has no live board, so it lands on its own screen.
-      const home = me?.role === 'FINANCE' ? '/admin/payouts' : '/admin'
+      const home = me?.role === 'FINANCE' ? '/payouts' : '/'
       navigate(location.state?.from ?? home, { replace: true })
     } catch (err) {
       toast(err instanceof ApiError ? err.message : 'Sign-in failed', 'error')
@@ -39,7 +41,15 @@ export default function AdminLogin() {
 
   return (
     <AuthLayout
-      staff
+      header={
+        <header className="border-b border-slate-200 bg-white">
+          <div className={cn(PAGE_X, 'flex h-16 items-center gap-3')}>
+            <Wordmark />
+            <span className="text-[11px] font-bold uppercase tracking-[0.18em] text-brand-600">Operations console</span>
+          </div>
+        </header>
+      }
+      footnote="Staff access only. Accounts are issued by an administrator."
       title="Admin portal sign-in"
       subtitle="For MyDriver staff. Use the credentials issued to you."
       footer={

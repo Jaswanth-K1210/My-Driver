@@ -45,7 +45,7 @@ export default function Drivers() {
               <li key={driver.user_id}>
                 <button
                   type="button"
-                  onClick={() => navigate(`/admin/drivers/${driver.user_id}`)}
+                  onClick={() => navigate(`/drivers/${driver.user_id}`)}
                   className="flex w-full flex-wrap items-center gap-3 rounded-2xl border border-slate-200 p-4 text-left transition-colors hover:bg-slate-50"
                 >
                   <div className="min-w-0 flex-1">
