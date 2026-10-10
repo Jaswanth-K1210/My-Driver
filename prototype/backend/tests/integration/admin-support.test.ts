@@ -44,6 +44,29 @@ describe('console support tools', () => {
 
   const get = (url: string, token = desk.accessToken) => app.inject({ method: 'GET', url, headers: bearer(token) })
 
+  it('driver detail carries earnings, trip counts, escalations, SOS and warnings', async () => {
+    const { rows: d } = await pool.query<{ id: string }>(`INSERT INTO users (phone_number, full_name) VALUES ('+919812300090', 'Dev Driver') RETURNING id`)
+    const driverId = d[0]!.id
+    await pool.query(`INSERT INTO user_roles (user_id, role) VALUES ($1, 'DRIVER')`, [driverId])
+    await pool.query(`INSERT INTO driver_profiles (user_id) VALUES ($1)`, [driverId])
+    const done = await makeTrip('+919812300091')
+    const old = await makeTrip('+919812300092')
+    const live = await makeTrip('+919812300093', { status: 'IN_TRIP' })
+    await pool.query(`UPDATE trips SET driver_id = $1, driver_earnings = 131, completed_at = now() WHERE id = $2`, [driverId, done.tripId])
+    await pool.query(`UPDATE trips SET driver_id = $1, driver_earnings = 100, completed_at = now() - interval '20 days' WHERE id = $2`, [driverId, old.tripId])
+    await pool.query(`UPDATE trips SET driver_id = $1 WHERE id = $2`, [driverId, live.tripId])
+    await pool.query(`INSERT INTO escalations (trip_id, level, status, reason) VALUES ($1, 'L4', 'OPEN', 'SILENT_SOS'), ($2, 'L2', 'RESOLVED', 'SPEED_CEILING_BREACH')`, [live.tripId, done.tripId])
+    await pool.query(`INSERT INTO anomalies (trip_id, reason, level, window_start) VALUES ($1, 'SPEED_CEILING_BREACH', 'L1', now())`, [done.tripId])
+
+    const res = await get(`/v1/admin/drivers/${driverId}`)
+    expect(res.statusCode).toBe(200)
+    expect(res.json().activity).toMatchObject({
+      completed: 2, earned_total: 231, earned_week: 131, unpaid: 231,
+      escalations: 2, open_escalations: 1, sos: 1, warnings: 1, current_trip_id: live.tripId,
+    })
+    expect(res.json().activity.recent_escalations).toHaveLength(2)
+  })
+
   it('finds a trip by its customer-facing reference, name, phone and address', async () => {
     const { tripId } = await makeTrip('+919812300010', { pickup: 'Charminar' })
     const ref = `TRP-${tripId.replace(/-/g, '').slice(0, 6).toUpperCase()}`

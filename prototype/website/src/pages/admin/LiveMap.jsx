@@ -1,10 +1,15 @@
-import { useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { Car, MapPin, X } from 'lucide-react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { api } from '../../lib/apiClient.js'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
-import { LevelBadge } from '../../components/admin/Indicators.jsx'
+import { LevelBadge, StatusPill } from '../../components/admin/Indicators.jsx'
+import { SectionCard } from '../../components/app/Primitives.jsx'
+import DriverActivity from '../../components/admin/DriverActivity.jsx'
+import { dateTime, formatPhone, humanize, rupees, tripRef } from '../../components/admin/format.js'
+import { ApiError } from '../../lib/apiClient.js'
 
 // Hyderabad, where the pilot runs. The map re-fits to drivers on first data.
 const START = [17.44, 78.39]
@@ -31,12 +36,12 @@ const LEGEND = [
  * WebSocket gateway only serves the two parties on a trip.
  */
 export default function LiveMap() {
-  const navigate = useNavigate()
   const { data, error } = useAdminPoll(() => api.admin.liveDrivers(), 4000)
   const el = useRef(null)
   const map = useRef(null)
   const layer = useRef(null)
   const fitted = useRef(false)
+  const [selected, setSelected] = useState(null)
 
   useEffect(() => {
     map.current = L.map(el.current).setView(START, 12)
@@ -55,9 +60,9 @@ export default function LiveMap() {
     for (const d of drivers) {
       if (typeof d.lat !== 'number' || typeof d.lng !== 'number' || isNaN(d.lat) || isNaN(d.lng)) continue
       const marker = L.circleMarker([d.lat, d.lng], {
-        radius: 8,
-        color: '#fff',
-        weight: 2,
+        radius: d.driver_id === selected ? 12 : 8,
+        color: d.driver_id === selected ? '#0f172a' : '#fff',
+        weight: d.driver_id === selected ? 3 : 2,
         fillColor: colourFor(d),
         fillOpacity: 1,
       })
@@ -66,18 +71,19 @@ export default function LiveMap() {
           (d.night_shield_certified ? ' · Night Shield' : '') +
           (d.escalation_level ? `<br>Escalation ${d.escalation_level}` : ''),
       )
-      marker.on('click', () => navigate(`/drivers/${d.driver_id}`))
+      marker.on('click', () => setSelected(d.driver_id))
       marker.addTo(layer.current)
     }
     if (!fitted.current && drivers.length > 0) {
       map.current.fitBounds(drivers.map((d) => [d.lat, d.lng]), { padding: [40, 40], maxZoom: 14 })
       fitted.current = true
     }
-  }, [data, navigate])
+  }, [data, selected])
 
   const drivers = data ?? []
   const onTrip = drivers.filter((d) => d.availability === 'ON_TRIP').length
   const flagged = drivers.filter((d) => d.escalation_level)
+  const picked = drivers.find((d) => d.driver_id === selected)
 
   return (
     <div className="space-y-4">
@@ -106,13 +112,19 @@ export default function LiveMap() {
         aria-label="Map of online drivers"
       />
 
+      {selected ? (
+        <Selection key={selected} driverId={selected} tripId={picked?.trip_id ?? null} onClose={() => setSelected(null)} />
+      ) : (
+        <p className="text-sm text-slate-500">Click a driver on the map to see their trip and record.</p>
+      )}
+
       {flagged.length > 0 && (
         <ul className="space-y-2">
           {flagged.map((d) => (
             <li key={d.driver_id}>
               <button
                 type="button"
-                onClick={() => navigate(`/drivers/${d.driver_id}`)}
+                onClick={() => setSelected(d.driver_id)}
                 className="flex w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 text-left text-sm hover:bg-slate-50"
               >
                 <LevelBadge level={d.escalation_level} />
@@ -123,6 +135,106 @@ export default function LiveMap() {
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+function Row({ label, children }) {
+  return (
+    <div className="flex items-start justify-between gap-4 py-2 text-sm">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="text-right font-semibold text-slate-900">{children}</dd>
+    </div>
+  )
+}
+
+/**
+ * What the desk needs after clicking a marker: the live trip (if any) and the
+ * driver's earnings and safety record. Refetches when the driver's trip changes.
+ */
+function Selection({ driverId, tripId, onClose }) {
+  const [driver, setDriver] = useState(null)
+  const [trip, setTrip] = useState(null)
+  const [error, setError] = useState(null)
+  const top = useRef(null)
+
+  useEffect(() => {
+    if (driver) top.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [driver])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([api.admin.driver(driverId), tripId ? api.admin.trip(tripId) : null])
+      .then(([d, t]) => {
+        if (cancelled) return
+        setDriver(d)
+        setTrip(t)
+      })
+      .catch((err) => !cancelled && setError(err instanceof ApiError ? err.message : 'Could not load this driver'))
+    return () => {
+      cancelled = true
+    }
+  }, [driverId, tripId])
+
+  if (error) return <p className="text-sm font-semibold text-red-600">{error}</p>
+  if (!driver) return <p className="py-6 text-center text-sm text-slate-500">Loading driver…</p>
+
+  const p = driver.profile
+  const t = trip?.trip
+  return (
+    <div ref={top} className="scroll-mt-4 space-y-4">
+      {t && (
+        <SectionCard
+          title={`Live trip · ${tripRef(t.id)}`}
+          icon={MapPin}
+          action={
+            <div className="flex items-center gap-2">
+              {trip.escalations.filter((e) => e.status !== 'RESOLVED').map((e) => <LevelBadge key={e.id} level={e.level} />)}
+              <StatusPill status={t.status} />
+            </div>
+          }
+        >
+          <div className="grid gap-x-8 md:grid-cols-2">
+            <dl className="divide-y divide-slate-100">
+              <Row label="Customer">
+                <Link to={`/customers/${t.customer_id}`} className="hover:text-brand-700">{t.customer_name ?? 'Unnamed'}</Link>
+                <span className="block font-mono text-xs font-normal text-slate-500">{formatPhone(t.customer_phone) || '—'}</span>
+              </Row>
+              <Row label="Pickup">{t.pickup_address ?? '—'}</Row>
+              <Row label="Drop">{t.drop_address ?? 'Hourly hire'}</Row>
+              <Row label="Type">{humanize(t.requirement ?? t.booking_type)} · {t.required_certification}</Row>
+            </dl>
+            <dl className="divide-y divide-slate-100">
+              <Row label="Started">{dateTime(t.started_at ?? t.matched_at)}</Row>
+              <Row label="Speed limit">{t.speed_ceiling_kmh} km/h</Row>
+              <Row label="Quoted fare">{rupees(t.estimated_fare)}</Row>
+              <Row label="Payment">{trip.payment ? <StatusPill status={trip.payment.status} /> : 'None'}</Row>
+            </dl>
+          </div>
+          <Link to={`/trips/${t.id}`} className="mt-3 inline-block text-xs font-bold text-brand-600 hover:text-brand-700">Open full trip →</Link>
+        </SectionCard>
+      )}
+
+      <SectionCard
+        title={p.full_name ?? 'Unnamed driver'}
+        icon={Car}
+        action={
+          <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-500 hover:bg-slate-100" aria-label="Close driver details">
+            <X className="h-4 w-4" />
+          </button>
+        }
+      >
+        <div className="mb-5 flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-mono text-sm text-slate-600">{formatPhone(p.phone_number) || '—'}</span>
+          <StatusPill status={p.availability} />
+          <span className="rounded-lg bg-slate-100 px-2 py-1 font-bold tabular-nums text-slate-600">score {Math.round(p.mydriver_score)}</span>
+          {p.rating != null && <span className="rounded-lg bg-slate-100 px-2 py-1 font-bold tabular-nums text-slate-600">★ {p.rating.toFixed(2)} ({p.rating_count})</span>}
+          {p.night_shield_certified && <span className="rounded-lg bg-slate-900 px-2 py-1 font-bold text-white">Night Shield</span>}
+          <span className="text-slate-500">{(p.certifications ?? []).join(' · ')}</span>
+        </div>
+        <DriverActivity activity={driver.activity} />
+        <Link to={`/drivers/${driverId}`} className="mt-4 inline-block text-xs font-bold text-brand-600 hover:text-brand-700">Open driver profile →</Link>
+      </SectionCard>
     </div>
   )
 }

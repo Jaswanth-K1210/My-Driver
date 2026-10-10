@@ -267,15 +267,26 @@ async function main() {
             [id, customer, order, fare, at],
           )
         }
+        // Automated warnings the integrity evaluator would have logged.
+        if (status === 'COMPLETED' && chance(0.08)) {
+          const speeding = chance(0.7)
+          await c.query(
+            `INSERT INTO anomalies (trip_id, reason, level, window_start, details, created_at)
+             VALUES ($1, $2, 'L1', $3, $4::jsonb, $3)`,
+            [id, speeding ? 'SPEED_CEILING_BREACH' : 'ROUTE_DEVIATION_EXCEEDED', new Date(at.getTime() + 15 * 60_000),
+             JSON.stringify(speeding ? { speed_kmh: Math.round(between(64, 88)), ceiling_kmh: 60 } : { off_route_m: Math.round(between(400, 1500)) })],
+          )
+        }
         // Past incidents, all resolved.
         if (status === 'COMPLETED' && chance(0.025)) {
-          const level = pick(['L1', 'L1', 'L2', 'L3', 'L4'])
+          const reason = pick(['SPEED_CEILING_BREACH', 'ROUTE_DEVIATION_EXCEEDED', 'UNUSUAL_STOP', 'SILENT_SOS'])
+          const level = reason === 'SILENT_SOS' ? 'L4' : pick(['L1', 'L1', 'L2', 'L3'])
           const opened = new Date(at.getTime() + 20 * 60_000)
           await c.query(
             `INSERT INTO escalations (trip_id, level, status, reason, opened_at, sla_deadline, acknowledged_at, resolved_at, resolution)
              VALUES ($1, $2, 'RESOLVED', $3, $4::timestamptz, $4::timestamptz + interval '3 minutes',
                      $4::timestamptz + ($5 || ' seconds')::interval, $4::timestamptz + interval '25 minutes', $6)`,
-            [id, level, pick(['SPEED_CEILING_BREACH', 'ROUTE_DEVIATION', 'UNUSUAL_STOP', 'SOS']), opened, String(Math.round(between(40, 260))),
+            [id, level, reason, opened, String(Math.round(between(40, 260))),
              pick(['Called customer, all safe', 'Driver confirmed traffic diversion', 'False alarm, customer pressed SOS by mistake'])],
           )
         }
@@ -310,6 +321,12 @@ async function main() {
          VALUES ($1, $2, 'mock', $3, $4, $5, 'AUTHORIZED')`,
         [id, customer, `order_demo_${id.slice(0, 12)}`, `pay_demo_${id.slice(0, 12)}`, Number((dist * 16 + 19).toFixed(2))],
       )
+      if (incident === 'L2') {
+        await c.query(
+          `INSERT INTO anomalies (trip_id, reason, level, window_start, details) VALUES ($1, 'SPEED_CEILING_BREACH', 'L2', now() - interval '2 minutes', $2::jsonb)`,
+          [id, JSON.stringify({ speed_kmh: 84, ceiling_kmh: 60 })],
+        )
+      }
       if (incident) {
         await c.query(
           `INSERT INTO escalations (trip_id, level, status, reason, opened_at, sla_deadline, acknowledged_at, details)

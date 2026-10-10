@@ -15,9 +15,12 @@ export const shortDate = (iso) =>
 const REASONS = {
   SPEED_CEILING_BREACH: 'Speed limit exceeded',
   ROUTE_DEVIATION: 'Route deviation',
+  ROUTE_DEVIATION_EXCEEDED: 'Route deviation',
+  TELEMETRY_LOST: 'Lost contact with phone',
   UNUSUAL_STOP: 'Unusual stop',
   GPS_MISMATCH: 'Driver and customer GPS disagree',
   SOS: 'SOS raised',
+  SILENT_SOS: 'Silent SOS raised',
 }
 /** Incident reasons in plain words. */
 export const reasonLabel = (r) => REASONS[r] ?? humanize(r)

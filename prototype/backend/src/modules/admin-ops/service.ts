@@ -143,7 +143,7 @@ export async function getDriver(driverId: string) {
   const profile = rows[0]
   if (!profile) throw notFound('DRIVER_NOT_FOUND', 'No driver profile for that user')
 
-  const [documents, attempts, badges, nightShield] = await Promise.all([
+  const [documents, attempts, badges, nightShield, activity] = await Promise.all([
     pool.query(
       `SELECT id, kind, status, number_last4, expires_on, reject_reason,
               reviewed_by, reviewed_at, created_at
@@ -174,6 +174,7 @@ export async function getDriver(driverId: string) {
         WHERE driver_id = $1 ORDER BY qualified_at DESC`,
       [driverId],
     ),
+    driverActivity(driverId),
   ])
 
   return {
@@ -184,6 +185,59 @@ export async function getDriver(driverId: string) {
     attempts: attempts.rows,
     badges: badges.rows,
     night_shield: nightShield.rows,
+    activity,
+  }
+}
+
+/**
+ * Earnings, trip counts and the safety record (escalations, SOS, automated
+ * warnings) the console shows next to a driver.
+ */
+export async function driverActivity(driverId: string) {
+  const [stats, escalations, warnings, current] = await Promise.all([
+    pool.query(
+      `SELECT count(*) FILTER (WHERE status = 'COMPLETED')::int AS completed,
+              count(*) FILTER (WHERE status = 'CANCELLED')::int AS cancelled,
+              COALESCE(sum(driver_earnings) FILTER (WHERE status = 'COMPLETED'), 0)::float8 AS earned_total,
+              COALESCE(sum(driver_earnings) FILTER (WHERE status = 'COMPLETED' AND completed_at > now() - interval '7 days'), 0)::float8 AS earned_week,
+              COALESCE(sum(driver_earnings) FILTER (WHERE status = 'COMPLETED' AND payout_id IS NULL), 0)::float8 AS unpaid,
+              max(completed_at) AS last_trip_at
+         FROM trips WHERE driver_id = $1`,
+      [driverId],
+    ),
+    pool.query(
+      `SELECT e.id, e.trip_id, e.level, e.status, e.reason, e.opened_at
+         FROM escalations e JOIN trips t ON t.id = e.trip_id
+        WHERE t.driver_id = $1 ORDER BY e.opened_at DESC LIMIT 20`,
+      [driverId],
+    ),
+    pool.query(
+      `SELECT a.id, a.trip_id, a.reason, a.level, a.created_at
+         FROM anomalies a JOIN trips t ON t.id = a.trip_id
+        WHERE t.driver_id = $1 ORDER BY a.created_at DESC LIMIT 20`,
+      [driverId],
+    ),
+    pool.query(
+      `SELECT id FROM trips WHERE driver_id = $1
+          AND status IN ('MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP', 'ESCALATED')
+        ORDER BY requested_at DESC LIMIT 1`,
+      [driverId],
+    ),
+  ])
+  const counts = await pool.query(
+    `SELECT count(*)::int AS escalations,
+            count(*) FILTER (WHERE e.status <> 'RESOLVED')::int AS open_escalations,
+            count(*) FILTER (WHERE e.reason LIKE '%SOS%')::int AS sos,
+            (SELECT count(*)::int FROM anomalies a JOIN trips t2 ON t2.id = a.trip_id WHERE t2.driver_id = $1) AS warnings
+       FROM escalations e JOIN trips t ON t.id = e.trip_id WHERE t.driver_id = $1`,
+    [driverId],
+  )
+  return {
+    ...stats.rows[0],
+    ...counts.rows[0],
+    current_trip_id: current.rows[0]?.id ?? null,
+    recent_escalations: escalations.rows,
+    recent_warnings: warnings.rows,
   }
 }
 

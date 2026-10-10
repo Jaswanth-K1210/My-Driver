@@ -9,6 +9,7 @@ import { Empty, relative, StatusPill } from '../../components/admin/Indicators.j
 import { hasRole, OPS_ROLES } from '../../components/admin/RequireRole.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { cn } from '../../lib/utils.js'
+import DriverActivity from '../../components/admin/DriverActivity.jsx'
 
 const BLOCKER_TEXT = {
   PAN_NOT_VERIFIED: 'PAN verification',
@@ -100,6 +101,10 @@ export default function DriverDetail() {
           </span>
         </div>
       </header>
+
+      <SectionCard title="Trips, earnings and safety record" icon={Eye}>
+        <DriverActivity activity={data.activity} />
+      </SectionCard>
 
       {canAct && (
         <SectionCard title="Onboarding decision" icon={ShieldCheck}>
