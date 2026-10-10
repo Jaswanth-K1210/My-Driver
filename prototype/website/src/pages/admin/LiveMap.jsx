@@ -62,7 +62,7 @@ export default function LiveMap() {
         fillOpacity: 1,
       })
       marker.bindTooltip(
-        `<b>${escape(d.name ?? 'Driver')}</b><br>${escape(d.vehicle_plate ?? 'no plate')} · ${d.availability}` +
+        `<b>${escape(d.name ?? 'Driver')}</b><br>${d.vehicle_plate ? `${escape(d.vehicle_plate)} · ` : ''}${d.availability}` +
           (d.night_shield_certified ? ' · Night Shield' : '') +
           (d.escalation_level ? `<br>Escalation ${d.escalation_level}` : ''),
       )

@@ -99,7 +99,8 @@ export async function liveDrivers(): Promise<LiveDriver[]> {
   const { rows } = await pool.query<Omit<LiveDriver, 'lat' | 'lng'>>(
     `SELECT dp.user_id AS driver_id,
             u.full_name AS name,
-            dp.vehicle_plate,
+            -- A plate only matters while a trip is live; free drivers don't expose one.
+            CASE WHEN t.id IS NOT NULL THEN dp.vehicle_plate END AS vehicle_plate,
             dp.availability,
             dp.night_shield_certified,
             dp.mydriver_score::float8 AS mydriver_score,
