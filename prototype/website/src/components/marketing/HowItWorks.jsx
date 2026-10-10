@@ -1,16 +1,13 @@
 import Reveal from './Reveal.jsx'
+import { PAGE_X } from './Navbar.jsx'
+import SectionHeading from './SectionHeading.jsx'
 import { STEPS } from '../../data/mock.js'
 
 export default function HowItWorks() {
   return (
-    <section id="how" className="bg-white py-20 sm:py-28">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <Reveal className="mx-auto max-w-2xl text-center">
-          <p className="text-sm font-bold uppercase tracking-widest text-brand-600">How it works</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
-            Three steps to a provable ride
-          </h2>
-        </Reveal>
+    <section id="how" className="bg-slate-50 py-20 sm:py-28">
+      <div className={PAGE_X}>
+        <SectionHeading eyebrow="How it works" title="Three steps to a safe trip" />
 
         <div className="relative mt-16">
           <div

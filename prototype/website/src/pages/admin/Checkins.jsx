@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { PhoneCall, PhoneOff } from 'lucide-react'
 import { api, ApiError } from '../../lib/apiClient.js'
+import PageHeader from '../../components/admin/PageHeader.jsx'
+import { ask } from '../../components/admin/PromptDialog.jsx'
 import { SectionCard } from '../../components/app/Primitives.jsx'
 import { useToast } from '../../context/toastStore.js'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
@@ -24,12 +26,11 @@ export default function Checkins() {
   const overdue = items.filter((item) => item.overdue)
 
   const record = async (tripId, outcome) => {
-    const rawNotes = window.prompt(`Check-in outcome: ${outcome}. Notes (optional)`)
-    if (rawNotes === null) return
-    const notes = rawNotes.trim() ? rawNotes.trim() : undefined
+    const notes = await ask({ title: `Record check-in: ${outcome.replace(/_/g, ' ').toLowerCase()}`, required: false, confirmLabel: 'Record' })
+    if (notes === null) return
     setBusy(true)
     try {
-      await api.admin.recordCheckin(tripId, outcome, notes)
+      await api.admin.recordCheckin(tripId, outcome, notes || undefined)
       toast('Check-in recorded', 'success')
       await refresh()
     } catch (err) {
@@ -41,12 +42,7 @@ export default function Checkins() {
 
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Post-drop check-ins</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Night trips only · a call is due 10 minutes after drop-off
-        </p>
-      </header>
+      <PageHeader title="Post-drop check-ins" subtitle="Night trips only · a call is due 10 minutes after drop-off" />
 
       <SectionCard
         title={`${items.length} pending`}

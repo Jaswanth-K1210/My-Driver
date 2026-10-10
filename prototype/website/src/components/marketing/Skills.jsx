@@ -1,23 +1,19 @@
 import Reveal from './Reveal.jsx'
-import { SKILLS } from '../../data/mock.js'
+import { PAGE_X } from './Navbar.jsx'
+import SectionHeading from './SectionHeading.jsx'
+import { useTrip } from '../../context/tripStore.js'
 
 export default function Skills() {
+  // Live rates from the API (rate cards), so a price change in the console
+  // shows here too; falls back to the bundled copy offline.
+  const { skills } = useTrip()
   return (
-    <section id="skills" className="bg-white py-20 sm:py-28">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <Reveal className="max-w-2xl">
-          <p className="text-sm font-bold uppercase tracking-widest text-brand-600">Skill certifications</p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
-            Five certifications. One standard of integrity.
-          </h2>
-          <p className="mt-4 text-lg text-slate-600">
-            Every driver earns their MD badge through police checks, licence validation and a supervised driving
-            assessment — renewed every six months.
-          </p>
-        </Reveal>
+    <section id="skills" className="bg-slate-50 py-20 sm:py-28">
+      <div className={PAGE_X}>
+        <SectionHeading eyebrow="Driver tiers" title="Five certifications. One standard of integrity.">Every driver verifies their PAN and Aadhaar and has their licence reviewed before their first trip. Each tier adds training for a kind of car or trip.</SectionHeading>
 
         <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          {SKILLS.map((skill, i) => (
+          {skills.map((skill, i) => (
             <Reveal
               as="article"
               key={skill.id}

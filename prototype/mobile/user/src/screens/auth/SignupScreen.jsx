@@ -104,7 +104,7 @@ export default function SignupScreen({ navigation }) {
             <Text style={styles.inputLabel}>Full Name</Text>
             <TextInput
               style={styles.input}
-              placeholder="John Doe"
+              placeholder="Full name"
               placeholderTextColor={colors.textFaint}
               value={name}
               onChangeText={setName}

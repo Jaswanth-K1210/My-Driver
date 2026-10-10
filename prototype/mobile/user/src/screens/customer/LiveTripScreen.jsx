@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { Pressable, ScrollView, Share, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import {
   AlertTriangle,
   Car,
   Gauge,
-  MessageSquare,
-  Phone,
   Siren,
   Star,
   Users,
@@ -22,9 +20,18 @@ import { useTrip } from '../../context/TripContext'
 import { formatINR, maskPhone } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 
-const TOTAL_MINUTES = 18
+// City average used for the ETA; the driver's live position supplies the distance.
+const CITY_KMH = 25
 const SOS_HOLD_MS = 1200
 const SOS_COUNTDOWN_S = 5
+
+const km = (a, b) => {
+  const r = Math.PI / 180
+  const dLat = (b.lat - a.lat) * r
+  const dLng = (b.lng - a.lng) * r
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2
+  return 12742 * Math.asin(Math.sqrt(h))
+}
 
 function statusFor(progress) {
   if (progress < 8) return 'Driver is arriving at pickup'
@@ -32,8 +39,6 @@ function statusFor(progress) {
   if (progress < 100) return 'Arriving at destination'
   return 'Trip complete'
 }
-
-/* ── Small UI helpers ─────────────────────────────────────────────────────── */
 
 function MapBadge({ children, tone = 'neutral', style }) {
   const bg = tone === 'alert' ? colors.red : 'rgba(255,255,255,0.92)'
@@ -56,188 +61,11 @@ function MapBadge({ children, tone = 'neutral', style }) {
   )
 }
 
-function SmallStatCard({ icon: Icon, label, value, danger = false, onPress }) {
-  const content = (
-    <>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4 }}>
-        <Icon size={12} color={colors.textMuted} />
-        <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.6 }}>
-          {label}
-        </Text>
-      </View>
-      <Text
-        style={{
-          fontSize: 17,
-          fontWeight: '900',
-          color: danger ? colors.red : colors.text,
-        }}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-      >
-        {value}
-      </Text>
-    </>
-  )
-
-  if (onPress) {
-    return (
-      <Pressable
-        onPress={onPress}
-        style={({ pressed }) => ({
-          flex: 1,
-          borderRadius: radius.md,
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: pressed ? colors.surfaceAlt : colors.surface,
-          padding: space.md,
-        })}
-      >
-        {content}
-      </Pressable>
-    )
-  }
-
-  return (
-    <View
-      style={{
-        flex: 1,
-        borderRadius: radius.md,
-        borderWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: colors.surface,
-        padding: space.md,
-      }}
-    >
-      {content}
-    </View>
-  )
-}
-
-/* ── Handshake OTP Banner ─────────────────────────────────────────────────── */
-
-function HandshakeCard({ otp }) {
-  return (
-    <View
-      style={{
-        marginHorizontal: space.lg,
-        marginBottom: space.sm,
-        borderRadius: radius.lg,
-        borderWidth: 2,
-        borderColor: colors.brand,
-        backgroundColor: colors.brandSoft,
-        padding: space.lg,
-        gap: space.sm,
-      }}
-    >
-      {/* Header row */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-        <View
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: 4,
-            backgroundColor: colors.brand,
-          }}
-        />
-        <Text
-          style={{
-            ...type.micro,
-            color: colors.brand,
-            letterSpacing: 0.8,
-            fontWeight: '900',
-          }}
-        >
-          PICKUP HANDSHAKE REQUIRED
-        </Text>
-      </View>
-
-      {/* Title + description */}
-      <Text style={{ ...type.bodyBold, color: colors.text }}>
-        Share your 4-digit OTP with your driver
-      </Text>
-      <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 17 }}>
-        The driver will verify your OTP and take a quick safety selfie before starting the engine.
-      </Text>
-
-      {/* OTP display */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: space.sm }}>
-        <Text style={{ ...type.tiny, color: colors.textMuted }}>Your OTP:</Text>
-        <View
-          style={{
-            flex: 1,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: colors.brand,
-            borderRadius: radius.md,
-            paddingVertical: 12,
-            paddingHorizontal: space.md,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 26,
-              fontWeight: '900',
-              color: '#fff',
-              letterSpacing: 8,
-              fontFamily: 'monospace',
-            }}
-          >
-            {otp ?? '· · · ·'}
-          </Text>
-        </View>
-      </View>
-    </View>
-  )
-}
-
-/* ── Trip Progress Bar ────────────────────────────────────────────────────── */
-
-function TripProgressBar({ progress }) {
-  const pct = Math.max(0, Math.min(100, progress))
-  const barColor = pct >= 90 ? colors.green : colors.brand
-
-  return (
-    <View
-      style={{
-        marginHorizontal: space.lg,
-        marginTop: space.sm,
-        height: 5,
-        borderRadius: 3,
-        backgroundColor: colors.surfaceSunken,
-        overflow: 'hidden',
-      }}
-    >
-      <View style={{ flexDirection: 'row', flex: 1 }}>
-        {pct > 0 && (
-          <View
-            style={{
-              flex: pct / 100,
-              backgroundColor: barColor,
-              borderRadius: 3,
-            }}
-          />
-        )}
-        {pct < 100 && (
-          <View
-            style={{
-              flex: (100 - pct) / 100,
-              backgroundColor: 'transparent',
-            }}
-          />
-        )}
-      </View>
-    </View>
-  )
-}
-
-/* ── Main Screen ──────────────────────────────────────────────────────────── */
-
 export default function LiveTripScreen({ trip, onCancel }) {
   const { driverPosition, connection, rawTrip } = useTrip()
   const [guardians, setGuardians] = useState([])
-  const [handshakeOtp, setHandshakeOtp] = useState(null)
 
-  // Fetch real guardians for the share sheet
+  // Real guardians from the account, for the share sheet.
   useEffect(() => {
     api.me.guardians
       .list()
@@ -245,55 +73,52 @@ export default function LiveTripScreen({ trip, onCancel }) {
       .catch(() => setGuardians([]))
   }, [])
 
-  // Fetch handshake OTP when driver has accepted but trip hasn't started yet
-  useEffect(() => {
-    if (rawTrip?.status === 'HANDSHAKE_PENDING' && rawTrip?.id) {
-      api.trips
-        .handshakeOtp(rawTrip.id)
-        .then((res) => setHandshakeOtp(res?.otp ?? res?.data?.otp ?? null))
-        .catch(() => setHandshakeOtp(null))
-    } else {
-      setHandshakeOtp(null)
-    }
-  }, [rawTrip?.status, rawTrip?.id])
-
   const { toast } = useToast()
-  const [progress, setProgress] = useState(0)
-  const [speed, setSpeed] = useState(24)
   const [maxSpeed, setMaxSpeed] = useState(0)
   const [breaches, setBreaches] = useState(0)
   const [sheetOpen, setSheetOpen] = useState(false)
-  const [sharedIds, setSharedIds] = useState([])
+  const [sharing, setSharing] = useState(false)
+  const [linkSent, setLinkSent] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [sosStage, setSosStage] = useState('idle')
   const [countdown, setCountdown] = useState(SOS_COUNTDOWN_S)
   const holdRef = useRef(null)
 
+  // Speed, top speed and breaches come only from the driver's real
+  // DRIVER_LOCATION frames; nothing on this screen is simulated.
+  const liveSpeed = driverPosition?.speed != null ? Math.round(driverPosition.speed) : null
+  const wasOverRef = useRef(false)
   useEffect(() => {
-    const tick = setInterval(() => {
-      setProgress((p) => Math.min(100, p + 0.4))
-    }, 130)
-    return () => clearInterval(tick)
-  }, [])
+    if (liveSpeed == null) return
+    setMaxSpeed((m) => Math.max(m, liveSpeed))
+    const over = liveSpeed > trip.ceiling
+    if (over && !wasOverRef.current) {
+      setBreaches((b) => b + 1)
+      toast(`Speed ${liveSpeed} km/h is over your ${trip.ceiling} km/h limit. Logged.`, 'warning')
+    }
+    wasOverRef.current = over
+  }, [liveSpeed, trip.ceiling, toast])
 
-  useEffect(() => {
-    const tick = setInterval(() => {
-      const drift = 0.45 + Math.random() * 0.65
-      const clamped = Math.max(18, Math.min(trip.ceiling + 16, Math.round(trip.ceiling * drift)))
-      setSpeed(clamped)
-      setMaxSpeed((m) => Math.max(m, clamped))
-      if (clamped > trip.ceiling) {
-        setBreaches((b) => b + 1)
-        toast(`Speed breach ${clamped} km/h logged — guardians alerted`, 'warning')
-      }
-    }, 1600)
-    return () => clearInterval(tick)
-  }, [trip.ceiling, toast])
+  const pickup = rawTrip?.pickup
+  const drop = rawTrip?.drop
+  const total = pickup && drop ? km(pickup, drop) : null
+  const left = driverPosition && drop ? km(driverPosition, drop) : null
+  const progress = total && left != null ? Math.max(0, Math.min(100, (1 - left / total) * 100)) : 0
+  const etaMin = left != null ? Math.max(1, Math.ceil((left / CITY_KMH) * 60)) : null
 
+  // Latest telemetry and callback are read through refs so this effect depends
+  // only on `progress`. Listing them as deps (as the web prototype did) re-ran
+  // the effect mid-countdown, and the cleanup then cancelled the completion
+  // timeout permanently, hanging the trip at 100%.
   const statsRef = useRef({ maxSpeed: 0, breaches: 0 })
+
   useEffect(() => {
     statsRef.current = { maxSpeed, breaches }
   })
+
+  // There is deliberately no local completion timer. The driver ends the trip
+  // server-side and TRIP_STATE_CHANGED moves this screen on; finishing locally
+  // would show a completed ride while the server still had it running.
 
   useEffect(
     () => () => {
@@ -312,41 +137,40 @@ export default function LiveTripScreen({ trip, onCancel }) {
     const t = setTimeout(() => {
       if (countdown <= 1) {
         setSosStage('fired')
-        toast('Silent SOS sent — Safety Desk & guardians alerted', 'danger', 4000)
+        api.trips
+          .sos(rawTrip.id, { silent: true })
+          .then(() => toast('SOS sent. The Safety Desk and your guardians have been alerted.', 'danger', 5000))
+          .catch(() => toast('SOS could not reach us. Call 112 now.', 'danger', 8000))
       } else {
         setCountdown((c) => c - 1)
       }
     }, 1000)
     return () => clearTimeout(t)
-  }, [sosStage, countdown, toast])
+  }, [sosStage, countdown, toast, rawTrip?.id])
 
-  const liveSpeed = driverPosition?.speed
-  const shownSpeed = liveSpeed != null ? Math.round(liveSpeed) : speed
-  const overCeiling = shownSpeed > trip.ceiling
-  const etaMin = Math.max(1, Math.ceil(TOTAL_MINUTES * (1 - progress / 100)))
-  const isHandshakePending = rawTrip?.status === 'HANDSHAKE_PENDING'
-  const isLive = connection === 'open'
+  const overCeiling = liveSpeed != null && liveSpeed > trip.ceiling
 
-  const toggleShare = (id) => {
-    setSharedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-  }
-
-  const sendLinks = (channel) => {
-    if (sharedIds.length === 0) {
-      toast('Select at least one guardian', 'warning')
-      return
+  /** Texts every saved guardian, or hands the link to the share sheet. */
+  const shareLink = async (bySms) => {
+    setSharing(true)
+    try {
+      const link = await api.trips.guardianLink(rawTrip.id, bySms)
+      if (bySms) {
+        toast(`Live link texted to ${link.sent_to_guardians} guardian${link.sent_to_guardians === 1 ? '' : 's'}`, 'success')
+      } else {
+        await Share.share({ message: `Follow my MyDriver trip live: ${link.url}` })
+      }
+      setLinkSent(true)
+      setSheetOpen(false)
+    } catch (err) {
+      toast(err?.message ?? 'Could not create the live link', 'warning')
+    } finally {
+      setSharing(false)
     }
-    toast(
-      `Live link sent to ${sharedIds.length} guardian${sharedIds.length > 1 ? 's' : ''} via ${channel}`,
-      'success',
-    )
-    setSheetOpen(false)
   }
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>
-
-      {/* ── App Bar ── */}
       <View
         style={{
           flexDirection: 'row',
@@ -364,49 +188,28 @@ export default function LiveTripScreen({ trip, onCancel }) {
         >
           <X size={16} color={colors.text} />
         </Pressable>
-
         <View style={{ alignItems: 'center' }}>
           <Text style={{ ...type.caption, color: colors.text }}>Trip {trip.id}</Text>
           <Text style={{ ...type.micro, color: colors.textMuted }}>
             {trip.skill} · ceiling {trip.ceiling} km/h
           </Text>
         </View>
-
-        {/* Connection badge */}
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            gap: 5,
+            gap: 4,
             borderRadius: radius.sm,
-            backgroundColor: isLive ? '#f0fdf4' : colors.amberSoft,
+            backgroundColor: colors.surfaceAlt,
             paddingHorizontal: space.sm,
             paddingVertical: 6,
-            borderWidth: 1,
-            borderColor: isLive ? '#bbf7d0' : '#fcd34d',
           }}
         >
-          <View
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: isLive ? colors.green : colors.amber,
-            }}
-          />
-          <Text
-            style={{
-              ...type.micro,
-              color: isLive ? colors.green : colors.amber,
-              fontWeight: '800',
-            }}
-          >
-            {isLive ? 'Live' : 'Reconnecting'}
-          </Text>
+          <Gauge size={12} color={colors.text} />
+          <Text style={{ ...type.micro, color: colors.text }}>{trip.ceiling}</Text>
         </View>
       </View>
 
-      {/* ── Cancel confirm banner ── */}
       {confirmCancel ? (
         <Card tone="alert" style={{ marginHorizontal: space.lg, marginBottom: space.sm }}>
           <Text style={{ ...type.caption, color: colors.redPressed }}>Cancel this trip?</Text>
@@ -422,10 +225,6 @@ export default function LiveTripScreen({ trip, onCancel }) {
         </Card>
       ) : null}
 
-      {/* ── Handshake OTP banner (only when HANDSHAKE_PENDING) ── */}
-      {isHandshakePending && <HandshakeCard otp={handshakeOtp} />}
-
-      {/* ── Map ── */}
       <View
         style={{
           marginHorizontal: space.lg,
@@ -438,23 +237,18 @@ export default function LiveTripScreen({ trip, onCancel }) {
       >
         <MapCanvas progress={progress} style={{ width: '100%', height: '100%' }} />
         <MapBadge tone={overCeiling ? 'alert' : 'neutral'} style={{ left: 10, top: 10 }}>
-          {`${shownSpeed} km/h / ceil. ${trip.ceiling}`}
+          {liveSpeed != null ? `${liveSpeed} km/h · limit ${trip.ceiling}` : `Limit ${trip.ceiling} km/h`}
         </MapBadge>
-        <MapBadge style={{ right: 10, top: 10 }}>{`ETA ${etaMin} min`}</MapBadge>
+        {etaMin != null ? <MapBadge style={{ right: 10, top: 10 }}>{`ETA ${etaMin} min`}</MapBadge> : null}
         <MapBadge style={{ left: 10, bottom: 10 }}>
-          {`${trip.statusLabel ?? statusFor(progress)} · ${Math.round(progress)}%`}
+          {`${trip.statusLabel ?? statusFor(progress)}${connection === 'open' ? '' : ' · reconnecting'}`}
         </MapBadge>
       </View>
 
-      {/* ── Trip Progress Bar ── */}
-      <TripProgressBar progress={progress} />
-
-      {/* ── Scrollable content ── */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: space.lg, gap: space.md }}
       >
-        {/* Driver Card */}
         <Card>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             <View
@@ -477,27 +271,8 @@ export default function LiveTripScreen({ trip, onCancel }) {
                 {trip.driver.vehicle} · {trip.driver.plate}
               </Text>
             </View>
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Call driver"
-                onPress={() => toast('Calling driver over masked number…', 'info')}
-                style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 10 }}
-              >
-                <Phone size={16} color={colors.text} />
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Message driver"
-                onPress={() => toast('Secure chat opened (demo)', 'info')}
-                style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 10 }}
-              >
-                <MessageSquare size={16} color={colors.text} />
-              </Pressable>
-            </View>
           </View>
 
-          {/* Driver stats */}
           <View
             style={{
               flexDirection: 'row',
@@ -510,12 +285,12 @@ export default function LiveTripScreen({ trip, onCancel }) {
             <View style={{ flex: 1, alignItems: 'center' }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <Star size={13} color={colors.red} fill={colors.red} />
-                <Text style={{ ...type.bodyBold, color: colors.text }}>{trip.driver.rating}</Text>
+                <Text style={{ ...type.bodyBold, color: colors.text }}>{trip.driver.rating ?? "New"}</Text>
               </View>
               <Text style={{ ...type.micro, color: colors.textMuted }}>Rating</Text>
             </View>
             <View style={{ flex: 1, alignItems: 'center' }}>
-              <Text style={{ ...type.bodyBold, color: colors.text }}>{trip.driver.score}</Text>
+              <Text style={{ ...type.bodyBold, color: colors.text }}>{trip.driver.score != null ? Math.round(trip.driver.score) : "—"}</Text>
               <Text style={{ ...type.micro, color: colors.textMuted }}>Safety score</Text>
             </View>
             <View style={{ flex: 1, alignItems: 'center' }}>
@@ -527,33 +302,39 @@ export default function LiveTripScreen({ trip, onCancel }) {
           </View>
         </Card>
 
-        {/* ── Telemetry Stat Cards (3 in a row) ── */}
-        <View style={{ flexDirection: 'row', gap: space.sm }}>
-          <SmallStatCard
-            icon={Gauge}
-            label="MAX SPEED"
-            value={`${maxSpeed} km/h`}
-            danger={maxSpeed > trip.ceiling}
-          />
-          <SmallStatCard
-            icon={Car}
-            label="FARE LOCKED"
-            value={formatINR(trip.fare)}
-          />
-          <SmallStatCard
-            icon={Users}
-            label="GUARDIANS"
-            value={`${sharedIds.length}/${guardians.length}`}
-            onPress={() => setSheetOpen(true)}
-          />
+        <View style={{ flexDirection: 'row', gap: space.md }}>
+          <Card style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Gauge size={12} color={colors.textMuted} />
+              <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.6 }}>MAX SPEED</Text>
+            </View>
+            <Text
+              style={{
+                ...type.headline,
+                color: maxSpeed > trip.ceiling ? colors.red : colors.text,
+                marginTop: 2,
+              }}
+            >
+              {maxSpeed}
+              <Text style={{ ...type.tiny, color: colors.textMuted }}> km/h</Text>
+            </Text>
+          </Card>
+          <Card style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+              <Car size={12} color={colors.textMuted} />
+              <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.6 }}>FARE LOCKED</Text>
+            </View>
+            <Text style={{ ...type.headline, color: colors.text, marginTop: 2 }}>
+              {formatINR(trip.fare)}
+            </Text>
+          </Card>
         </View>
 
         <Text style={{ ...type.tiny, color: colors.textFaint, textAlign: 'center', lineHeight: 16 }}>
-          Silent SOS also triggers on triple volume-button press. Guardians see route, speed and stops live.
+          Hold SOS for a second to alert the Safety Desk and your guardians.
         </Text>
       </ScrollView>
 
-      {/* ── Sticky action bar ── */}
       <View
         style={{
           flexDirection: 'row',
@@ -565,7 +346,7 @@ export default function LiveTripScreen({ trip, onCancel }) {
         }}
       >
         <Button
-          label={sharedIds.length > 0 ? `Guardian link (${sharedIds.length})` : 'Guardian link'}
+          label={linkSent ? 'Link shared' : 'Share live link'}
           icon={Users}
           variant="outline"
           onPress={() => setSheetOpen(true)}
@@ -597,94 +378,61 @@ export default function LiveTripScreen({ trip, onCancel }) {
         </Pressable>
       </View>
 
-      {/* ── Guardian bottom sheet ── */}
       <BottomSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="Share guardian link">
+        <Text style={{ ...type.caption, color: colors.textMuted, marginBottom: space.md, lineHeight: 18 }}>
+          Guardians see your route, speed and stops live until the trip ends. The link expires automatically.
+        </Text>
         <View style={{ gap: space.sm }}>
           {guardians.length === 0 ? (
-            <View
-              style={{
-                borderRadius: radius.md,
-                borderWidth: 1,
-                borderStyle: 'dashed',
-                borderColor: colors.border,
-                padding: space.xl,
-                alignItems: 'center',
-              }}
-            >
-              <Users size={24} color={colors.textFaint} />
-              <Text style={{ ...type.caption, color: colors.textMuted, marginTop: space.sm, textAlign: 'center' }}>
-                No guardians yet — add up to 3 in your Profile.
+            <Card tone="sunken">
+              <Text style={{ ...type.caption, color: colors.textMuted }}>
+                No guardians saved yet. Add them in Profile, or share the link with anyone below.
               </Text>
-            </View>
+            </Card>
           ) : (
-            guardians.map((g) => {
-              const selected = sharedIds.includes(g.id)
-              return (
-                <Pressable
-                  key={g.id}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: selected }}
-                  onPress={() => toggleShare(g.id)}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    gap: space.md,
-                    borderRadius: radius.md,
-                    borderWidth: 1,
-                    borderColor: selected ? colors.red : colors.border,
-                    backgroundColor: selected ? colors.redSoft : colors.surface,
-                    padding: space.md,
-                  }}
-                >
-                  <View
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: radius.pill,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: selected ? colors.red : colors.surfaceAlt,
-                    }}
-                  >
-                    <Text style={{ ...type.caption, color: selected ? colors.onRed : colors.text }}>
-                      {g.name.charAt(0)}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text numberOfLines={1} style={{ ...type.body, color: colors.text }}>
-                      {g.name}
-                    </Text>
-                    <Text numberOfLines={1} style={{ ...type.tiny, color: colors.textMuted }}>
-                      {g.relation} · {maskPhone(g.phone)}
-                    </Text>
-                  </View>
-                  <View
-                    style={{
-                      width: 20,
-                      height: 20,
-                      borderRadius: 6,
-                      borderWidth: 2,
-                      borderColor: selected ? colors.red : colors.borderStrong,
-                      backgroundColor: selected ? colors.red : 'transparent',
-                    }}
-                  />
-                </Pressable>
-              )
-            })
+            guardians.map((g) => (
+              <View
+                key={g.id}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: space.md }}
+              >
+                <View style={{ width: 36, height: 36, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surfaceAlt }}>
+                  <Text style={{ ...type.caption, color: colors.text }}>{g.name.charAt(0)}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text numberOfLines={1} style={{ ...type.body, color: colors.text }}>{g.name}</Text>
+                  <Text numberOfLines={1} style={{ ...type.tiny, color: colors.textMuted }}>
+                    {g.relation} · {maskPhone(g.phone)}
+                  </Text>
+                </View>
+              </View>
+            ))
           )}
         </View>
         <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.lg }}>
-          <Button label="Send via SMS" variant="subtle" onPress={() => sendLinks('SMS')} style={{ flex: 1 }} />
-          <Button label="Send via WhatsApp" onPress={() => sendLinks('WhatsApp')} style={{ flex: 1 }} />
+          <Button
+            label="Share link"
+            variant="subtle"
+            disabled={sharing}
+            onPress={() => shareLink(false)}
+            style={{ flex: 1 }}
+          />
+          <Button
+            label={sharing ? 'Sending…' : 'Text guardians'}
+            disabled={sharing || guardians.length === 0}
+            onPress={() => shareLink(true)}
+            style={{ flex: 1 }}
+          />
         </View>
       </BottomSheet>
 
-      {/* ── SOS Full-Screen Overlay ── */}
       {sosStage === 'armed' || sosStage === 'fired' ? (
         <View
           style={{
             position: 'absolute',
-            top: 0, right: 0, bottom: 0, left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
             zIndex: 70,
             backgroundColor: colors.bg,
             alignItems: 'center',
@@ -697,7 +445,8 @@ export default function LiveTripScreen({ trip, onCancel }) {
             <>
               <View
                 style={{
-                  width: 96, height: 96,
+                  width: 96,
+                  height: 96,
                   borderRadius: radius.pill,
                   backgroundColor: colors.redSoft,
                   alignItems: 'center',
@@ -716,8 +465,7 @@ export default function LiveTripScreen({ trip, onCancel }) {
                   lineHeight: 18,
                 }}
               >
-                Safety Desk will be alerted with live location and VisionCam stream. Guardians will be
-                notified.
+                Safety Desk will be alerted with live location and VisionCam stream. Guardians will be notified.
               </Text>
               <Button label="Cancel — I am safe" variant="subtle" onPress={() => setSosStage('idle')} />
             </>
@@ -725,7 +473,8 @@ export default function LiveTripScreen({ trip, onCancel }) {
             <>
               <View
                 style={{
-                  width: 96, height: 96,
+                  width: 96,
+                  height: 96,
                   borderRadius: radius.pill,
                   backgroundColor: colors.redDeep,
                   alignItems: 'center',
@@ -766,7 +515,7 @@ export default function LiveTripScreen({ trip, onCancel }) {
                   </View>
                 ))}
               </View>
-              <Button label="End drill (demo)" variant="ghost" onPress={() => setSosStage('idle')} />
+              <Button label="Close" variant="ghost" onPress={() => setSosStage('idle')} />
             </>
           )}
         </View>

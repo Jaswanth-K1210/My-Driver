@@ -5,6 +5,7 @@ node_modules/
 
 # Build output
 dist/
+dist-admin/
 build/
 .expo/
 .next/
@@ -18,6 +19,8 @@ out/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.production
+!.env.production.example
 !.env.example
 *.pem
 *.key

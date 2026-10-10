@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AuthContext } from './authStore.js'
 import { api } from '../lib/apiClient.js'
-import { initialsOf } from '../lib/utils.js'
+import { formatPhone, initialsOf } from '../lib/utils.js'
 
 /**
  * Real session state backed by the MyDriver API.
@@ -15,7 +15,8 @@ import { initialsOf } from '../lib/utils.js'
 /** Shapes the API user into what the dashboard screens already render. */
 function toViewUser(me) {
   if (!me) return null
-  const name = me.full_name || me.phone_number || 'MyDriver rider'
+  // No name yet: show the number the way it is written, never a raw +91…
+  const name = me.full_name || formatPhone(me.phone_number) || 'MyDriver customer'
   return {
     id: me.id,
     name,
@@ -23,9 +24,12 @@ function toViewUser(me) {
     phone: me.phone_number ?? '',
     role: me.role,
     roles: me.roles ?? [],
-    initials: initialsOf(name),
-    memberSince: new Date().getFullYear().toString(),
-    rating: 5.0,
+    // Only a real name: greeting someone by their phone number reads as a bug.
+    firstName: me.full_name ? me.full_name.trim().split(/\s+/)[0] : null,
+    initials: me.full_name ? initialsOf(me.full_name) : '',
+    memberSince: me.created_at
+      ? new Date(me.created_at).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+      : null,
   }
 }
 

@@ -4,11 +4,15 @@ import {
   ArrowLeft, CheckCircle2, FileLock2, PhoneCall, ShieldAlert, TrendingUp, Users,
 } from 'lucide-react'
 import { api, ApiError } from '../../lib/apiClient.js'
+import { ask } from '../../components/admin/PromptDialog.jsx'
 import { SectionCard } from '../../components/app/Primitives.jsx'
 import { useToast } from '../../context/toastStore.js'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
 import { LevelBadge, LEVEL_MEANING, relative, SlaTimer, StatusPill } from '../../components/admin/Indicators.jsx'
 import { cn } from '../../lib/utils.js'
+import { reasonLabel } from '../../components/admin/format.js'
+import { useAuth } from '../../context/authStore.js'
+import { hasRole, OPS_ROLES } from '../../components/admin/RequireRole.jsx'
 
 const LEVELS = ['L0', 'L1', 'L2', 'L3', 'L4', 'L5']
 
@@ -32,6 +36,8 @@ function Action({ icon: Icon, label, onClick, busy, tone = 'default' }) {
 }
 
 export default function Incident() {
+  const { user } = useAuth()
+  const canRelease = hasRole(user, OPS_ROLES)
   const { id } = useParams()
   const { toast } = useToast()
   const [busy, setBusy] = useState(false)
@@ -68,7 +74,7 @@ export default function Incident() {
   return (
     <div className="space-y-6">
       <Link
-        to="/admin"
+        to="/"
         className="inline-flex items-center gap-2 text-sm font-semibold text-slate-500 hover:text-slate-900"
       >
         <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -80,7 +86,7 @@ export default function Incident() {
           <div className="flex items-center gap-3">
             <LevelBadge level={escalation.level} className="text-sm" />
             <h1 className="text-2xl font-black tracking-tight text-slate-900">
-              {escalation.reason.replace(/_/g, ' ')}
+              {reasonLabel(escalation.reason)}
             </h1>
           </div>
           <p className="mt-1 text-sm text-slate-500">
@@ -122,22 +128,29 @@ export default function Incident() {
               busy={busy}
               onClick={() => run('Guardians notified', () => api.admin.notifyGuardians(id))}
             />
+            {/* The server allows OPS_MANAGER and SUPER_ADMIN only; agents never see it. */}
+            {canRelease && (
             <Action
               icon={FileLock2}
               label="Release evidence"
               tone="danger"
               busy={busy}
-              onClick={() => {
+              onClick={async () => {
                 // L5 is a law-enforcement handoff and is not reversible, so it
                 // is the one action behind an explicit confirmation.
-                const recipient = window.prompt(
-                  'Release the Trip Vault evidence packet to which authority?\n(e.g. "Dial 112", "T-Safe")',
-                )
+                const recipient = await ask({
+                  title: 'Release evidence to law enforcement',
+                  label: 'Receiving authority',
+                  placeholder: 'e.g. Dial 112, T-Safe, Madhapur PS',
+                  confirmLabel: 'Release evidence',
+                  danger: true,
+                })
                 if (recipient) {
                   void run('Evidence released', () => api.admin.releaseEvidence(id, recipient))
                 }
               }}
             />
+            )}
           </div>
 
           <div className="mt-5 border-t border-slate-100 pt-5">
@@ -155,8 +168,8 @@ export default function Incident() {
                     key={level}
                     type="button"
                     disabled={busy}
-                    onClick={() => {
-                      const note = window.prompt(`Promote to ${level} — why?`)
+                    onClick={async () => {
+                      const note = await ask({ title: `Promote to ${level}`, placeholder: 'What did you observe?', confirmLabel: `Promote to ${level}`, danger: level >= 'L4' })
                       if (note) void run(`Promoted to ${level}`, () => api.admin.promote(id, level, note))
                     }}
                     className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
@@ -173,8 +186,8 @@ export default function Incident() {
             <button
               type="button"
               disabled={busy}
-              onClick={() => {
-                const resolution = window.prompt('Resolution — what happened?')
+              onClick={async () => {
+                const resolution = await ask({ title: 'Resolve incident', label: 'Resolution', placeholder: 'What happened, and how was it closed?', confirmLabel: 'Resolve' })
                 if (resolution) void run('Resolved', () => api.admin.resolve(id, resolution))
               }}
               className="w-full rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-50"

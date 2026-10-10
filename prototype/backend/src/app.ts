@@ -8,10 +8,16 @@ import {
 } from 'fastify-type-provider-zod'
 import { corsOrigins, env } from './config/env.js'
 import { pool } from './db/client.js'
-import { registerErrorHandler } from './lib/errors.js'
+import { forbidden, registerErrorHandler } from './lib/errors.js'
 import { gauge, renderMetrics } from './lib/metrics.js'
 import { registerAdminOpsRoutes } from './modules/admin-ops/routes.js'
+import { registerAdminSupportRoutes } from './modules/admin-support/routes.js'
 import { registerAuthRoutes } from './modules/auth/routes.js'
+import { registerCatalogueRoutes } from './modules/catalogue/routes.js'
+import { registerKycRoutes } from './modules/kyc/routes.js'
+import { registerLocationRoutes } from './modules/locations/routes.js'
+import { registerTelemetryRoutes } from './modules/trips/telemetry-routes.js'
+import { registerPaymentRoutes } from './modules/payments/routes.js'
 import { registerTripRoutes } from './modules/trips/routes.js'
 import { getIntegrityEngine } from './modules/integrity/engine.js'
 import { registerSafetyRoutes } from './modules/safety-desk/routes.js'
@@ -37,7 +43,24 @@ export async function buildApp(): Promise<FastifyInstance> {
         env.NODE_ENV === 'development'
           ? { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss' } }
           : undefined,
+      // Bearer tokens, refresh tokens, OTPs and signatures must never reach
+      // the log store, even at debug level.
+      redact: {
+        paths: [
+          'req.headers.authorization',
+          'req.headers.cookie',
+          'req.headers["x-razorpay-signature"]',
+          'req.query.ticket',
+          'body.otp',
+          'body.refresh_token',
+          'body.password',
+        ],
+        censor: '[redacted]',
+      },
     },
+    // Hard ceiling on a request body. Uploads that need more (documents,
+    // inspection photos) raise it on their own route.
+    bodyLimit: 1024 * 1024,
     // Trust the proxy so rate limiting sees the real client IP behind a load balancer.
     trustProxy: true,
   }).withTypeProvider<ZodTypeProvider>()
@@ -46,12 +69,44 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.setSerializerCompiler(serializerCompiler)
   registerErrorHandler(app)
 
+  // The customer website and the operations console are separate sites.
+  // Browsers send an Origin header, so a staff sign-in or admin call made from
+  // the customer site is refused outright, on top of the role checks. Calls
+  // with no Origin (servers, scripts, mobile apps) are judged by role alone.
+  const customerOrigin = new URL(env.PUBLIC_WEB_URL).origin
+  const adminOrigin = new URL(env.ADMIN_WEB_URL).origin
+  app.addHook('onRequest', async (request) => {
+    const origin = request.headers.origin
+    if (!origin) return
+    const path = request.url
+    if (path.startsWith('/v1/auth/staff/') && origin !== adminOrigin) {
+      throw forbidden('STAFF_SIGNIN_ORIGIN', 'Staff sign-in is only available on the operations console')
+    }
+    if (path.startsWith('/v1/admin/') && origin === customerOrigin) {
+      throw forbidden('WRONG_SITE', 'Admin APIs are not available from the customer website')
+    }
+  })
+
+  // Baseline security headers on every response. The API serves JSON (and one
+  // checkout page that sets its own policy), so these are cheap and safe.
+  app.addHook('onSend', async (_request, reply, payload) => {
+    reply.header('x-content-type-options', 'nosniff')
+    reply.header('referrer-policy', 'no-referrer')
+    reply.header('x-frame-options', 'DENY')
+    reply.header('cross-origin-resource-policy', 'same-site')
+    if (env.NODE_ENV === 'production') {
+      reply.header('strict-transport-security', 'max-age=31536000; includeSubDomains')
+    }
+    return payload
+  })
+
   // The website runs on a different origin from the API. Native apps are
   // unaffected — CORS is a browser policy.
   await app.register(fastifyCors, {
     origin: env.NODE_ENV === 'production' ? corsOrigins() : true,
     credentials: false,
-    allowedHeaders: ['content-type', 'authorization', 'idempotency-key'],
+    allowedHeaders: ['content-type', 'authorization', 'idempotency-key', 'if-none-match', 'x-razorpay-signature', 'x-razorpay-event-id'],
+    exposedHeaders: ['etag'],
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   })
 
@@ -63,7 +118,13 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerTripRoutes(app)
   registerSafetyRoutes(app)
   registerAdminOpsRoutes(app)
+  registerAdminSupportRoutes(app)
   registerVaultRoutes(app)
+  registerKycRoutes(app)
+  registerPaymentRoutes(app)
+  registerCatalogueRoutes(app)
+  registerLocationRoutes(app)
+  registerTelemetryRoutes(app)
 
   // "Is this process alive" — for the container runtime.
   app.get('/health', async () => ({ status: 'ok', service: 'mydriver-backend' }))
@@ -86,9 +147,12 @@ export async function buildApp(): Promise<FastifyInstance> {
     }
   })
 
-  app.get('/metrics', async (_request, reply) =>
-    reply.type('text/plain; version=0.0.4').send(renderMetrics()),
-  )
+  app.get('/metrics', async (request, reply) => {
+    if (env.METRICS_TOKEN && request.headers.authorization !== `Bearer ${env.METRICS_TOKEN}`) {
+      return reply.status(401).send({ error: { code: 'UNAUTHENTICATED', message: 'Metrics require a token' } })
+    }
+    return reply.type('text/plain; version=0.0.4').send(renderMetrics())
+  })
 
   return app
 }

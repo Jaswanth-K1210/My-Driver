@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Plus, ShieldCheck, Trash2 } from 'lucide-react'
+import PageHeader from '../../components/app/PageHeader.jsx'
+import { Pencil, Plus, ShieldCheck, Trash2, UserRound } from 'lucide-react'
 import { SectionCard, Toggle } from '../../components/app/Primitives.jsx'
+import Field from '../../components/app/Field.jsx'
+import IdentityCard from '../../components/app/IdentityCard.jsx'
+import { GarageCard } from '../../components/app/Garage.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { useToast } from '../../context/toastStore.js'
 import { api } from '../../lib/apiClient.js'
 import { toE164 } from '../../lib/phone.js'
-import { maskPhone } from '../../lib/utils.js'
+import { formatPhone, maskPhone } from '../../lib/utils.js'
 
 const MAX_GUARDIANS = 5
 
@@ -13,19 +17,24 @@ const CONSENT_VERSION = '2026-09'
 
 const CONSENTS = [
   { purpose: 'LOCATION_TRACKING', label: 'Live location during trips', description: 'Lets the Safety Desk see where your trip is in real time.' },
-  { purpose: 'TELEMATICS_COLLECTION', label: 'Speed and motion telemetry', description: 'Speed-ceiling and route-deviation alerts. Kept for 90 days.' },
+  { purpose: 'TELEMATICS_COLLECTION', label: 'Speed and motion telemetry', description: 'Speed-limit and route-deviation alerts. Kept for 90 days.' },
   { purpose: 'GUARDIAN_SHARING', label: 'Share trips with guardians', description: 'Your guardians can be texted a live link and alerted on an SOS.' },
   { purpose: 'BIOMETRIC_LIVENESS', label: 'Driver face-match at pickup', description: 'The driver selfie at handshake is compared to their verified photo.' },
 ]
 
 export default function Profile() {
-  const { user } = useAuth()
+  const { user, refreshMe } = useAuth()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState({ name: '', email: '' })
+  const [savingMe, setSavingMe] = useState(false)
   const { toast } = useToast()
   const [guardians, setGuardians] = useState([])
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [busy, setBusy] = useState(false)
   const [consents, setConsents] = useState([])
+  const [verified, setVerified] = useState(false)
+  const onKyc = useCallback((k) => setVerified(k.verified), [])
 
   const reload = useCallback(async () => {
     try {
@@ -92,31 +101,75 @@ export default function Profile() {
     }
   }
 
+  const saveDetails = async (e) => {
+    e.preventDefault()
+    setSavingMe(true)
+    try {
+      await api.me.update({ full_name: draft.name.trim(), ...(draft.email.trim() ? { email: draft.email.trim() } : {}) })
+      await refreshMe()
+      setEditing(false)
+      toast('Details saved', 'success')
+    } catch (err) {
+      toast(err?.message ?? 'Could not save your details', 'warning')
+    } finally {
+      setSavingMe(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <header>
-        <h1 className="text-3xl font-black tracking-tight text-slate-900">Profile</h1>
-        <p className="mt-1.5 text-sm text-slate-600">Manage your identity, guardians and safety defaults.</p>
-      </header>
+      <PageHeader title="Profile" subtitle="Your details, identity check, guardians and privacy choices." />
 
       <SectionCard>
         <div className="flex flex-wrap items-center gap-4">
           <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-3xl bg-brand-50 text-xl font-black text-brand-600">
-            {user.initials}
+            {user.initials || <UserRound className="h-7 w-7" aria-hidden="true" />}
           </span>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-lg font-bold text-slate-900">{user.name}</p>
-            <p className="truncate text-sm text-slate-500">{user.email}</p>
+            <p className="truncate text-lg font-bold text-slate-900">{user.firstName ? user.name : 'Add your name'}</p>
+            <p className="truncate text-sm text-slate-500">{user.email || 'No email added'}</p>
             <p className="mt-0.5 text-xs text-slate-500">
-              {user.phone ? `${user.phone} · ` : ''}Member since {user.memberSince}
+              {[formatPhone(user.phone), user.memberSince && `Member since ${user.memberSince}`].filter(Boolean).join(' · ')}
             </p>
           </div>
-          <span className="flex shrink-0 items-center gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-xs font-black text-brand-600">
-            <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-            MD Verified
-          </span>
+          {verified && (
+            <span className="flex shrink-0 items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-2 text-xs font-black text-white">
+              <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+              ID verified
+            </span>
+          )}
+          {!editing && (
+            <button
+              type="button"
+              onClick={() => {
+                setDraft({ name: user.firstName ? user.name : '', email: user.email })
+                setEditing(true)
+              }}
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Edit
+            </button>
+          )}
         </div>
+        {editing && (
+          <form onSubmit={saveDetails} className="mt-5 grid gap-3 border-t border-slate-100 pt-5 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <Field id="me-name" label="Full name" value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} autoComplete="name" />
+            <Field id="me-email" label="Email" type="email" value={draft.email} onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))} autoComplete="email" />
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setEditing(false)} className="h-12 rounded-2xl px-4 text-sm font-semibold text-slate-600 hover:bg-slate-100">
+                Cancel
+              </button>
+              <button type="submit" disabled={savingMe || !draft.name.trim()} className="h-12 rounded-2xl bg-slate-900 px-5 text-sm font-bold text-white hover:bg-slate-800 disabled:opacity-40">
+                {savingMe ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </form>
+        )}
       </SectionCard>
+
+      <IdentityCard onStatus={onKyc} />
+
+      <GarageCard />
 
       <SectionCard title={`Guardians · ${guardians.length}/${MAX_GUARDIANS}`}>
         {guardians.length === 0 && (
@@ -157,7 +210,7 @@ export default function Profile() {
               placeholder="Guardian name"
               maxLength={40}
               aria-label="Guardian name"
-              className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:outline-none"
+              className="flex-1 h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:outline-none"
             />
             <input
               type="tel"
@@ -167,13 +220,13 @@ export default function Profile() {
               inputMode="numeric"
               maxLength={14}
               aria-label="Guardian mobile number"
-              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:outline-none sm:w-44"
+              className="h-12 rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 transition-colors placeholder:text-slate-400 focus:border-brand-400 focus:bg-white focus:outline-none sm:w-44"
             />
             <button
               type="button"
               onClick={addGuardian}
               disabled={busy}
-              className="flex items-center justify-center gap-2 rounded-2xl bg-brand-500 px-5 py-3 text-sm font-black text-white transition-colors hover:bg-brand-600"
+              className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-brand-500 px-5 text-sm font-bold text-white transition-colors hover:bg-brand-600"
             >
               <Plus className="h-4 w-4" aria-hidden="true" />
               Add

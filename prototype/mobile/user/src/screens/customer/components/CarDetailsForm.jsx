@@ -1,19 +1,19 @@
 /**
  * CarDetailsForm — vehicle selector.
  *
- * Tab 1 "Saved Garage": pick from pre-configured saved vehicles.
+ * Tab 1 "Saved Garage": pick from the customer's saved vehicles (/v1/me/vehicles).
  * Tab 2 "New Vehicle": full brand → model → engine type → transmission selectors.
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Pressable, Text, TextInput, View } from 'react-native'
 import { Car, Check } from 'lucide-react-native'
 import {
   CAR_BRANDS,
   ENGINE_TYPES,
-  SAVED_GARAGE,
   TRANSMISSIONS,
 } from '../../../data/mock'
 import { getRecommendedSkillId } from '../../../lib/booking'
+import { api } from '../../../lib/apiClient'
 import { colors, radius, space, type } from '../../../theme/tokens'
 import ModalPicker from './ModalPicker'
 
@@ -43,6 +43,23 @@ function SectionLabel({ children }) {
 
 export default function CarDetailsForm({ config, onChange }) {
   const [tab, setTab] = useState('garage') // 'garage' | 'new'
+  const [garage, setGarage] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    api.me.vehicles
+      .list()
+      .then((r) => {
+        if (cancelled) return
+        const cars = (r.items ?? r ?? []).map((v) => ({ ...v, engineType: v.engine_type }))
+        setGarage(cars)
+        if (cars.length === 0) setTab('new')
+      })
+      .catch(() => !cancelled && (setGarage([]), setTab('new')))
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const carDetails = config.carDetails ?? {}
   const currentBrand = CAR_BRANDS.find((b) => b.company === carDetails.company) ?? CAR_BRANDS[0]
@@ -128,9 +145,11 @@ export default function CarDetailsForm({ config, onChange }) {
         <View style={{ gap: space.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <SectionLabel>My Garage (Saved Vehicles)</SectionLabel>
-            <Text style={{ ...type.micro, color: colors.textFaint }}>Pre-configured & verified</Text>
           </View>
-          {SAVED_GARAGE.map((car) => {
+          {garage === null ? (
+            <Text style={{ ...type.caption, color: colors.textMuted }}>Loading your cars…</Text>
+          ) : null}
+          {(garage ?? []).map((car) => {
             const selected = carDetails.savedVehicleId === car.id
             return (
               <Pressable

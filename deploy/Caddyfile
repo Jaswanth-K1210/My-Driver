@@ -1,0 +1,29 @@
+# Caddy obtains and renews TLS certificates automatically for every name.
+# Set WEB_DOMAIN, ADMIN_DOMAIN and API_DOMAIN in .env.production.
+
+{$WEB_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy web:80
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	# WebSocket upgrades (/v1/integrity) pass through reverse_proxy as-is.
+	reverse_proxy api:4000 {
+		# The API reads X-Forwarded-For (trustProxy) for per-client rate limits.
+		header_up X-Real-IP {remote_host}
+		health_uri /ready
+		health_interval 10s
+	}
+}
+
+# The operations console. Its own subdomain and its own build: nothing on the
+# customer site links here. ADMIN_ALLOWED_IPS optionally limits it to your
+# office or VPN addresses (space-separated CIDRs); the default admits everyone,
+# and staff sign-in plus role checks still protect it.
+{$ADMIN_DOMAIN} {
+	encode zstd gzip
+	@outside not remote_ip {$ADMIN_ALLOWED_IPS:0.0.0.0/0 ::/0}
+	respond @outside "Not found" 404
+	reverse_proxy admin:80
+}

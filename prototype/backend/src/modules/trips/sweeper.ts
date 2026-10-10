@@ -1,4 +1,5 @@
 import { pool } from '../../db/client.js'
+import { expireUnpaidTrips } from '../payments/service.js'
 import { broadcastStateChange } from './broadcast.js'
 import { startDispatch } from './matching.js'
 import { recordEvent, transitionTrip } from './service.js'
@@ -53,6 +54,7 @@ export async function expireStaleOffers(): Promise<number> {
 export function startSweeper(intervalMs = 5_000): () => void {
   const timer = setInterval(() => {
     void expireStaleOffers().catch((err) => console.error('sweeper failed', err))
+    void expireUnpaidTrips().catch((err) => console.error('unpaid sweep failed', err))
   }, intervalMs)
   timer.unref()
   return () => clearInterval(timer)

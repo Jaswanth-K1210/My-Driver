@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  push:
+    branches: [main, validation]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: prototype/backend
+    services:
+      postgres:
+        image: timescale/timescaledb:2.17.2-pg17
+        env:
+          POSTGRES_USER: mydriver
+          POSTGRES_PASSWORD: mydriver
+          POSTGRES_DB: mydriver
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U mydriver -d mydriver"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      # Tests talk to Postgres directly; PgBouncer is a deployment concern.
+      DATABASE_URL: postgres://mydriver:mydriver@localhost:5432/mydriver
+      DATABASE_MIGRATION_URL: postgres://mydriver:mydriver@localhost:5432/mydriver
+      REDIS_URL: redis://localhost:6379
+      JWT_SECRET: ci-only-jwt-secret-at-least-32-characters-long
+      TOKEN_PEPPER: ci-only-token-pepper-at-least-32-characters
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: prototype/backend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm test
+
+  website:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: prototype/website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: prototype/website/package-lock.json
+      - run: npm ci
+      - run: npx oxlint --deny-warnings -A react-hooks/exhaustive-deps -A react/only-export-components -A react/set-state-in-effect src
+      - run: npm run check
+      - run: npm run build
+        env:
+          VITE_API_URL: https://api.example.invalid
+      - run: npm run build:admin
+        env:
+          VITE_API_URL: https://api.example.invalid
+      # The two sites must not leak into each other's bundles.
+      - name: Bundles are separated
+        run: |
+          ! grep -l "Operations console" dist/assets/*.js
+          ! grep -l "Book a driver" dist-admin/assets/*.js
+
+  images:
+    runs-on: ubuntu-latest
+    needs: [backend, website]
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t mydriver-api:ci prototype/backend
+      - run: docker build --build-arg VITE_API_URL=https://api.example.invalid -t mydriver-web:ci prototype/website
+      - run: docker build --build-arg VITE_APP_TARGET=admin --build-arg VITE_API_URL=https://api.example.invalid -t mydriver-admin:ci prototype/website

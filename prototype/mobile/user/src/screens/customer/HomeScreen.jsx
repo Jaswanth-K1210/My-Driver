@@ -6,17 +6,15 @@
  *   2. Your Vehicle               — CarDetailsForm (saved garage + new vehicle)
  *   3. Trip Details               — WithinCityForm / InterCityForm / AirportForm / FullTimeForm
  *   4. Driver Certification       — SkillPicker (full cards with recommended badge)
- *   5. VisionCam Safety Mode      — Mode R / A / B selector
- *   6. Speed Ceiling              — Slider 40–120 km/h
- *   7. Price Estimate             — Live quote breakdown
+ *   5. Speed Ceiling              — Slider 40–120 km/h
+ *   6. Price Estimate             — Live quote breakdown
  *
  * Sticky CTA: "Find [Skill] Driver" — disabled until quote.ready
  */
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Slider from '@react-native-community/slider'
-import { Bell, Check, Gauge, Search, Shield } from 'lucide-react-native'
-import { VISION_MODES } from '../../data/mock'
+import { Gauge, Search } from 'lucide-react-native'
 import { useTrip } from '../../context/TripContext'
 import { useAuth } from '../../context/AuthContext'
 import { useEffect, useState } from 'react'
@@ -26,8 +24,6 @@ import { clamp, formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 import Button from '../../components/Button'
 import Card from '../../components/Card'
-import FakeStatusBar from '../../components/StatusBar'
-import { useToast } from '../../components/Toast'
 
 import RequirementTabs from './components/RequirementTabs'
 import CarDetailsForm from './components/CarDetailsForm'
@@ -66,7 +62,6 @@ function SectionHeader({ step, children }) {
 /* ── Main Component ──────────────────────────────────────────────────────── */
 
 export default function HomeScreen({ config, onChange, onFindDriver }) {
-  const { toast } = useToast()
   const { skills } = useTrip()
   const { user } = useAuth()
 
@@ -103,7 +98,6 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
-      <FakeStatusBar />
 
       {/* ── App Bar ── */}
       <View
@@ -126,24 +120,13 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
               justifyContent: 'center',
             }}
           >
-            <Text style={{ ...type.bodyBold, color: colors.brand }}>{(user?.full_name ?? 'MD').slice(0, 2).toUpperCase()}</Text>
+            <Text style={{ ...type.bodyBold, color: colors.brand }}>{(user?.full_name ?? 'MD').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()}</Text>
           </View>
           <View>
             <Text style={{ ...type.tiny, color: colors.textMuted }}>{greeting}</Text>
             <Text style={{ ...type.body, color: colors.text }}>{user?.full_name ?? 'MyDriver rider'}</Text>
           </View>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => toast('No new alerts — all trips sealed', 'info')}
-          style={{
-            borderRadius: radius.pill,
-            backgroundColor: colors.surfaceAlt,
-            padding: 10,
-          }}
-        >
-          <Bell size={16} color={colors.text} />
-        </Pressable>
       </View>
 
       {/* ── Scrollable Content ── */}
@@ -204,69 +187,7 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
             />
           </View>
 
-          {/* ── Step 5: VisionCam Mode ── */}
-          <View>
-            <SectionHeader step={5} icon={Shield}>VisionCam Safety Mode</SectionHeader>
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              {VISION_MODES.map((mode) => {
-                const selected = mode.id === config.visionMode
-                return (
-                  <Pressable
-                    key={mode.id}
-                    onPress={() => onChange({ ...config, visionMode: mode.id })}
-                    style={{
-                      flex: 1,
-                      paddingVertical: space.md,
-                      paddingHorizontal: space.sm,
-                      borderRadius: radius.md,
-                      borderWidth: 1,
-                      borderColor: selected ? colors.brand : colors.border,
-                      backgroundColor: selected ? colors.brandSoft : colors.surface,
-                      alignItems: 'center',
-                      gap: 4,
-                    }}
-                  >
-                    {selected && (
-                      <View
-                        style={{
-                          position: 'absolute',
-                          top: 6,
-                          right: 6,
-                          width: 14,
-                          height: 14,
-                          borderRadius: 7,
-                          backgroundColor: colors.brand,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Check size={8} color="#fff" strokeWidth={3} />
-                      </View>
-                    )}
-                    <Text
-                      style={{
-                        ...type.body,
-                        color: selected ? colors.brandPressed : colors.text,
-                        fontWeight: '900',
-                      }}
-                    >
-                      Mode {mode.id}
-                    </Text>
-                    <Text style={{ ...type.micro, color: colors.textMuted, textAlign: 'center' }}>
-                      {mode.name}
-                    </Text>
-                  </Pressable>
-                )
-              })}
-            </View>
-            {VISION_MODES.find((m) => m.id === config.visionMode)?.desc ? (
-              <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: space.sm }}>
-                {VISION_MODES.find((m) => m.id === config.visionMode).desc} · sealed into Trip Vault
-              </Text>
-            ) : null}
-          </View>
-
-          {/* ── Step 6: Speed Ceiling ── */}
+          {/* ── Step 5: Speed Ceiling ── */}
           <Card>
             <View
               style={{
@@ -310,7 +231,7 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
             </Text>
           </Card>
 
-          {/* ── Step 7: Price Estimate ── */}
+          {/* ── Step 6: Price Estimate ── */}
           <Card>
             <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5, marginBottom: space.md }}>
               PRICE ESTIMATE

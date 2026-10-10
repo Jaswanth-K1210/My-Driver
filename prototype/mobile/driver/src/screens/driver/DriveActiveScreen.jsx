@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Activity, Flag, Gauge, Square } from 'lucide-react-native'
+import { Activity, Flag, Gauge, Siren, Square } from 'lucide-react-native'
 import Button from '../../components/Button'
 import Card from '../../components/Card'
 import { useToast } from '../../components/Toast'
-import DemoBadge from '../../components/DemoBadge'
-import { DEFAULT_ORIGIN, useDriver } from '../../context/DriverContext'
+import * as Location from 'expo-location'
+import { DeviceMotion } from 'expo-sensors'
+import { useDriver } from '../../context/DriverContext'
 import { colors, radius, space, type } from '../../theme/tokens'
 
 const BRAKE_THRESHOLD = 0.4
@@ -62,77 +63,102 @@ function GForceBar({ label, value, threshold, max }) {
 
 export default function DriveActiveScreen({ request, onComplete }) {
   const { toast } = useToast()
-  const { sendTelemetry } = useDriver()
+  const { sendTelemetry, sendSos } = useDriver()
   const [finishing, setFinishing] = useState(false)
-  // Walks outward from the pickup so the customer's map actually moves.
-  // A production build would read the device GPS here instead.
-  const positionRef = useRef({ ...(request.pickupCoords ?? DEFAULT_ORIGIN) })
   const [speed, setSpeed] = useState(0)
-  const [brakeG, setBrakeG] = useState(0.05)
-  const [swerveG, setSwerveG] = useState(0.04)
+  const [brakeG, setBrakeG] = useState(0)
+  const [swerveG, setSwerveG] = useState(0)
   const [events, setEvents] = useState([])
   const [elapsed, setElapsed] = useState(0)
+  const [gpsDenied, setGpsDenied] = useState(false)
   const lastEventRef = useRef(0)
   const maxSpeedRef = useRef(0)
-  // Current g-force values also live in refs so the simulation can read the
-  // previous sample without re-creating the interval each tick.
-  const brakeRef = useRef(0.05)
-  const swerveRef = useRef(0.04)
+  // Latest sensor sample, read by the GPS callback so each telemetry frame
+  // carries the g-force at the moment of the fix.
+  const motionRef = useRef({ brake: 0, swerve: 0 })
 
   useEffect(() => {
     const tick = setInterval(() => setElapsed((s) => s + 1), 1000)
     return () => clearInterval(tick)
   }, [])
 
-  // The web prototype listed brakeG/swerveG as deps, which tore down and
-  // rebuilt this interval on every tick. Reading the previous value from the
-  // state updater keeps a single stable interval for the whole trip.
+  // Motion: DeviceMotion reports acceleration with gravity already removed.
+  // ponytail: assumes a portrait dash mount (y = forward, x = lateral); add a
+  // mount-calibration step if drivers commonly mount landscape.
   useEffect(() => {
-    const tick = setInterval(() => {
-      const nextSpeed = Math.max(
-        12,
-        Math.min(request.ceiling + 8, Math.round(request.ceiling * (0.5 + Math.random() * 0.6))),
-      )
-      setSpeed(nextSpeed)
-      maxSpeedRef.current = Math.max(maxSpeedRef.current, nextSpeed)
+    let sub
+    let cancelled = false
+    ;(async () => {
+      if (!(await DeviceMotion.isAvailableAsync()) || cancelled) return
+      DeviceMotion.setUpdateInterval(200)
+      sub = DeviceMotion.addListener(({ acceleration }) => {
+        if (!acceleration) return
+        const brake = Math.abs(acceleration.y ?? 0) / 9.81
+        const swerve = Math.abs(acceleration.x ?? 0) / 9.81
+        motionRef.current = { brake, swerve }
+        setBrakeG(brake)
+        setSwerveG(swerve)
 
-      const nextBrake = Math.max(0.02, Math.min(0.6, brakeRef.current + (Math.random() - 0.48) * 0.18))
-      const nextSwerve = Math.max(0.02, Math.min(0.55, swerveRef.current + (Math.random() - 0.52) * 0.16))
-      brakeRef.current = nextBrake
-      swerveRef.current = nextSwerve
-      setBrakeG(nextBrake)
-      setSwerveG(nextSwerve)
+        const now = Date.now()
+        if (now - lastEventRef.current < 4000) return
+        const text =
+          brake >= BRAKE_THRESHOLD ? `Harsh braking ${brake.toFixed(2)}g`
+            : swerve >= SWERVE_THRESHOLD ? `Sharp swerve ${swerve.toFixed(2)}g` : null
+        if (!text) return
+        lastEventRef.current = now
+        setEvents((prev) => [{ id: now, text }, ...prev].slice(0, 4))
+        toast(`${text} · logged`, 'warning')
+      })
+    })()
+    return () => {
+      cancelled = true
+      sub?.remove()
+    }
+  }, [toast])
 
-      // Stream the sample to the backend. The server caps ingest at one frame
-      // per second and silently drops the excess, so this 1.2s cadence is safe.
-      positionRef.current = {
-        lat: positionRef.current.lat + 0.00035,
-        lng: positionRef.current.lng + 0.00028,
+  // Position and speed from the device GPS. The server caps ingest at one
+  // frame per second, so the watcher asks for no more than that.
+  useEffect(() => {
+    let sub
+    let cancelled = false
+    ;(async () => {
+      const { status } = await Location.requestForegroundPermissionsAsync()
+      if (cancelled) return
+      if (status !== 'granted') {
+        setGpsDenied(true)
+        return
       }
-      sendTelemetry(
-        { ...positionRef.current, speed: nextSpeed, heading: 210 },
-        { accel_z: Number(nextBrake.toFixed(3)), gyro_z: Number(nextSwerve.toFixed(3)) },
+      sub = await Location.watchPositionAsync(
+        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 0 },
+        ({ coords }) => {
+          const kmh = Math.max(0, Math.round((coords.speed ?? 0) * 3.6))
+          setSpeed(kmh)
+          maxSpeedRef.current = Math.max(maxSpeedRef.current, kmh)
+          sendTelemetry(
+            { lat: coords.latitude, lng: coords.longitude, speed: kmh, heading: coords.heading ?? 0 },
+            {
+              accel_z: Number(motionRef.current.brake.toFixed(3)),
+              gyro_z: Number(motionRef.current.swerve.toFixed(3)),
+            },
+          )
+        },
       )
+      if (cancelled) sub.remove()
+    })()
+    return () => {
+      cancelled = true
+      sub?.remove()
+    }
+  }, [sendTelemetry])
 
-      const now = Date.now()
-      if (now - lastEventRef.current > 4000) {
-        if (nextBrake >= BRAKE_THRESHOLD) {
-          lastEventRef.current = now
-          setEvents((prev) =>
-            [{ id: now, text: `Harsh braking ${nextBrake.toFixed(2)}g` }, ...prev].slice(0, 4),
-          )
-          toast(`Harsh braking detected (${nextBrake.toFixed(2)}g) — logged`, 'warning')
-        } else if (nextSwerve >= SWERVE_THRESHOLD) {
-          lastEventRef.current = now
-          setEvents((prev) =>
-            [{ id: now, text: `Aggressive swerve ${nextSwerve.toFixed(2)}g` }, ...prev].slice(0, 4),
-          )
-          toast(`Aggressive swerve detected (${nextSwerve.toFixed(2)}g) — logged`, 'warning')
-        }
-      }
-    }, 1200)
-    return () => clearInterval(tick)
-  }, [request.ceiling, toast, sendTelemetry])
+  const raiseSos = async () => {
+    try {
+      await sendSos()
+      toast('SOS sent. The Safety Desk is calling you now.', 'danger')
+    } catch (err) {
+      toast(err?.message ?? 'SOS could not be sent. Call 112.', 'danger')
+    }
+  }
 
   const minutes = Math.floor(elapsed / 60)
   const seconds = elapsed % 60
@@ -142,7 +168,7 @@ export default function DriveActiveScreen({ request, onComplete }) {
     <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>
       <View style={{ alignItems: 'center', paddingHorizontal: space.xl, paddingTop: space.lg }}>
         <Text style={{ ...type.tiny, color: colors.textMuted, textAlign: 'center' }}>
-          Trip in progress · {request.customer} · ceiling {request.ceiling} km/h
+          Trip in progress · speed limit {request.ceiling} km/h
         </Text>
         <Text
           accessibilityLabel={`Elapsed time ${minutes} minutes ${seconds} seconds`}
@@ -156,6 +182,14 @@ export default function DriveActiveScreen({ request, onComplete }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: space.lg, gap: space.md }}
       >
+        {gpsDenied && (
+          <Card tone="alert">
+            <Text style={{ ...type.bodyBold, color: colors.redPressed }}>Location is off</Text>
+            <Text style={{ ...type.tiny, color: colors.redPressed, marginTop: 4 }}>
+              Allow location access in Settings. The customer and the Safety Desk cannot see this trip without it.
+            </Text>
+          </Card>
+        )}
         <Card style={{ alignItems: 'center', padding: space.xl }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Gauge size={12} color={colors.textMuted} />
@@ -178,8 +212,8 @@ export default function DriveActiveScreen({ request, onComplete }) {
         </Card>
 
         <View style={{ flexDirection: 'row', gap: space.md }}>
-          <GForceBar label="Braking" value={brakeG} threshold={BRAKE_THRESHOLD} max={0.6} />
-          <GForceBar label="Swerving" value={swerveG} threshold={SWERVE_THRESHOLD} max={0.55} />
+          <GForceBar label="Braking" value={brakeG} threshold={BRAKE_THRESHOLD} max={0.8} />
+          <GForceBar label="Swerving" value={swerveG} threshold={SWERVE_THRESHOLD} max={0.8} />
         </View>
 
         <View>
@@ -227,8 +261,11 @@ export default function DriveActiveScreen({ request, onComplete }) {
           padding: space.lg,
         }}
       >
+        <View style={{ flexDirection: 'row', gap: space.sm }}>
+        <Button label="SOS" icon={Siren} variant="danger" onPress={raiseSos} style={{ paddingHorizontal: space.xl }} />
         <Button
-          label={finishing ? 'Settling…' : 'End trip & settle fare'}
+          style={{ flex: 1 }}
+          label={finishing ? 'Ending trip…' : 'End trip'}
           icon={Square}
           variant="subtle"
           disabled={finishing}
@@ -245,6 +282,7 @@ export default function DriveActiveScreen({ request, onComplete }) {
             }
           }}
         />
+        </View>
       </View>
     </SafeAreaView>
   )

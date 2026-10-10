@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowRight, Car, ChevronDown, ChevronUp, Compass, CreditCard, MapPin, Plane, ShieldCheck, Star } from 'lucide-react'
+import { ArrowRight, Car, ChevronDown, ChevronUp, Compass, CreditCard, MapPin, Plane, ShieldCheck } from 'lucide-react'
 import { HERO_WORDS, STATS, TRUST_MARKS, REQUIREMENTS } from '../../data/mock.js'
 import { useTrip } from '../../context/tripStore.js'
+import { isEnabled } from '../../lib/features.js'
 import { DEFAULT_CONFIG, getRecommendedSkillId, quoteFor } from '../../lib/booking.js'
 import { formatINR } from '../../lib/utils.js'
 import {
@@ -82,7 +83,7 @@ function HeroBooking() {
               <Car className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">1. Vehicle & Car</h2>
+              <h2 className="text-base font-bold text-slate-900">1. Your car</h2>
               {!openSections.vehicle && (
                 <p className="text-xs font-medium text-slate-500">
                   {config.vehicleType} · {config.carDetails.company} {config.carDetails.model}
@@ -123,7 +124,7 @@ function HeroBooking() {
               {config.requirement === 'airport' && <Plane className="h-5 w-5" />}
             </div>
             <div>
-              <h2 className="text-base font-bold text-slate-900">2. Route Details</h2>
+              <h2 className="text-base font-bold text-slate-900">2. Your trip</h2>
               {!openSections.requirement && (
                 <p className="text-xs font-medium text-slate-500">
                   {activeReq.label} · {config.tripType === 'two_way' ? 'Round Trip' : 'One Way'}
@@ -146,10 +147,12 @@ function HeroBooking() {
             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
               <TripDetailsForm config={config} setConfig={setConfig} />
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-bold text-slate-700">Pickup Schedule</label>
-              <TimePicker value={config.pickupTime} onChange={(pickupTime) => set({ pickupTime })} />
-            </div>
+            {isEnabled('scheduledPickup') && (
+              <div>
+                <label className="mb-1 block text-xs font-bold text-slate-700">Pickup time</label>
+                <TimePicker value={config.pickupTime} onChange={(pickupTime) => set({ pickupTime })} />
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -159,10 +162,10 @@ function HeroBooking() {
         <div className="flex items-center justify-between pb-3 border-b border-slate-100">
           <div className="flex items-center gap-2.5">
             <CreditCard className="h-5 w-5 text-brand-600" />
-            <h2 className="text-base font-black text-slate-900">Instant Booking</h2>
+            <h2 className="text-base font-black text-slate-900">Your fare</h2>
           </div>
           <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full uppercase tracking-wider">
-            Fare Locked
+            Refundable hold
           </span>
         </div>
 
@@ -174,7 +177,7 @@ function HeroBooking() {
             </p>
           </div>
           <p className="pb-1 text-right text-xs text-slate-500 max-w-[120px] leading-tight">
-            {quote.ready ? `${quote.distanceKm} km · incl. fees` : 'Complete all fields to book'}
+            {quote.ready ? `${quote.distanceKm} km · incl. fees` : 'Add your trip details'}
           </p>
         </div>
 
@@ -183,13 +186,13 @@ function HeroBooking() {
           disabled={!quote.ready}
           className="group mt-5 flex w-full items-center justify-center gap-2 rounded-2xl bg-brand-500 px-5 py-4 text-sm font-black text-white shadow-lg shadow-brand-500/25 transition-colors hover:bg-brand-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
         >
-          Find my {quote.skill.label} driver
+          Book a {quote.skill.label} driver
           <ArrowRight className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1 group-disabled:translate-x-0" aria-hidden="true" />
         </button>
 
         <p className="mt-3 flex items-center justify-center gap-1.5 text-[11px] font-medium text-slate-500">
           <ShieldCheck className="h-3.5 w-3.5 text-brand-500" aria-hidden="true" />
-          Nearest certified driver · {quote.skill.eta}
+          Every driver PAN, Aadhaar and licence verified
         </p>
       </div>
     </form>
@@ -198,7 +201,7 @@ function HeroBooking() {
 
 export default function Hero() {
   return (
-    <section id="top" className="relative overflow-hidden bg-white pt-20">
+    <section id="top" className="relative overflow-hidden bg-white">
       {/* Soft red wash keeps the page white while still anchoring the brand. */}
       <div
         className="pointer-events-none absolute inset-0"
@@ -227,8 +230,8 @@ export default function Hero() {
           </h1>
 
           <p className="mt-6 text-lg leading-relaxed text-slate-600">
-            Professional drivers, whenever you need them — paired with speed ceilings, guardian tracking and an
-            immutable Trip Vault, so every ride is safe, accountable and provable.
+            A verified, professional driver for your own car, whenever you need one. Every trip has a speed limit,
+            live guardian tracking and a sealed Trip Vault record.
           </p>
 
           <ul className="mt-7 flex flex-wrap gap-x-6 gap-y-3">
@@ -239,26 +242,6 @@ export default function Hero() {
               </li>
             ))}
           </ul>
-
-          <div className="mt-8 flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <div className="flex -space-x-2">
-              {['RK', 'IS', 'VR', 'AT'].map((initials) => (
-                <span
-                  key={initials}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white bg-brand-50 text-[10px] font-black text-brand-600"
-                >
-                  {initials}
-                </span>
-              ))}
-            </div>
-            <div className="min-w-0">
-              <p className="flex items-center gap-1 text-sm font-bold text-slate-900">
-                <Star className="h-3.5 w-3.5 fill-brand-500 text-brand-500" aria-hidden="true" />
-                4.9 average across 3.2L+ trips
-              </p>
-              <p className="text-xs text-slate-500">Every driver re-certified every 6 months</p>
-            </div>
-          </div>
 
           <dl className="mt-10 grid grid-cols-2 gap-x-6 gap-y-6 border-t border-slate-200 pt-8 sm:grid-cols-4">
             {STATS.map((stat) => (

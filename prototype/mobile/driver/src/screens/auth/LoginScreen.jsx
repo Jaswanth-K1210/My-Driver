@@ -126,7 +126,7 @@ export default function LoginScreen({ navigation }) {
                   </View>
                   <TextInput
                     style={styles.phoneInput}
-                    placeholder="555 123 4567"
+                    placeholder="98765 43210"
                     placeholderTextColor={colors.textFaint}
                     keyboardType="phone-pad"
                     value={phone}

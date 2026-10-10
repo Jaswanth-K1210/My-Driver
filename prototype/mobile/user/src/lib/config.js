@@ -30,18 +30,3 @@ export const APP_ROLE = 'CUSTOMER'
 export const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID ?? ''
 export const GOOGLE_ENABLED = GOOGLE_CLIENT_ID.length > 0
 
-/**
- * Screens with no Phase 1 backend behind them. Anything true here renders a
- * visible "Demo" marker so simulated data is never taken for real data.
- *   inspection / certificate -> Trip Vault, Phase 3
- *   sos / guardianDispatch / breachAlerts -> escalation + integrity, Phase 2
- *   visionCam -> permanently excluded from this backend
- */
-export const DEMO_FEATURES = {
-  inspection: true,
-  certificate: true,
-  sos: true,
-  guardianDispatch: true,
-  breachAlerts: true,
-  visionCam: true,
-}

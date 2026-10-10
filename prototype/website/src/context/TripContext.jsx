@@ -30,6 +30,9 @@ export function TripProvider({ children }) {
   const [maxSpeed, setMaxSpeed] = useState(0)
   const [connection, setConnection] = useState('closed')
   const [error, setError] = useState(null)
+  // The trip's payment hold. While it is unpaid the trip waits in REQUESTED
+  // and the screens show a payment step instead of "matching".
+  const [payment, setPayment] = useState(null)
 
   const realtimeRef = useRef(null)
   const tripIdRef = useRef(null)
@@ -145,6 +148,7 @@ export function TripProvider({ children }) {
         const key = `web-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
         const booked = await api.trips.book(payload, key)
 
+        setPayment(booked.payment ?? null)
         applyTrip(booked)
         await watchTrip(booked.id)
         return booked
@@ -169,6 +173,7 @@ export function TripProvider({ children }) {
       }
       tripIdRef.current = null
       setTrip(null)
+      setPayment(null)
       setSummary(null)
       setDriverPosition(null)
       setAlerts([])
@@ -193,6 +198,7 @@ export function TripProvider({ children }) {
   const saveToVault = useCallback(async () => {
     tripIdRef.current = null
     setTrip(null)
+    setPayment(null)
     setSummary(null)
     setDriverPosition(null)
     setAlerts([])
@@ -212,6 +218,9 @@ export function TripProvider({ children }) {
           ['REQUESTED', 'MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP'].includes(t.status),
         )
         if (cancelled || !active) return
+        if (active.status === 'REQUESTED') {
+          setPayment((await api.payments.forTrip(active.id).catch(() => null))?.payment ?? null)
+        }
         applyTrip(active)
         await watchTrip(active.id)
       } catch {
@@ -223,6 +232,32 @@ export function TripProvider({ children }) {
     }
   }, [isAuthenticated, applyTrip, watchTrip])
 
+  const awaitingPayment =
+    phase === 'matching' && trip?.status === 'REQUESTED' && ['CREATED', 'FAILED'].includes(payment?.status)
+  const effectivePhase = awaitingPayment ? 'payment' : phase
+
+  // The checkout tab tells the server, not this tab, so poll until the hold
+  // lands. Dispatch then starts server-side and the WebSocket takes over.
+  useEffect(() => {
+    if (!awaitingPayment) return undefined
+    const tripId = trip.id
+    const timer = setInterval(async () => {
+      try {
+        const { payment: next } = await api.payments.forTrip(tripId)
+        if (next) setPayment(next)
+        if (next?.status === 'AUTHORIZED') applyTrip(await api.trips.get(tripId))
+      } catch {
+        // Transient; the next tick retries.
+      }
+    }, 2500)
+    return () => clearInterval(timer)
+  }, [awaitingPayment, trip?.id, applyTrip])
+
+  /** Must be called from a click: a tab opened after an await is popup-blocked. */
+  const openCheckout = useCallback(() => {
+    if (payment) window.open(api.payments.checkoutUrl(payment), '_blank', 'noopener')
+  }, [payment])
+
   // Screens render the adapted shape; `rawTrip` stays available for anything
   // that needs the untouched server payload.
   const viewTrip = useMemo(() => toViewTrip(trip, config), [trip, config])
@@ -232,7 +267,9 @@ export function TripProvider({ children }) {
       config,
       setConfig,
       skills,
-      phase,
+      phase: effectivePhase,
+      payment,
+      openCheckout,
       trip: viewTrip,
       rawTrip: trip,
       summary,
@@ -251,7 +288,7 @@ export function TripProvider({ children }) {
       hasActiveTrip: phase === 'live' || phase === 'matching',
     }),
     [
-      config, skills, phase, viewTrip, trip, summary, driverPosition, alerts, maxSpeed, connection, error,
+      config, skills, effectivePhase, payment, openCheckout, phase, viewTrip, trip, summary, driverPosition, alerts, maxSpeed, connection, error,
       pastTrips, startMatching, completeTrip, cancelTrip, rateTrip, saveToVault, loadHistory,
     ],
   )

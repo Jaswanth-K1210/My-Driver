@@ -345,6 +345,13 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
         update: (id, patch) => request(`/v1/me/guardians/${id}`, { method: 'PATCH', body: patch }),
         remove: (id) => request(`/v1/me/guardians/${id}`, { method: 'DELETE' }),
       },
+      /** The Garage: the customer's own cars. The first one saved is the default. */
+      vehicles: {
+        list: () => request('/v1/me/vehicles'),
+        add: (input) => request('/v1/me/vehicles', { method: 'POST', body: input }),
+        update: (id, patch) => request(`/v1/me/vehicles/${id}`, { method: 'PATCH', body: patch }),
+        remove: (id) => request(`/v1/me/vehicles/${id}`, { method: 'DELETE' }),
+      },
       consents: {
         list: () => request('/v1/me/consents'),
         record: (purpose, version, granted) =>
@@ -354,6 +361,19 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
 
     catalogue: {
       rateCards: () => request('/v1/rate-cards', { auth: false }),
+      /** Requirements, hour packages, pickup times, VisionCam modes, fees and rate cards. */
+      tripConfig: () => request('/v1/catalogue/trip-config', { auth: false }),
+    },
+
+    /**
+     * Place search through the backend's cached proxy. Debounce keystrokes on
+     * the client (300 ms is plenty): the server allows 60 searches a minute.
+     * Pass `near` ({ lat, lng }) to bias results towards the user.
+     */
+    locations: {
+      search: (q, near) =>
+        request(`/v1/locations/search${qs({ q, lat: near?.lat, lng: near?.lng })}`),
+      get: (id) => request(`/v1/locations/${id}`),
     },
 
     /** Public guardian view. No account, no token — the link is the audience. */
@@ -362,11 +382,6 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
     devices: {
       register: (platform, token) =>
         request('/v1/me/devices', { method: 'POST', body: { platform, token } }),
-    },
-
-    locations: {
-      search: (query) => request(`/v1/locations/search${qs({ q: query })}`),
-      get: (id) => request(`/v1/locations/${id}`),
     },
 
     /** Safety Desk. Requires SAFETY_DESK_AGENT, OPS_MANAGER or SUPER_ADMIN. */
@@ -493,6 +508,51 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
       /* ── Audit ledger (SUPER_ADMIN) ─────────────────────────────────── */
 
       audit: (params = {}) => request(`/v1/admin/audit${qs(params)}`),
+
+      /* ── Support: trips, customers, overview, pricing ──────────────── */
+
+      settings: () => request('/v1/admin/settings'),
+      /** q: trip ref (TRP-1A2B3C), name, phone or address; plus status/from/to/cursor. */
+      trips: (params = {}) => request(`/v1/admin/trips${qs(params)}`),
+      trip: (id) => request(`/v1/admin/trips/${id}`),
+      customers: (params = {}) => request(`/v1/admin/customers${qs(params)}`),
+      customer: (id) => request(`/v1/admin/customers/${id}`),
+      overview: (days = 30) => request(`/v1/admin/overview?days=${days}`),
+      rateCards: () => request('/v1/admin/rate-cards'),
+      updateRateCard: (skillId, patch) =>
+        request(`/v1/admin/rate-cards/${encodeURIComponent(skillId)}`, { method: 'PATCH', body: patch }),
+
+      /* ── Customer payments (FINANCE; OPS_MANAGER read-only) ─────────── */
+
+      payments: (params = {}) => request(`/v1/admin/payments${qs(params)}`),
+      refundPayment: (id, reason, amount) =>
+        request(`/v1/admin/payments/${id}/refund`, {
+          method: 'POST',
+          body: { reason, ...(amount ? { amount } : {}) },
+        }),
+    },
+
+    /** Identity checks. Required for drivers, optional badge for customers. */
+    kyc: {
+      status: () => request('/v1/kyc/status'),
+      verifyPan: (pan, name) => request('/v1/kyc/pan', { method: 'POST', body: { pan, name } }),
+      requestAadhaarOtp: (aadhaar) =>
+        request('/v1/kyc/aadhaar/otp', { method: 'POST', body: { aadhaar } }),
+      verifyAadhaarOtp: (ref_id, otp) =>
+        request('/v1/kyc/aadhaar/verify', { method: 'POST', body: { ref_id, otp } }),
+    },
+
+    payments: {
+      forTrip: (tripId) => request(`/v1/trips/${tripId}/payment`),
+      /**
+       * Hosted checkout page; open it in a browser tab or in-app browser.
+       * Built from this client's baseUrl rather than the server's
+       * checkout_url: on a phone the server's idea of its own address
+       * (often localhost) is not reachable.
+       */
+      checkoutUrl: (payment, returnUrl) =>
+        `${baseUrl}/v1/payments/${payment.id}/checkout` +
+        (returnUrl ? `?return=${encodeURIComponent(returnUrl)}` : ''),
     },
 
     trips: {
@@ -521,6 +581,16 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
         request(`/v1/trips/${id}/cancel`, { method: 'POST', body: { reason } }),
 
       handshakeOtp: (id) => request(`/v1/trips/${id}/handshake-otp`, { method: 'POST' }),
+
+      /**
+       * Background telemetry. Use this from a background location task
+       * (expo-task-manager), where the WebSocket is suspended: buffer fixes
+       * and post up to 300 at a time. Each point is
+       * { timestamp, coords: { lat, lng, speed?, heading? }, sensors? }.
+       * Live, foreground tracking should keep using the WebSocket.
+       */
+      sendTelemetryBatch: (id, points) =>
+        request(`/v1/trips/${id}/telemetry`, { method: 'POST', body: { sent_at: Date.now(), points } }),
 
       /** Silent SOS. Goes straight to L4 — an SOS is never a maybe. */
       sos: (id, { silent = true, note } = {}) =>
@@ -567,6 +637,11 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
         }),
 
       summary: () => request('/v1/driver/summary'),
+
+      /** KYC checklist, uploaded documents and what still blocks approval. */
+      onboarding: () => request('/v1/driver/onboarding'),
+      uploadDocument: (kind, file_base64, extra = {}) =>
+        request('/v1/driver/documents', { method: 'POST', body: { kind, file_base64, ...extra } }),
 
       /**
        * Offers this driver can still accept.

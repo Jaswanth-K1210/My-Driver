@@ -5,6 +5,7 @@ import { ROLES } from '../auth/otp.js'
 import { requireAuth } from '../auth/rbac.js'
 import { listConsents, recordConsent } from './consents.js'
 import { addGuardian, deleteGuardian, listGuardians, updateGuardian } from './guardians.js'
+import { addVehicle, deleteVehicle, ENGINE_TYPES, listVehicles, TRANSMISSIONS, updateVehicle } from './vehicles.js'
 import { getMe, updateMe } from './service.js'
 
 const RoleSchema = z.enum(ROLES)
@@ -17,6 +18,7 @@ const MeSchema = z.object({
   phone_number: z.string().nullable(),
   email: z.string().nullable(),
   full_name: z.string().nullable(),
+  created_at: z.coerce.string(),
 })
 
 const GuardianSchema = z.object({
@@ -120,6 +122,66 @@ export function registerUserRoutes(app: FastifyInstance): void {
     },
     async (request, reply) => {
       await deleteGuardian(request.auth!.userId, request.params.id)
+      return reply.status(204).send(null)
+    },
+  )
+
+  /* ── Garage: the customer's own cars ───────────────────────────────── */
+
+  const VehicleBody = z
+    .object({
+      nickname: z.string().trim().min(1).max(40).nullable().optional(),
+      company: z.string().trim().min(1).max(60),
+      model: z.string().trim().min(1).max(60),
+      engine_type: z.enum(ENGINE_TYPES),
+      transmission: z.enum(TRANSMISSIONS),
+      plate: z.string().trim().max(16).regex(/^[A-Za-z0-9 -]*$/, 'Letters, numbers and spaces only').nullable().optional(),
+      is_default: z.boolean().optional(),
+    })
+    .strict()
+
+  const VehicleSchema = z.object({
+    id: z.string().uuid(),
+    nickname: z.string().nullable(),
+    company: z.string(),
+    model: z.string(),
+    engine_type: z.enum(ENGINE_TYPES),
+    transmission: z.enum(TRANSMISSIONS),
+    plate: z.string().nullable(),
+    is_default: z.boolean(),
+    created_at: z.coerce.string(),
+  })
+
+  r.get(
+    '/v1/me/vehicles',
+    { onRequest: [requireAuth], schema: { response: { 200: z.array(VehicleSchema) } } },
+    async (request) => listVehicles(request.auth!.userId),
+  )
+
+  r.post(
+    '/v1/me/vehicles',
+    { onRequest: [requireAuth], schema: { body: VehicleBody, response: { 201: VehicleSchema } } },
+    async (request, reply) => reply.status(201).send(await addVehicle(request.auth!.userId, request.body)),
+  )
+
+  r.patch(
+    '/v1/me/vehicles/:id',
+    {
+      onRequest: [requireAuth],
+      schema: {
+        params: z.object({ id: z.string().uuid() }),
+        body: VehicleBody.partial().strict().refine((b) => Object.keys(b).length > 0, 'Send at least one field'),
+        response: { 200: VehicleSchema },
+      },
+    },
+    async (request) => updateVehicle(request.auth!.userId, request.params.id, request.body),
+  )
+
+  r.delete(
+    '/v1/me/vehicles/:id',
+    { onRequest: [requireAuth], schema: { params: z.object({ id: z.string().uuid() }), response: { 204: z.null() } } },
+    async (request, reply) => {
+      await deleteVehicle(request.auth!.userId, request.params.id)
       return reply.status(204).send(null)
     },
   )

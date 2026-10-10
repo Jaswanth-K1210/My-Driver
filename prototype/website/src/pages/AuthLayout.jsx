@@ -1,17 +1,19 @@
-import { Link } from 'react-router-dom'
 import { ShieldCheck } from 'lucide-react'
-import { Wordmark } from '../components/marketing/Navbar.jsx'
 import { TRUST_MARKS } from '../data/mock.js'
 
-export default function AuthLayout({ title, subtitle, children, footer }) {
+/**
+ * Shared sign-in layout. Each site passes its own `header`, so the customer
+ * build never contains the console header and the admin build never contains
+ * the customer navigation.
+ */
+export default function AuthLayout({ title, subtitle, children, footer, header, footnote }) {
   return (
-    <div className="grid min-h-screen bg-white lg:grid-cols-2">
-      <div className="flex flex-col px-6 py-10 sm:px-10 lg:px-16">
-        <Link to="/" aria-label="MyDriver home" className="w-fit">
-          <Wordmark />
-        </Link>
-
-        <div className="flex flex-1 items-center py-12">
+    <div className="flex min-h-screen flex-col bg-white">
+      {header}
+      <div className="grid flex-1 lg:grid-cols-2">
+      {/* Left padding matches PAGE_X, so the form lines up with the header logo. */}
+      <div className="flex flex-col px-4 py-10 sm:px-6 lg:pl-[max(2rem,calc((100vw-80rem)/2+2rem))] lg:pr-16">
+        <div className="flex flex-1 items-start py-4 lg:items-center lg:py-8">
           <div className="w-full max-w-md">
             <h1 className="text-3xl font-black tracking-tight text-slate-900">{title}</h1>
             <p className="mt-2 text-sm text-slate-600">{subtitle}</p>
@@ -20,7 +22,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
           </div>
         </div>
 
-        <p className="text-xs text-slate-400">Prototype build — no real account is created and no password is stored.</p>
+        <p className="text-xs text-slate-400">{footnote}</p>
       </div>
 
       {/* Reassurance panel. Hidden on small screens so the form stays the focus. */}
@@ -41,14 +43,7 @@ export default function AuthLayout({ title, subtitle, children, footer }) {
             </li>
           ))}
         </ul>
-        <div className="mt-10 rounded-3xl border border-slate-200 bg-white p-6">
-          <p className="text-sm leading-relaxed text-slate-700">
-            “My daughter travels back from college at night. The speed ceiling and guardian link mean I can finally
-            sleep before she is home.”
-          </p>
-          <p className="mt-4 text-xs font-bold text-slate-900">Lakshmi Narayanan</p>
-          <p className="text-xs text-slate-500">Parent, Jubilee Hills</p>
-        </div>
+      </div>
       </div>
     </div>
   )

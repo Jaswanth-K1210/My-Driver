@@ -5,7 +5,7 @@ services:
       POSTGRES_USER: mydriver
       POSTGRES_PASSWORD: mydriver
       POSTGRES_DB: mydriver
-    ports: ['5433:5432']
+    ports: ['${MYDRIVER_PG_PORT:-5433}:5432']
     volumes: ['pgdata:/var/lib/postgresql/data']
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U mydriver -d mydriver']

@@ -3,7 +3,7 @@ import { Animated, Easing, Text, TouchableOpacity, View } from 'react-native'
 import { Clock, Search, X } from 'lucide-react-native'
 import { colors, radius, space, type } from '../../theme/tokens'
 
-const CHECKS = ['Police background check', 'Face-match handshake armed', 'Speed ceiling applied']
+const CHECKS = ['Police-verified drivers only', 'Face-match handshake armed', 'Speed limit set for your trip']
 
 export default function MatchingScreen({ status, onCancel }) {
   const ring = useRef(new Animated.Value(0)).current

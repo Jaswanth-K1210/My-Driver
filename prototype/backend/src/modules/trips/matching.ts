@@ -2,6 +2,7 @@ import { pool } from '../../db/client.js'
 import { isNightPickupIST } from '../../lib/time.js'
 import { conflict, notFound } from '../../lib/errors.js'
 import { getPushProvider } from '../../providers/push/index.js'
+import { releaseForTrip } from '../payments/service.js'
 import { broadcastOffer, broadcastStateChange } from './broadcast.js'
 import { findNearbyDrivers, SEARCH_RADIUS_KM, setAvailability } from './geo-index.js'
 import {
@@ -54,6 +55,7 @@ async function endWithNoDrivers(trip: DispatchTrip): Promise<void> {
   } finally {
     client.release()
   }
+  await releaseForTrip(trip.id).catch(() => undefined)
   await broadcastStateChange(trip.id, 'NO_DRIVERS_FOUND')
 }
 

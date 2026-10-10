@@ -17,6 +17,12 @@ What remains is listed honestly under "Not built yet" — chiefly the Safety Des
 Design: `docs/superpowers/specs/2026-08-25-mydriver-unified-backend-design.md`
 Plan: `docs/backend-implementation-plan.md`
 
+## Deploying
+
+Production runs from Docker: see [`deploy/README.md`](../../deploy/README.md).
+With `NODE_ENV=production` the API refuses to start on development secrets,
+mock payment/identity/SMS providers, plain-http URLs or a public `/metrics`.
+
 ## Quick start
 
 ```bash
@@ -88,9 +94,86 @@ services mechanical.
 | POST | `/v1/trips/:id/inspections/:phase/photos` · `/complete` | DRIVER |
 | GET | `/v1/trips/:id/inspections` · `/v1/trips/:id/vault/photos` | participant |
 | POST | `/v1/trips/:id/certificate` | participant |
+| GET | `/v1/kyc/status` · POST `/v1/kyc/pan` · `/v1/kyc/aadhaar/otp` · `/v1/kyc/aadhaar/verify` | CUSTOMER, DRIVER |
+| GET | `/v1/driver/onboarding` · POST `/v1/driver/documents` | DRIVER |
+| GET | `/v1/payments/:id/checkout` (hosted page) · POST `/v1/payments/verify` | **public**, signature-authenticated |
+| POST | `/v1/payments/webhook` | **public**, HMAC over the raw body |
+| GET | `/v1/trips/:id/payment` | participant |
+| GET | `/v1/admin/payments` | FINANCE, OPS_MANAGER, SUPER_ADMIN |
+| POST | `/v1/admin/payments/:id/refund` | FINANCE, SUPER_ADMIN |
+| GET/POST/PATCH/DELETE | `/v1/me/vehicles[/:id]` (Garage, max 10) | any |
+| GET | `/v1/catalogue/trip-config` (ETag, 5 min cache) | **public** |
+| GET | `/v1/locations/search?q=&lat=&lng=` (cached proxy, 60/min) | any |
+| POST | `/v1/trips/:id/telemetry` (background batch, ≤300 points) | participant |
+| GET | `/v1/admin/trips` (search) · `/v1/admin/trips/:id` | desk, ops, finance, super admin |
+| GET | `/v1/admin/customers` (search) · `/v1/admin/customers/:id` | desk, ops, finance, super admin |
+| GET | `/v1/admin/overview?days=7\|30\|90` · `/v1/admin/rate-cards` | ops, finance, super admin |
+| PATCH | `/v1/admin/rate-cards/:skill_id` (audited) | finance, super admin |
+| GET | `/v1/admin/settings` (demo-data visibility) | console roles |
 | GET | `/health` · `/ready` · `/metrics` | — |
 
 Errors are always `{ "error": { "code", "message", "details"? } }`.
+
+## User app support (Garage, places, trip config, background tracking)
+
+**Garage** (`saved_vehicles`, migration 0016). Plates are stored normalised
+(`ts09 ab 1234` → `TS09AB1234`) and unique per person; fuel and transmission are
+checked against the app's own lists. The first car saved is the default, there
+is never more than one default, and deleting the default promotes the oldest
+remaining car.
+
+**Location search** (`MAPS_PROVIDER=mock|google`). Google Places Text Search
+(New), which returns coordinates in one call. Results are cached in Redis by
+normalised query plus the bias point rounded to ~1 km
+(`LOCATION_CACHE_TTL_SECONDS`, default 24 h; empty results 10 min), and
+identical in-flight searches share one upstream call. Signed-in only, 60
+searches per person per minute; an upstream failure is a 503, never a 500.
+
+**Trip config** — requirements with their duration rules, hour packages
+(included km from the rate card), pickup times, fees and rate cards. Car makes
+and fuel types stay in the app. VisionCam modes are listed with
+`available: false`: there is no recording backend, and booking ignores
+`vision_mode`.
+
+**Background tracking.** The WebSocket (`/v1/integrity`) is unchanged and is
+still the live path. When the app is backgrounded the OS suspends sockets, so a
+background location task posts buffered fixes to `POST /v1/trips/:id/telemetry`
+with the phone's `sent_at`. Both paths share `telemetry/ingest.ts`: same 1 fix
+per second ceiling, same hypertable, same integrity input. Point ages are
+rebased onto the server clock, so a phone with a wrong clock neither looks
+offline nor files its track at the wrong time. Only the newest point in a batch
+moves the live map. `wss://stream.mydriver.in` is a deployment hostname: point
+DNS and TLS at this service's `/v1/integrity`; nothing in this repo provisions it.
+
+## Console demo data
+
+`npm run seed:demo` fills the operations console with a realistic month: 40
+customers, 25 drivers in every onboarding state, ~360 trips (three live, two
+open incidents), payments and refunds, ratings, night check-ins, assessments
+to grade and a paid payout. Every demo account is marked `users.is_demo`.
+
+`ADMIN_DEMO_DATA=hide` removes all of it from every console list, count and
+chart (the console shows a banner while it is visible). It is hidden, not
+deleted, because `trip_events` and `audit_log` are append-only. Production
+always hides it and refuses to seed it. Demo drivers are never put online, so
+real bookings are never offered to them.
+
+## KYC and payments
+
+**KYC** (`KYC_PROVIDER=mock|cashfree`). PAN is checked against the name the
+person gives; Aadhaar uses the provider's OTP flow. Only the last four
+characters are ever stored. A driver cannot be APPROVED until PAN, Aadhaar
+and an unexpired driving licence are all verified (`approvalBlockers()`); a
+driver who finishes their side moves from PENDING to UNDER_REVIEW on their own.
+The mock accepts any individual PAN (4th letter `P`) and Aadhaar OTP `123456`.
+
+**Payments** (`PAYMENTS_PROVIDER=none|mock|razorpay`). Booking returns a
+`payment` with a `checkout_url`. The trip waits in REQUESTED until the hold is
+authorized (checkout callback or webhook), then dispatches. Completion captures
+`min(final fare, hold)` and records any overage as `amount_due`; cancel and
+NO_DRIVERS_FOUND release the hold; unpaid trips are cancelled after 15 minutes.
+`none` skips all of this, and is what the test suite uses unless a test
+installs a provider.
 
 ## Trip lifecycle
 
@@ -281,26 +364,17 @@ so the auth path is exercised on every run.
 
 ## Not built yet
 
-Phase 2: dual-GPS integrity evaluation (3 s haversine loop, 150 m / 60 s
-threshold), L0–L5 escalation, guardian link dispatch, silent SOS, the
-`ESCALATED` transition, `ANOMALY_TRIGGERED` emission, Admin CRM endpoints.
+Stated plainly so nobody mistakes these for done:
 
-Phase 3: Trip Vault — 8-point inspection capture, watermarking, immutable
-archival, exportable trip certificates.
-
-Known gaps in Phase 1, stated rather than hidden:
-
-- **Push has no device-token storage**, so `getPushProvider().send()` cannot
-  reach a real device.
-- **`TRIP_OFFER` does not reach the offered driver over the WebSocket.** It is
-  published to the trip channel, but the gateway only admits trip participants
-  and `trips.driver_id` stays NULL until the offer is accepted — so the driver
-  cannot subscribe, and would not know the trip id if they could. Drivers
-  discover offers by polling `GET /v1/driver/offers` instead. The frame is
-  still published, so a future per-driver channel needs no client change.
-- **The `AGENT` role is grantable but has no endpoints.** The agent
-  field-recruitment app is out of scope; the enum value exists so the schema
-  does not change later.
-- **`face_reference_key` is never populated** — driver onboarding is not built —
-  so the handshake gates on the mock liveness provider. That provider is a real
-  interface with a real confidence threshold rather than a hardcoded `true`.
+- **Live provider keys.** KYC and payments run on mock adapters until
+  `KYC_PROVIDER=cashfree` and `PAYMENTS_PROVIDER=razorpay` are set with real
+  keys. The Cashfree endpoint paths in `providers/kyc/cashfree.ts` must be
+  confirmed against Cashfree's current docs in sandbox before go-live.
+- **Overtime above the hold** is recorded as `payments.amount_due`, not
+  charged. A second order for the difference is the upgrade path.
+- **Face matching** still uses the mock liveness provider; the selfie is real,
+  the comparison is not. `face_reference_key` needs a vendor.
+- **Legal pages** (privacy notice, terms, grievance officer) do not exist yet
+  and are required before collecting Aadhaar or payments from the public.
+- **Masked calling / in-app chat** between rider and driver is not built; the
+  buttons were removed rather than left as dead ends.

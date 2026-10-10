@@ -1,3 +1,4 @@
+import { env } from '../../config/env.js'
 import { pool } from '../../db/client.js'
 import type { LatLng } from '../../lib/geo.js'
 import { redis } from '../../redis/client.js'
@@ -5,7 +6,9 @@ import { ensureDriverProfile } from './rate-cards.js'
 
 export const GEO_KEY = 'drivers:online'
 export const GEO_REFRESH_SECONDS = 10
-export const SEARCH_RADIUS_KM = 50
+// 5 km in a real city. Development searches 50 km so a laptop-located test
+// driver is found wherever the simulator or browser places the customer.
+export const SEARCH_RADIUS_KM = env.NODE_ENV === 'development' ? 50 : 5
 
 export type Availability = 'OFFLINE' | 'ONLINE' | 'ON_TRIP'
 

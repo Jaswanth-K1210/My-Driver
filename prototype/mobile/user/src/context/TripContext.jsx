@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import * as WebBrowser from 'expo-web-browser'
 import { api } from '../lib/apiClient'
 import { SKILLS } from '../data/mock'
 import { bookingPayloadFor, DEFAULT_CONFIG } from '../lib/booking'
@@ -26,6 +27,8 @@ export function TripProvider({ children }) {
 
   const [config, setConfig] = useState(DEFAULT_CONFIG)
   const [phase, setPhase] = useState('browse')
+  // Unpaid trips wait in REQUESTED; screens show the payment step meanwhile.
+  const [payment, setPayment] = useState(null)
   const [trip, setTrip] = useState(null)
   const [summary, setSummary] = useState(null)
   const [vaultTrips, setVaultTrips] = useState([])
@@ -129,6 +132,7 @@ export function TripProvider({ children }) {
       try {
         const key = `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
         const booked = await api.trips.book(bookingPayloadFor(active), key)
+        setPayment(booked.payment ?? null)
         applyTrip(booked)
         await watchTrip(booked.id)
         return booked
@@ -151,6 +155,7 @@ export function TripProvider({ children }) {
     }
     tripIdRef.current = null
     setTrip(null)
+    setPayment(null)
     setSummary(null)
     setDriverPosition(null)
     setPhase('browse')
@@ -165,6 +170,7 @@ export function TripProvider({ children }) {
   const finishTrip = useCallback(async () => {
     tripIdRef.current = null
     setTrip(null)
+    setPayment(null)
     setSummary(null)
     setDriverPosition(null)
     setConfig((prev) => ({ ...prev, dropId: null }))
@@ -183,6 +189,9 @@ export function TripProvider({ children }) {
           ['REQUESTED', 'MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP'].includes(t.status),
         )
         if (cancelled || !active) return
+        if (active.status === 'REQUESTED') {
+          setPayment((await api.payments.forTrip(active.id).catch(() => null))?.payment ?? null)
+        }
         applyTrip(active)
         await watchTrip(active.id)
       } catch {
@@ -194,6 +203,41 @@ export function TripProvider({ children }) {
     }
   }, [isAuthenticated, applyTrip, watchTrip])
 
+  const awaitingPayment =
+    phase === 'matching' && trip?.status === 'REQUESTED' && ['CREATED', 'FAILED'].includes(payment?.status)
+
+  // Checkout reports to the server, not the app, so poll until the hold lands.
+  useEffect(() => {
+    if (!awaitingPayment) return undefined
+    const tripId = trip.id
+    const timer = setInterval(async () => {
+      try {
+        const { payment: next } = await api.payments.forTrip(tripId)
+        if (next) setPayment(next)
+        if (next?.status === 'AUTHORIZED') applyTrip(await api.trips.get(tripId))
+      } catch {
+        // Transient; the next tick retries.
+      }
+    }, 2500)
+    return () => clearInterval(timer)
+  }, [awaitingPayment, trip?.id, applyTrip])
+
+  const openCheckout = useCallback(async () => {
+    if (!payment) return
+    await WebBrowser.openBrowserAsync(api.payments.checkoutUrl(payment), {
+      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      controlsColor: '#E01E26',
+    })
+    // The sheet closed: check straight away rather than waiting for the next tick.
+    try {
+      const { payment: next } = await api.payments.forTrip(payment.trip_id)
+      if (next) setPayment(next)
+      if (next?.status === 'AUTHORIZED') applyTrip(await api.trips.get(payment.trip_id))
+    } catch {
+      // The poll will catch up.
+    }
+  }, [payment, applyTrip])
+
   const viewTrip = useMemo(() => toViewTrip(trip, config), [trip, config])
 
   const value = useMemo(
@@ -201,7 +245,9 @@ export function TripProvider({ children }) {
       config,
       setConfig,
       skills,
-      phase,
+      phase: awaitingPayment ? 'payment' : phase,
+      payment,
+      openCheckout,
       trip: viewTrip,
       rawTrip: trip,
       summary,
@@ -216,7 +262,7 @@ export function TripProvider({ children }) {
       reloadHistory: loadHistory,
     }),
     [
-      config, skills, phase, viewTrip, trip, summary, driverPosition, connection, vaultTrips,
+      config, skills, phase, awaitingPayment, payment, openCheckout, viewTrip, trip, summary, driverPosition, connection, vaultTrips,
       startMatching, cancelTrip, rateTrip, finishTrip, loadHistory,
     ],
   )

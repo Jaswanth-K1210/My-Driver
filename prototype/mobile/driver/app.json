@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "MyDriver-Driver",
+    "name": "MyDriver Partner",
     "slug": "mydriver-driver",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -19,6 +19,25 @@
     },
     "plugins": [
       "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "MyDriver uses your location to match you with nearby trips and to share live trip progress with the customer and the Safety Desk."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "MyDriver uses the camera for your identity documents and the 8-point vehicle inspection.",
+          "photosPermission": "MyDriver lets you upload identity documents from your photo library."
+        }
+      ],
+      [
+        "expo-sensors",
+        {
+          "motionPermission": "MyDriver measures braking and cornering to keep trips safe."
+        }
+      ],
       "expo-status-bar",
       "expo-web-browser"
     ]

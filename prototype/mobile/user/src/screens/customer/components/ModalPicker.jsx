@@ -10,7 +10,7 @@
  *   title        — modal header title
  *   searchable   — show a search input (for long lists)
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   FlatList,
   Modal,

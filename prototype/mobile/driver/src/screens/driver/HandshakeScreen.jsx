@@ -1,73 +1,46 @@
-import { useEffect, useRef, useState } from 'react'
-import { Animated, Easing, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { useRef, useState } from 'react'
+import { Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { ArrowLeft, Check, KeyRound, ScanFace, ShieldCheck } from 'lucide-react-native'
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
 import { useToast } from '../../components/Toast'
-import { DEMO_OTP } from '../../data/mock'
+import * as ImagePicker from 'expo-image-picker'
 import { useDriver } from '../../context/DriverContext'
 import { colors, radius, space, type } from '../../theme/tokens'
 
 const OTP_LENGTH = 4
 
-/** Sweeping scan line, replacing the web prototype's CSS keyframes. */
-function ScanLine({ height }) {
-  const y = useRef(new Animated.Value(0)).current
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(y, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-        Animated.timing(y, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
-      ]),
-    )
-    loop.start()
-    return () => loop.stop()
-  }, [y])
-
-  return (
-    <Animated.View
-      style={{
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        height: 2,
-        backgroundColor: colors.red,
-        transform: [{ translateY: y.interpolate({ inputRange: [0, 1], outputRange: [height * 0.08, height * 0.88] }) }],
-      }}
-    />
-  )
-}
-
 /**
- * Expo Go has no camera module wired up here, so the "selfie" is a placeholder
- * payload. The backend still runs it through the liveness provider and its
- * confidence threshold, so the gate itself is real — only the image is not.
+ * The selfie is taken here and judged on the server: the liveness provider and
+ * its confidence threshold decide, together with the customer's OTP, whether
+ * the trip may start. Nothing on this screen claims a match by itself.
  */
-// Pre-encoded: React Native has no global Buffer, and btoa is not guaranteed
-// on every engine. This is base64 for the ASCII string
-// "mydriver-handshake-selfie".
-const PLACEHOLDER_SELFIE = 'bXlkcml2ZXItaGFuZHNoYWtlLXNlbGZpZQ=='
 
 export default function HandshakeScreen({ request, onVerified, onBack }) {
   const { submitHandshake } = useDriver()
   const [submitting, setSubmitting] = useState(false)
   const { toast } = useToast()
-  const [scanStage, setScanStage] = useState('idle')
+  const [selfie, setSelfie] = useState(null)
   const [otp, setOtp] = useState(['', '', '', ''])
   const [otpError, setOtpError] = useState(false)
   const inputsRef = useRef([])
   const shake = useRef(new Animated.Value(0)).current
 
-  useEffect(() => {
-    if (scanStage !== 'scanning') return undefined
-    const t = setTimeout(() => {
-      setScanStage('matched')
-      toast('Face match verified against master profile', 'success')
-    }, 2000)
-    return () => clearTimeout(t)
-  }, [scanStage, toast])
+  const takeSelfie = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync()
+    if (!perm.granted) {
+      toast('Allow camera access to take the pickup selfie', 'warning')
+      return
+    }
+    const shot = await ImagePicker.launchCameraAsync({
+      base64: true,
+      quality: 0.5,
+      cameraType: ImagePicker.CameraType.front,
+      mediaTypes: ['images'],
+    })
+    if (!shot.canceled && shot.assets?.[0]?.base64) setSelfie(shot.assets[0].base64)
+  }
 
   const runShake = () => {
     shake.setValue(0)
@@ -109,8 +82,8 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
     try {
       // The server checks the code and the liveness confidence; it is the only
       // thing that can move the trip to IN_TRIP.
-      await submitHandshake(PLACEHOLDER_SELFIE, entered)
-      toast('Handshake complete — proceed to inspection', 'success')
+      await submitHandshake(selfie, entered)
+      toast('Identity confirmed. Next, inspect the vehicle.', 'success')
       onVerified?.()
     } catch (err) {
       setOtpError(true)
@@ -118,7 +91,8 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
       if (err?.code === 'HANDSHAKE_LOCKED') {
         toast('Too many wrong codes — this trip can only be cancelled now', 'danger', 5000)
       } else if (err?.code === 'LIVENESS_FAILED') {
-        toast('Face verification did not pass', 'danger')
+        setSelfie(null)
+        toast('Face check did not pass. Retake the selfie in good light.', 'danger')
       } else {
         toast(err?.message ?? 'Incorrect OTP — ask the customer again', 'danger')
       }
@@ -127,7 +101,7 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
     }
   }
 
-  const matched = scanStage === 'matched'
+  const matched = Boolean(selfie)
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -172,13 +146,13 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <ScanFace size={13} color={colors.textMuted} />
               <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.6 }}>
-                STEP 1 · LIVENESS CHECK
+                STEP 1 · PICKUP SELFIE
               </Text>
             </View>
             {matched ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <Check size={12} color={colors.graphite} />
-                <Pill label="Matched" tone="safe" />
+                <Pill label="Ready" tone="safe" />
               </View>
             ) : null}
           </View>
@@ -199,26 +173,15 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
             }}
           >
             <ScanFace size={64} color={matched ? colors.red : colors.borderStrong} />
-            {scanStage === 'scanning' ? (
-              <>
-                <ScanLine height={160} />
-                <Text style={{ ...type.micro, color: colors.red, position: 'absolute', bottom: 8 }}>
-                  Scanning face…
-                </Text>
-              </>
-            ) : null}
-            {scanStage === 'idle' ? (
-              <Text style={{ ...type.micro, color: colors.textMuted, position: 'absolute', bottom: 8 }}>
-                Camera standby
-              </Text>
-            ) : null}
+            <Text style={{ ...type.micro, color: matched ? colors.red : colors.textMuted, position: 'absolute', bottom: 8 }}>
+              {matched ? 'Selfie captured · checked on submit' : 'Front camera'}
+            </Text>
           </View>
 
           <Button
-            label={matched ? 'Identity confirmed' : scanStage === 'scanning' ? 'Verifying…' : 'Start face match'}
+            label={matched ? 'Retake selfie' : 'Take selfie'}
             variant={matched ? 'subtle' : 'primary'}
-            disabled={scanStage === 'scanning'}
-            onPress={() => setScanStage('scanning')}
+            onPress={takeSelfie}
             style={{ marginTop: space.md }}
           />
         </Card>
@@ -238,7 +201,6 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
                 STEP 2 · CUSTOMER OTP
               </Text>
             </View>
-            <Pill label={`Demo OTP: ${DEMO_OTP}`} tone="brand" />
           </View>
 
           <Text style={{ ...type.tiny, color: colors.textMuted, marginBottom: space.md, lineHeight: 16 }}>

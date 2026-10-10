@@ -5,7 +5,7 @@ import {
   HOUR_PACKAGES,
   INTERCITY_DESTINATIONS,
   PICKUP,
-  SAVED_GARAGE,
+  CAR_BRANDS,
   SKILLS,
   START_LOCATIONS,
 } from '../data/mock.js'
@@ -28,9 +28,21 @@ export function haversineDistanceKm(a, b) {
   return Math.max(1, (meters / 1000) * ROAD_FACTOR)
 }
 
+/**
+ * Places picked from live search. The booking state stores location ids, so a
+ * searched place is registered here and every getLocationById / dropFor call
+ * resolves it like a built-in one.
+ */
+const searchedPlaces = new Map()
+export function registerPlace(place) {
+  searchedPlaces.set(place.id, place)
+  return place.id
+}
+
 export function getLocationById(id) {
   if (!id || id === 'same_as_pickup') return null
   return (
+    searchedPlaces.get(id) ||
     CITY_LOCATIONS.find((l) => l.id === id) ||
     INTERCITY_DESTINATIONS.find((l) => l.id === id) ||
     AIRPORT_LOCATIONS.find((l) => l.id === id) ||
@@ -43,13 +55,13 @@ export function getLocationById(id) {
 export const DEFAULT_CONFIG = {
   vehicleType: 'car', // 'car' | 'bus' | 'caravan'
   carDetails: {
-    company: SAVED_GARAGE[0].company,
-    model: SAVED_GARAGE[0].model,
-    engineType: SAVED_GARAGE[0].engineType,
-    transmission: SAVED_GARAGE[0].transmission,
-    plate: SAVED_GARAGE[0].plate,
-    isCustom: false,
-    savedVehicleId: SAVED_GARAGE[0].id,
+    company: CAR_BRANDS[0].company,
+    model: CAR_BRANDS[0].models[0],
+    engineType: 'Petrol',
+    transmission: 'Manual',
+    plate: '',
+    isCustom: true,
+    savedVehicleId: null,
   },
   requirement: 'within_city', // 'within_city' | 'inter_city' | 'airport' | 'full_time'
   tripType: 'one_way', // 'one_way' | 'two_way'
@@ -126,7 +138,7 @@ export function skillFor(skillId, skills = SKILLS) {
 }
 
 export function dropFor(dropId) {
-  return DROPS.find((d) => d.id === dropId) || CITY_LOCATIONS.find((d) => d.id === dropId) || DROPS[0]
+  return searchedPlaces.get(dropId) || DROPS.find((d) => d.id === dropId) || CITY_LOCATIONS.find((d) => d.id === dropId) || DROPS[0]
 }
 
 export function packageFor(packageId) {
@@ -203,7 +215,7 @@ export function getMinDurationForConfig(config) {
     return {
       minHours,
       label: minHours > 1 
-        ? `Travel time (~${driveMinutes} mins + 10 min buffer) requires min. ${minHours} hrs`
+        ? `Travel time (~${driveMinutes} mins + 10 min buffer) needs at least ${minHours} ${minHours === 1 ? 'hour' : 'hours'}`
         : '1 hour minimum package',
     }
   }
@@ -212,7 +224,10 @@ export function getMinDurationForConfig(config) {
   if (config.requirement === 'inter_city') {
     const dest = getLocationById(config.interCityDetails?.destinationId || config.interCityDestination || 'vijayawada') ?? INTERCITY_DESTINATIONS[0]
     const isTwoWay = config.tripType === 'two_way'
-    const baseEstHours = dest?.estHours || Math.ceil((dest?.distanceKm || 200) / 55)
+    // A searched city has no stored distance; measure it from the pickup.
+    const start = getLocationById(config.interCityDetails?.startLocationId || 'start_hitec') ?? CITY_LOCATIONS[0]
+    const destKm = Math.round(dest?.distanceKm || haversineDistanceKm(start, dest))
+    const baseEstHours = dest?.estHours || Math.ceil(destKm / 55)
 
     const validOutboundStops = (config.interCityDetails?.stops || [])
       .map((s) => getLocationById(s.locationId))
@@ -229,8 +244,8 @@ export function getMinDurationForConfig(config) {
       minHours: totalEstDriveHours,
       minDays: totalEstDriveHours > 24 ? Math.ceil(totalEstDriveHours / 24) : 0,
       label: isTwoWay
-        ? `${dest.name} Round Trip (~${(dest.distanceKm || 250) * 2}km) requires min. ${totalEstDriveHours} hrs driving time`
-        : `${dest.name} (~${dest.distanceKm || 250}km) requires min. ${totalEstDriveHours} hrs driving time`,
+        ? `${dest.name} round trip (~${destKm * 2} km) needs at least ${totalEstDriveHours} hours of driving`
+        : `${dest.name} (~${destKm} km) needs at least ${totalEstDriveHours} hours of driving`,
     }
   }
 
@@ -411,7 +426,7 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
     }
 
     lines.push(
-      { label: 'Route type', value: isTwoWay ? 'Round Trip (Two-way)' : 'One Way' },
+      { label: 'Route type', value: isTwoWay ? 'Round trip' : 'One way' },
       { label: 'Est. total distance', value: `~${totalKm} km` },
       { label: 'Total duration', value: durationText },
       { label: 'Driver allowance / batta', value: `₹${dailyBatta}` },
@@ -445,7 +460,7 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
       ready: true,
       lines: [
         { label: 'Corridor', value: `${airportLoc.name}` },
-        { label: 'Transfer type', value: isTwoWay ? 'Round-trip' : (config.airportDetails.flow === 'arrival' ? 'Airport Pickup' : 'Airport Drop') },
+        { label: 'Transfer type', value: isTwoWay ? 'Round-trip' : (config.airportDetails.flow === 'arrival' ? 'Airport pickup' : 'Airport drop') },
         { label: 'Estimated distance', value: `${distanceKm} km` },
         { label: 'Toll & parking allowance', value: `₹${tollAllowance}` },
         { label: 'Platform fee', value: `₹${fees.platformFee}` },
@@ -524,7 +539,7 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
 
   lines.push(
     { label: 'Total distance', value: `~${totalKm} km` },
-    { label: 'Duration estimate', value: `${config.durationHours} hrs` },
+    { label: 'Duration', value: `${config.durationHours} ${config.durationHours === 1 ? 'hour' : 'hours'}` },
     { label: `${skill.label} rate`, value: `₹${skill.rate}/km` },
   )
 
@@ -561,33 +576,40 @@ export function bookingPayloadFor(config, skills = SKILLS) {
     trip_type: config.tripType,
   }
 
+  // The customer's chosen pickup. This used to be the fixed PICKUP constant,
+  // which sent every driver to Cyber Towers whatever the customer picked.
+  const chosenPickup = getLocationById(config.pickupId) ?? PICKUP
+
   if (config.requirement === 'full_time' || config.durationHours > 8) {
     return {
       booking_type: 'HOURLY',
       hours: Math.min(12, config.durationHours || 4),
-      pickup: { lat: PICKUP.lat, lng: PICKUP.lng },
-      pickup_address: PICKUP.address,
+      pickup: { lat: chosenPickup.lat, lng: chosenPickup.lng },
+      pickup_address:
+        config.requirement === 'full_time' && config.fullTimeDetails?.locality
+          ? config.fullTimeDetails.locality
+          : chosenPickup.address || chosenPickup.name,
       required_certification: skill.id,
       speed_ceiling_kmh: config.ceiling,
       ...basePayload,
     }
   }
 
-  let pickup = { lat: PICKUP.lat, lng: PICKUP.lng }
-  let pickup_address = PICKUP.address
+  let pickup = { lat: chosenPickup.lat, lng: chosenPickup.lng }
+  let pickup_address = chosenPickup.address || chosenPickup.name
   let drop = null
   let drop_address = ''
 
   if (config.requirement === 'inter_city') {
     const startLocId = config.interCityDetails?.startLocationId || 'start_hitec'
-    const startLoc = START_LOCATIONS.find((s) => s.id === startLocId) ?? START_LOCATIONS[0]
+    const startLoc = getLocationById(startLocId) ?? START_LOCATIONS[0]
     pickup = { lat: startLoc.lat, lng: startLoc.lng }
     pickup_address = startLoc.address || startLoc.name
 
     const destId = config.interCityDetails?.destinationId || config.interCityDestination || 'vijayawada'
-    const dest = INTERCITY_DESTINATIONS.find((d) => d.id === destId) ?? INTERCITY_DESTINATIONS[0]
+    const dest = getLocationById(destId) ?? INTERCITY_DESTINATIONS[0]
     drop = { lat: dest.lat, lng: dest.lng }
-    drop_address = dest.name
+    drop_address = dest.address || dest.name
     basePayload.stops = config.interCityDetails?.stops || config.stops
     basePayload.return_stops = config.interCityDetails?.returnStops || config.returnStops
   } else if (config.requirement === 'airport') {

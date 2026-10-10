@@ -66,11 +66,16 @@ export async function ensureDriverProfile(userId: string): Promise<void> {
   // Test keeps the real default so the gate stays under test.
   const autoApprove = env.NODE_ENV === 'development'
   await pool.query(
-    `INSERT INTO driver_profiles (user_id, onboarding_status, onboarded_at, certifications)
-     VALUES ($1, COALESCE($2::onboarding_status, 'PENDING'), now(), $3)
+    // Development also certifies every tier and Night Shield, so a local driver
+    // can take any booking at any hour. Real environments keep the
+    // certifications ops awards through badges: granting them all there would
+    // let an untrained driver take Lux or night trips.
+    `INSERT INTO driver_profiles (user_id, onboarding_status, onboarded_at, night_shield_certified, certifications)
+     VALUES ($1, COALESCE($2::onboarding_status, 'PENDING'), now(), $2 IS NOT NULL,
+             COALESCE($3::text[], ARRAY['MD-Standard']))
      ON CONFLICT (user_id) DO UPDATE
-       SET certifications = $3
-     WHERE array_length(driver_profiles.certifications, 1) < 5`,
-    [userId, autoApprove ? 'APPROVED' : null, ALL_CERTIFICATIONS],
+       SET certifications = $3::text[]
+     WHERE $3::text[] IS NOT NULL AND array_length(driver_profiles.certifications, 1) < 5`,
+    [userId, autoApprove ? 'APPROVED' : null, autoApprove ? ALL_CERTIFICATIONS : null],
   )
 }

@@ -15,7 +15,7 @@
  *   isInterCity     — if true, destination picker uses INTERCITY_DESTINATIONS; affects speed for ETA
  */
 import { Pressable, Text, View } from 'react-native'
-import { Check, Clock, Compass, Minus, Navigation, Plus } from 'lucide-react-native'
+import { Clock, Compass, Minus, Navigation, Plus } from 'lucide-react-native'
 import {
   CITY_LOCATIONS,
   INTERCITY_DESTINATIONS,
