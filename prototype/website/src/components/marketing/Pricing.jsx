@@ -4,8 +4,16 @@ import { PAGE_X } from './Navbar.jsx'
 import SectionHeading from './SectionHeading.jsx'
 import { PRICING } from '../../data/mock.js'
 import { cn } from '../../lib/utils.js'
+import { useTrip } from '../../context/tripStore.js'
 
 export default function Pricing() {
+  // Prices come from the live rate cards; the lowest rate of the plan's tiers.
+  const { skills } = useTrip()
+  const priceOf = (plan) => {
+    if (!plan.rateFrom) return plan.price
+    const rates = skills.filter((s) => plan.rateFrom.includes(s.id)).map((s) => s.rate)
+    return rates.length ? `₹${Math.min(...rates)}` : plan.price
+  }
   return (
     <section id="pricing" className="bg-white py-20 sm:py-28">
       <div className={PAGE_X}>
@@ -32,8 +40,8 @@ export default function Pricing() {
               <h3 className="text-lg font-bold text-slate-900">{plan.name}</h3>
               <p className="mt-1 text-sm text-slate-500">{plan.blurb}</p>
               <p className="mt-6 flex items-baseline gap-1">
-                <span className="text-4xl font-black tracking-tight text-slate-900">{plan.price}</span>
-                <span className="text-sm text-slate-500">{plan.unit} per km</span>
+                <span className="text-4xl font-black tracking-tight text-slate-900">{priceOf(plan)}</span>
+                <span className="text-sm text-slate-500">{plan.rateFrom ? (plan.rateFrom.length > 1 ? 'from, per km' : 'per km') : ''}</span>
               </p>
               <ul className="mt-7 flex-1 space-y-3">
                 {plan.features.map((feature) => (

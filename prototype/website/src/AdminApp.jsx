@@ -2,7 +2,7 @@ import { lazy, Suspense } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext.jsx'
 import { ToastProvider } from './context/ToastContext.jsx'
-import RequireRole, { DESK_ROLES, FINANCE_ROLES, OPS_ROLES } from './components/admin/RequireRole.jsx'
+import RequireRole, { DESK_ROLES, FINANCE_ROLES, MANAGER_ROLES, OPS_ROLES, SUPPORT_ROLES } from './components/admin/RequireRole.jsx'
 import AdminLayout from './components/admin/AdminLayout.jsx'
 import AdminLogin from './pages/admin/Login.jsx'
 import Board from './pages/admin/Board.jsx'
@@ -23,6 +23,12 @@ const Grading = lazy(() => import('./pages/admin/Grading.jsx'))
 const Payments = lazy(() => import('./pages/admin/Payments.jsx'))
 const Payouts = lazy(() => import('./pages/admin/Payouts.jsx'))
 const Audit = lazy(() => import('./pages/admin/Audit.jsx'))
+const Overview = lazy(() => import('./pages/admin/Overview.jsx'))
+const Trips = lazy(() => import('./pages/admin/Trips.jsx'))
+const TripDetail = lazy(() => import('./pages/admin/TripDetail.jsx'))
+const Customers = lazy(() => import('./pages/admin/Customers.jsx'))
+const CustomerDetail = lazy(() => import('./pages/admin/CustomerDetail.jsx'))
+const Pricing = lazy(() => import('./pages/admin/Pricing.jsx'))
 
 const DRIVER_READ = [...OPS_ROLES, 'SAFETY_DESK_AGENT']
 
@@ -58,6 +64,12 @@ export default function AdminApp() {
                 <Route path="payments" element={<RequireRole any={[...FINANCE_ROLES, 'OPS_MANAGER']}><Payments /></RequireRole>} />
                 <Route path="payouts" element={<RequireRole any={FINANCE_ROLES}><Payouts /></RequireRole>} />
                 <Route path="audit" element={<RequireRole any={['SUPER_ADMIN']}><Audit /></RequireRole>} />
+                <Route path="overview" element={<RequireRole any={MANAGER_ROLES}><Overview /></RequireRole>} />
+                <Route path="trips" element={<RequireRole any={SUPPORT_ROLES}><Trips /></RequireRole>} />
+                <Route path="trips/:id" element={<RequireRole any={SUPPORT_ROLES}><TripDetail /></RequireRole>} />
+                <Route path="customers" element={<RequireRole any={SUPPORT_ROLES}><Customers /></RequireRole>} />
+                <Route path="customers/:id" element={<RequireRole any={SUPPORT_ROLES}><CustomerDetail /></RequireRole>} />
+                <Route path="pricing" element={<RequireRole any={MANAGER_ROLES}><Pricing /></RequireRole>} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

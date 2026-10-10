@@ -91,6 +91,10 @@ const EnvSchema = z.object({
   // Seconds a search result is served from Redis before asking Google again.
   LOCATION_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
 
+  // Whether the operations console shows the seeded demo data (npm run
+  // seed:demo). Production always hides it, whatever this says.
+  ADMIN_DEMO_DATA: z.enum(['show', 'hide']).default('show'),
+
   // When set, GET /metrics requires `Authorization: Bearer <token>`.
   // Required in production: the metrics expose internal load figures.
   METRICS_TOKEN: z.string().min(24).optional(),
@@ -165,6 +169,9 @@ export const env: Env = load()
 
 export const googleClientIds = (): string[] =>
   env.GOOGLE_CLIENT_IDS.split(',').map((s) => s.trim()).filter(Boolean)
+
+/** True when console queries should include demo accounts and their trips. */
+export const showDemoData = (): boolean => env.NODE_ENV !== 'production' && env.ADMIN_DEMO_DATA === 'show'
 
 export const corsOrigins = (): string[] =>
   env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)

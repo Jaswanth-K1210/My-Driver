@@ -61,9 +61,11 @@ export function registerAdminOpsRoutes(app: FastifyInstance): void {
     '/v1/admin/drivers',
     {
       onRequest: [requireAuth, requireRole(...OPS_READ)],
-      schema: { querystring: z.object({ status: OnboardingStatus.optional(), limit: Limit }) },
+      schema: {
+        querystring: z.object({ status: OnboardingStatus.optional(), q: z.string().max(80).optional(), limit: Limit }),
+      },
     },
-    async (request) => ({ items: await listDrivers(request.query.status, request.query.limit) }),
+    async (request) => ({ items: await listDrivers(request.query.status, request.query.limit, request.query.q) }),
   )
 
   r.get(

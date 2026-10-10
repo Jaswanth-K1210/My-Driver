@@ -10,6 +10,7 @@ import { useToast } from '../../context/toastStore.js'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
 import { LevelBadge, LEVEL_MEANING, relative, SlaTimer, StatusPill } from '../../components/admin/Indicators.jsx'
 import { cn } from '../../lib/utils.js'
+import { reasonLabel } from '../../components/admin/format.js'
 import { useAuth } from '../../context/authStore.js'
 import { hasRole, OPS_ROLES } from '../../components/admin/RequireRole.jsx'
 
@@ -85,7 +86,7 @@ export default function Incident() {
           <div className="flex items-center gap-3">
             <LevelBadge level={escalation.level} className="text-sm" />
             <h1 className="text-2xl font-black tracking-tight text-slate-900">
-              {escalation.reason.replace(/_/g, ' ')}
+              {reasonLabel(escalation.reason)}
             </h1>
           </div>
           <p className="mt-1 text-sm text-slate-500">

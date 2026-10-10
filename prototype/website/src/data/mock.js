@@ -266,8 +266,8 @@ export const STEPS = [
 ]
 
 export const PRICING = [
-  { name: 'Standard', price: '₹16', unit: '/km', blurb: 'Everyday trips with the full safety stack.', features: ['Verified MD-Standard drivers', 'Speed limit on every trip', 'Guardian link for up to 3 contacts', 'Trip Vault and PDF certificate'], cta: 'Book Standard', featured: false },
-  { name: 'SUV & Night', price: '₹22', unit: '/km', blurb: 'Large cars, highways and late-night trips.', features: ['MD-SUV and Night Shield drivers', 'Everything in Standard', 'Welfare call after night drop-offs', 'Same refundable-hold payment'], cta: 'Book SUV & Night', featured: true },
+  { name: 'Standard', price: '₹16', rateFrom: ['MD-Standard'], unit: '/km', blurb: 'Everyday trips with the full safety stack.', features: ['Verified MD-Standard drivers', 'Speed limit on every trip', 'Guardian link for up to 3 contacts', 'Trip Vault and PDF certificate'], cta: 'Book Standard', featured: false },
+  { name: 'SUV & Night', price: '₹19', rateFrom: ['MD-SUV', 'MD-Night'], unit: '/km', blurb: 'Large cars, highways and late-night trips.', features: ['MD-SUV and Night Shield drivers', 'Everything in Standard', 'Welfare call after night drop-offs', 'Same refundable-hold payment'], cta: 'Book SUV & Night', featured: true },
   { name: 'Corporate', price: 'Custom', unit: '', blurb: 'Employee transport with compliance reporting.', features: ['Dedicated account manager', 'Policy-based speed limits', 'Consolidated billing with GST', 'Trip Vault exports for audit'], cta: 'Talk to sales', featured: false },
 ]
 

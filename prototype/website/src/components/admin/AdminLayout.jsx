@@ -1,13 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
-  ArrowUpRight, BadgeCheck, Banknote, CreditCard, LogOut, MapPinned, Menu, Moon, PhoneCall, Radio, ScrollText, UserRoundCheck, X,
+  ArrowUpRight, BadgeCheck, Banknote, BarChart3, CreditCard, FlaskConical, LogOut, Route, Tags, UsersRound, MapPinned, Menu, Moon, PhoneCall, Radio, ScrollText, UserRoundCheck, X,
 } from 'lucide-react'
 import { Wordmark } from '../marketing/Navbar.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { useToast } from '../../context/toastStore.js'
 import { cn } from '../../lib/utils.js'
-import { DESK_ROLES, FINANCE_ROLES, hasRole, OPS_ROLES } from './RequireRole.jsx'
+import { DESK_ROLES, FINANCE_ROLES, hasRole, MANAGER_ROLES, OPS_ROLES, SUPPORT_ROLES } from './RequireRole.jsx'
+import { api } from '../../lib/apiClient.js'
 import { PromptHost } from './PromptDialog.jsx'
 import { PUBLIC_SITE_URL } from '../../lib/config.js'
 
@@ -16,7 +17,10 @@ import { PUBLIC_SITE_URL } from '../../lib/config.js'
  * a link that answers 403 is worse than not showing it.
  */
 const NAV = [
+  { to: '/overview', label: 'Overview', icon: BarChart3, roles: MANAGER_ROLES },
   { to: '/', label: 'Live board', icon: Radio, end: true, roles: DESK_ROLES },
+  { to: '/trips', label: 'Trips', icon: Route, roles: SUPPORT_ROLES },
+  { to: '/customers', label: 'Customers', icon: UsersRound, roles: SUPPORT_ROLES },
   { to: '/map', label: 'Live map', icon: MapPinned, roles: DESK_ROLES },
   { to: '/checkins', label: 'Check-ins', icon: PhoneCall, roles: DESK_ROLES },
   { to: '/drivers', label: 'Drivers', icon: UserRoundCheck, roles: [...OPS_ROLES, 'SAFETY_DESK_AGENT'] },
@@ -24,6 +28,7 @@ const NAV = [
   { to: '/grading', label: 'Grading', icon: BadgeCheck, roles: OPS_ROLES },
   { to: '/payments', label: 'Payments', icon: CreditCard, roles: [...FINANCE_ROLES, 'OPS_MANAGER'] },
   { to: '/payouts', label: 'Payouts', icon: Banknote, roles: FINANCE_ROLES },
+  { to: '/pricing', label: 'Pricing', icon: Tags, roles: MANAGER_ROLES },
   { to: '/audit', label: 'Audit ledger', icon: ScrollText, roles: ['SUPER_ADMIN'] },
 ]
 
@@ -58,6 +63,11 @@ export default function AdminLayout() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
+  // Shown on every page so demo records are never mistaken for real ones.
+  const [demoVisible, setDemoVisible] = useState(false)
+  useEffect(() => {
+    api.admin.settings().then((s) => setDemoVisible(s.demo_data_visible)).catch(() => {})
+  }, [])
 
   const handleSignOut = () => {
     signOut()
@@ -148,6 +158,12 @@ export default function AdminLayout() {
 
       <main className="px-4 py-6 lg:ml-64 lg:px-8 lg:py-8">
         <div className="mx-auto max-w-6xl">
+          {demoVisible && (
+            <p className="mb-6 flex items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-semibold text-amber-900">
+              <FlaskConical className="h-4 w-4 shrink-0" aria-hidden="true" />
+              Demo data is visible. Demo customers, drivers and trips are mixed into every list. Set ADMIN_DEMO_DATA=hide to remove them.
+            </p>
+          )}
           <Outlet />
         </div>
       </main>

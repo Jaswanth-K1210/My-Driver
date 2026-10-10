@@ -5,6 +5,10 @@ import { useAuth } from '../../context/authStore.js'
 export const DESK_ROLES = ['SAFETY_DESK_AGENT', 'OPS_MANAGER', 'SUPER_ADMIN']
 export const OPS_ROLES = ['OPS_MANAGER', 'SUPER_ADMIN']
 export const FINANCE_ROLES = ['FINANCE', 'SUPER_ADMIN']
+/** Trip and customer lookup: everyone who answers customers or checks charges. */
+export const SUPPORT_ROLES = ['SAFETY_DESK_AGENT', 'OPS_MANAGER', 'FINANCE', 'SUPER_ADMIN']
+/** Overview and pricing (viewing). Editing prices is FINANCE / SUPER_ADMIN. */
+export const MANAGER_ROLES = ['OPS_MANAGER', 'FINANCE', 'SUPER_ADMIN']
 
 export function hasRole(user, allowed) {
   if (!user) return false

@@ -1,5 +1,6 @@
 import { env } from '../../config/env.js'
 import { pool } from '../../db/client.js'
+import { hideDemo } from '../../lib/demo.js'
 import { badRequest, conflict, notFound, unauthorized } from '../../lib/errors.js'
 import { getPaymentProvider, type PaymentProvider } from '../../providers/payments/index.js'
 import type { Role } from '../auth/otp.js'
@@ -243,6 +244,7 @@ export async function listPayments(status: PaymentStatus | undefined, limit: num
        JOIN users u ON u.id = p.customer_id
        JOIN trips t ON t.id = p.trip_id
       WHERE ($1::payment_status IS NULL OR p.status = $1)
+        ${hideDemo('u.is_demo')}
       ORDER BY p.created_at DESC
       LIMIT $2`,
     [status ?? null, limit],
@@ -252,7 +254,8 @@ export async function listPayments(status: PaymentStatus | undefined, limit: num
             COALESCE(sum(amount_refunded), 0)::float8 AS refunded,
             COALESCE(sum(amount_authorized) FILTER (WHERE status = 'AUTHORIZED'), 0)::float8 AS held,
             COALESCE(sum(amount_due), 0)::float8 AS due
-       FROM payments`,
+       FROM payments p
+      WHERE true ${hideDemo('(SELECT is_demo FROM users WHERE id = p.customer_id)')}`,
   )
   return { items: rows, totals: totals[0] }
 }

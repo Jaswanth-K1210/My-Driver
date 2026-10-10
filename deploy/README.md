@@ -87,9 +87,9 @@ run before the new API starts. On shutdown the API stops taking traffic,
 finishes in-flight requests and flushes buffered telemetry, so restarts do not
 drop trips.
 
-`seed.js` is the source of truth for rate cards, assessments and badges.
-Re-running it **resets prices to the values in `src/db/seed.ts`**, so change
-prices there, not by hand in the database.
+`seed.js` creates the rate cards, assessments and badges on first run.
+Re-running it is safe: it never overwrites prices. Change prices in the
+console's **Pricing** page (Finance or super admin); every change is audited.
 
 **Rollback:** set `RELEASE` back to the previous tag and `up -d` again. The
 previous API runs fine on the newer schema.

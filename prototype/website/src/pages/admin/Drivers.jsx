@@ -7,24 +7,32 @@ import { SectionCard } from '../../components/app/Primitives.jsx'
 import { Segmented } from '../../components/app/Primitives.jsx'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
 import { Empty, StatusPill } from '../../components/admin/Indicators.jsx'
+import { SearchBox, useDebounced } from '../../components/admin/SearchBox.jsx'
+import { formatPhone } from '../../lib/utils.js'
 
 const FILTERS = [
-  { id: '', label: 'All' },
   { id: 'UNDER_REVIEW', label: 'Review' },
-  { id: 'TESTING', label: 'Testing' },
   { id: 'PENDING', label: 'Pending' },
+  { id: 'TESTING', label: 'Testing' },
+  { id: 'APPROVED', label: 'Approved' },
+  { id: 'REJECTED', label: 'Rejected' },
+  { id: 'SUSPENDED', label: 'Suspended' },
+  { id: '', label: 'All' },
 ]
 
 export default function Drivers() {
   const navigate = useNavigate()
   const [status, setStatus] = useState('UNDER_REVIEW')
+  const [q, setQ] = useState('')
+  const query = useDebounced(q.trim(), 300)
 
   // Slower than the live board: an onboarding queue does not change by the
   // second, and each poll is a heavier query.
   const { data, loading } = useAdminPoll(
-    () => api.admin.drivers({ status: status || undefined, limit: 100 }),
+    // A search looks across every state, so a driver is found wherever they are.
+    () => api.admin.drivers({ status: query ? undefined : status || undefined, q: query || undefined, limit: 100 }),
     15000,
-    [status],
+    [status, query],
   )
   const drivers = data?.items ?? []
 
@@ -32,13 +40,23 @@ export default function Drivers() {
     <div className="space-y-6">
       <PageHeader title="Drivers" subtitle="Onboarding review, identity checks, assessments, badges and Night Shield" />
 
-      <Segmented options={FILTERS} value={status} onChange={setStatus} className="max-w-md" />
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+        <SearchBox value={q} onChange={setQ} placeholder="Search name, phone or vehicle plate" className="lg:w-80" />
+        <Segmented options={FILTERS} value={query ? null : status} onChange={(v) => { setQ(''); setStatus(v) }} className="lg:flex-1" />
+      </div>
 
-      <SectionCard title={`${drivers.length} driver${drivers.length === 1 ? '' : 's'}`} icon={UserRoundCheck}>
+      <SectionCard
+        title={query ? `${drivers.length} match${drivers.length === 1 ? '' : 'es'} for “${query}”` : `${drivers.length} driver${drivers.length === 1 ? '' : 's'}`}
+        icon={UserRoundCheck}
+      >
         {loading && drivers.length === 0 ? (
           <p className="py-8 text-center text-sm text-slate-500">Loading…</p>
         ) : drivers.length === 0 ? (
-          <Empty icon={UserRoundCheck} title="Nothing in this queue" hint="New registrations appear here." />
+          <Empty
+            icon={UserRoundCheck}
+            title={query ? 'No drivers match that search' : 'Nothing in this queue'}
+            hint={query ? 'Try part of the name, the last digits of the phone, or the plate.' : 'Drivers in this state appear here.'}
+          />
         ) : (
           <ul className="space-y-2">
             {drivers.map((driver) => (
@@ -53,7 +71,7 @@ export default function Drivers() {
                       {driver.full_name ?? 'Unnamed driver'}
                     </p>
                     <p className="mt-0.5 truncate font-mono text-xs text-slate-500">
-                      {driver.phone_number ?? '—'}
+                      {formatPhone(driver.phone_number) || '—'}
                     </p>
                   </div>
 

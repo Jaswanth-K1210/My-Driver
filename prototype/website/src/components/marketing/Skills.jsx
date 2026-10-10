@@ -1,16 +1,19 @@
 import Reveal from './Reveal.jsx'
 import { PAGE_X } from './Navbar.jsx'
 import SectionHeading from './SectionHeading.jsx'
-import { SKILLS } from '../../data/mock.js'
+import { useTrip } from '../../context/tripStore.js'
 
 export default function Skills() {
+  // Live rates from the API (rate cards), so a price change in the console
+  // shows here too; falls back to the bundled copy offline.
+  const { skills } = useTrip()
   return (
     <section id="skills" className="bg-slate-50 py-20 sm:py-28">
       <div className={PAGE_X}>
         <SectionHeading eyebrow="Driver tiers" title="Five certifications. One standard of integrity.">Every driver verifies their PAN and Aadhaar and has their licence reviewed before their first trip. Each tier adds training for a kind of car or trip.</SectionHeading>
 
         <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-          {SKILLS.map((skill, i) => (
+          {skills.map((skill, i) => (
             <Reveal
               as="article"
               key={skill.id}

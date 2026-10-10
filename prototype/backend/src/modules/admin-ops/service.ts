@@ -8,6 +8,7 @@
  */
 import type { PoolClient } from 'pg'
 import { pool } from '../../db/client.js'
+import { hideDemo } from '../../lib/demo.js'
 import { approvalBlockers, getKycStatus } from '../kyc/service.js'
 import { badRequest, conflict, notFound } from '../../lib/errors.js'
 import { getStorageProvider } from '../../providers/storage/index.js'
@@ -87,7 +88,11 @@ export type DriverRow = {
 export async function listDrivers(
   status: OnboardingStatus | undefined,
   limit: number,
+  q?: string,
 ): Promise<DriverRow[]> {
+  // Search by name, phone (any digits typed) or vehicle plate.
+  const term = q?.trim() ? `%${q.trim().toLowerCase()}%` : null
+  const digits = q?.replace(/\D/g, '') ? `%${q.replace(/\D/g, '')}%` : null
   const { rows } = await pool.query<DriverRow>(
     `SELECT dp.user_id,
             u.full_name,
@@ -107,6 +112,9 @@ export async function listDrivers(
        FROM driver_profiles dp
        JOIN users u ON u.id = dp.user_id
       WHERE ($1::onboarding_status IS NULL OR dp.onboarding_status = $1)
+        AND ($3::text IS NULL OR lower(u.full_name) LIKE $3 OR lower(coalesce(dp.vehicle_plate, '')) LIKE $3
+             OR ($4::text IS NOT NULL AND u.phone_number LIKE $4))
+        ${hideDemo('u.is_demo')}
       ORDER BY
         -- Review queue order: anything awaiting a decision first, oldest first.
         CASE dp.onboarding_status
@@ -114,7 +122,7 @@ export async function listDrivers(
         END,
         dp.onboarded_at NULLS LAST
       LIMIT $2`,
-    [status ?? null, limit],
+    [status ?? null, limit, term, digits],
   )
   return rows
 }
@@ -316,6 +324,7 @@ export async function gradingQueue(limit: number) {
        JOIN assessments a ON a.id = aa.assessment_id
        JOIN users u ON u.id = aa.driver_id
       WHERE aa.submitted_at IS NOT NULL AND aa.passed IS NULL
+        ${hideDemo('u.is_demo')}
       ORDER BY aa.submitted_at
       LIMIT $1`,
     [limit],
@@ -574,6 +583,7 @@ export async function expiringNightShield(days: number) {
        JOIN users u ON u.id = q.driver_id
       WHERE q.revoked_at IS NULL
         AND q.expires_at < now() + ($1::int * INTERVAL '1 day')
+        ${hideDemo('u.is_demo')}
       ORDER BY q.expires_at`,
     [days],
   )
@@ -589,6 +599,7 @@ export async function shiftChecks(shiftDate: string | undefined) {
        FROM night_shift_checks c
        JOIN users u ON u.id = c.driver_id
       WHERE c.shift_date = COALESCE($1::date, (now() - INTERVAL '5 hours')::date)
+        ${hideDemo('u.is_demo')}
       ORDER BY c.passed, c.created_at DESC`,
     [shiftDate ?? null],
   )
@@ -608,6 +619,7 @@ export async function checkinQueue(includeDone: boolean, limit: number) {
        JOIN users cu ON cu.id = t.customer_id
        LEFT JOIN users du ON du.id = t.driver_id
       WHERE ($1::boolean OR c.outcome = 'PENDING')
+        ${hideDemo('cu.is_demo')}
       ORDER BY c.outcome <> 'PENDING', c.due_at
       LIMIT $2`,
     [includeDone, limit],
@@ -645,6 +657,7 @@ export async function listPayouts(status: string | undefined, limit: number) {
        FROM driver_payouts p
        JOIN users u ON u.id = p.driver_id
       WHERE ($1::text IS NULL OR p.status::text = $1)
+        ${hideDemo('u.is_demo')}
       ORDER BY p.created_at DESC
       LIMIT $2`,
     [status ?? null, limit],
@@ -662,6 +675,7 @@ export async function unsettled(periodStart: string, periodEnd: string) {
        JOIN users u ON u.id = t.driver_id
       WHERE t.status = 'COMPLETED' AND t.payout_id IS NULL
         AND t.completed_at >= $1::date AND t.completed_at < $2::date
+        ${hideDemo('u.is_demo')}
       GROUP BY t.driver_id, u.full_name
       ORDER BY gross DESC`,
     [periodStart, periodEnd],

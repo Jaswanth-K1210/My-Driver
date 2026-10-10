@@ -11,6 +11,7 @@ import { pool } from './db/client.js'
 import { forbidden, registerErrorHandler } from './lib/errors.js'
 import { gauge, renderMetrics } from './lib/metrics.js'
 import { registerAdminOpsRoutes } from './modules/admin-ops/routes.js'
+import { registerAdminSupportRoutes } from './modules/admin-support/routes.js'
 import { registerAuthRoutes } from './modules/auth/routes.js'
 import { registerCatalogueRoutes } from './modules/catalogue/routes.js'
 import { registerKycRoutes } from './modules/kyc/routes.js'
@@ -117,6 +118,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerTripRoutes(app)
   registerSafetyRoutes(app)
   registerAdminOpsRoutes(app)
+  registerAdminSupportRoutes(app)
   registerVaultRoutes(app)
   registerKycRoutes(app)
   registerPaymentRoutes(app)

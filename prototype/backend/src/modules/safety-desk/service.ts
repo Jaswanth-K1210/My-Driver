@@ -1,4 +1,5 @@
 import { pool } from '../../db/client.js'
+import { hideDemo, hideDemoTrips } from '../../lib/demo.js'
 import { notFound } from '../../lib/errors.js'
 import { getVoiceProvider } from '../../providers/voice/index.js'
 import type { Role } from '../auth/otp.js'
@@ -57,6 +58,7 @@ export async function activeTrips(): Promise<LiveTrip[]> {
        LEFT JOIN driver_profiles dp ON dp.user_id = t.driver_id
        LEFT JOIN escalations e ON e.trip_id = t.id AND e.status <> 'RESOLVED'
       WHERE t.status IN ('HANDSHAKE_PENDING', 'IN_TRIP', 'ESCALATED')
+        ${hideDemo('cu.is_demo')}
       ORDER BY e.level DESC NULLS LAST, t.started_at ASC NULLS LAST
       LIMIT 500`,
   )
@@ -109,7 +111,8 @@ export async function liveDrivers(): Promise<LiveDriver[]> {
             AND t.status IN ('MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP', 'ESCALATED')
        LEFT JOIN escalations e ON e.trip_id = t.id AND e.status <> 'RESOLVED'
       WHERE dp.user_id = ANY($1::uuid[])
-        AND dp.availability <> 'OFFLINE'`,
+        AND dp.availability <> 'OFFLINE'
+        ${hideDemo('u.is_demo')}`,
     [[...at.keys()]],
   )
   return rows.map((r) => ({ ...r, ...at.get(r.driver_id)! }))
@@ -150,6 +153,7 @@ export async function escalationQueue(includeResolved = false): Promise<QueueIte
        JOIN users cu ON cu.id = t.customer_id
        LEFT JOIN users du ON du.id = t.driver_id
       WHERE ($1::boolean OR e.status <> 'RESOLVED')
+        ${hideDemo('cu.is_demo')}
       ORDER BY e.level DESC, e.sla_deadline ASC NULLS LAST, e.opened_at ASC
       LIMIT 200`,
     [includeResolved],
@@ -273,15 +277,19 @@ export async function deskStats(): Promise<{
 }> {
   const [{ rows: trips }, { rows: open }, { rows: breached }, { rows: levels }] = await Promise.all([
     pool.query<{ n: string }>(
-      `SELECT count(*) AS n FROM trips WHERE status IN ('HANDSHAKE_PENDING','IN_TRIP','ESCALATED')`,
+      `SELECT count(*) AS n FROM trips t WHERE status IN ('HANDSHAKE_PENDING','IN_TRIP','ESCALATED') ${hideDemoTrips('t')}`,
     ),
-    pool.query<{ n: string }>(`SELECT count(*) AS n FROM escalations WHERE status <> 'RESOLVED'`),
     pool.query<{ n: string }>(
-      `SELECT count(*) AS n FROM escalations
-        WHERE status = 'OPEN' AND sla_deadline IS NOT NULL AND sla_deadline < now()`,
+      `SELECT count(*) AS n FROM escalations e JOIN trips t ON t.id = e.trip_id
+        WHERE e.status <> 'RESOLVED' ${hideDemoTrips('t')}`,
+    ),
+    pool.query<{ n: string }>(
+      `SELECT count(*) AS n FROM escalations e JOIN trips t ON t.id = e.trip_id
+        WHERE e.status = 'OPEN' AND e.sla_deadline IS NOT NULL AND e.sla_deadline < now() ${hideDemoTrips('t')}`,
     ),
     pool.query<{ level: string; n: string }>(
-      `SELECT level, count(*) AS n FROM escalations WHERE status <> 'RESOLVED' GROUP BY level`,
+      `SELECT e.level, count(*) AS n FROM escalations e JOIN trips t ON t.id = e.trip_id
+        WHERE e.status <> 'RESOLVED' ${hideDemoTrips('t')} GROUP BY e.level`,
     ),
   ])
 

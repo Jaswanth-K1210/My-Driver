@@ -105,6 +105,11 @@ services mechanical.
 | GET | `/v1/catalogue/trip-config` (ETag, 5 min cache) | **public** |
 | GET | `/v1/locations/search?q=&lat=&lng=` (cached proxy, 60/min) | any |
 | POST | `/v1/trips/:id/telemetry` (background batch, ≤300 points) | participant |
+| GET | `/v1/admin/trips` (search) · `/v1/admin/trips/:id` | desk, ops, finance, super admin |
+| GET | `/v1/admin/customers` (search) · `/v1/admin/customers/:id` | desk, ops, finance, super admin |
+| GET | `/v1/admin/overview?days=7\|30\|90` · `/v1/admin/rate-cards` | ops, finance, super admin |
+| PATCH | `/v1/admin/rate-cards/:skill_id` (audited) | finance, super admin |
+| GET | `/v1/admin/settings` (demo-data visibility) | console roles |
 | GET | `/health` · `/ready` · `/metrics` | — |
 
 Errors are always `{ "error": { "code", "message", "details"? } }`.
@@ -139,6 +144,19 @@ rebased onto the server clock, so a phone with a wrong clock neither looks
 offline nor files its track at the wrong time. Only the newest point in a batch
 moves the live map. `wss://stream.mydriver.in` is a deployment hostname: point
 DNS and TLS at this service's `/v1/integrity`; nothing in this repo provisions it.
+
+## Console demo data
+
+`npm run seed:demo` fills the operations console with a realistic month: 40
+customers, 25 drivers in every onboarding state, ~360 trips (three live, two
+open incidents), payments and refunds, ratings, night check-ins, assessments
+to grade and a paid payout. Every demo account is marked `users.is_demo`.
+
+`ADMIN_DEMO_DATA=hide` removes all of it from every console list, count and
+chart (the console shows a banner while it is visible). It is hidden, not
+deleted, because `trip_events` and `audit_log` are append-only. Production
+always hides it and refuses to seed it. Demo drivers are never put online, so
+real bookings are never offered to them.
 
 ## KYC and payments
 

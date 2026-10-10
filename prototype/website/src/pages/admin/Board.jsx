@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Activity, Car, Radio, Timer } from 'lucide-react'
 import { api } from '../../lib/apiClient.js'
 import PageHeader from '../../components/admin/PageHeader.jsx'
+import { reasonLabel } from '../../components/admin/format.js'
 import { StatCard, SectionCard } from '../../components/app/Primitives.jsx'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
 import { Empty, LevelBadge, relative, SlaTimer } from '../../components/admin/Indicators.jsx'
@@ -71,7 +72,7 @@ export default function Board() {
                   <LevelBadge level={item.level} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-bold text-slate-900">
-                      {item.reason.replace(/_/g, ' ')}
+                      {reasonLabel(item.reason)}
                     </p>
                     <p className="mt-0.5 truncate text-xs text-slate-500">
                       {item.customer_name ?? 'Customer'} · {item.driver_name ?? 'Unassigned'} ·{' '}

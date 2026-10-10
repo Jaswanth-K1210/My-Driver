@@ -64,6 +64,16 @@ const STATUS_STYLES = {
   CAPTURED: 'bg-emerald-100 text-emerald-800',
   RELEASED: 'bg-slate-200 text-slate-600',
   REFUNDED: 'bg-violet-100 text-violet-800',
+  COMPLETED: 'bg-emerald-100 text-emerald-800',
+  CANCELLED: 'bg-slate-200 text-slate-600',
+  NO_DRIVERS_FOUND: 'bg-amber-100 text-amber-800',
+  REQUESTED: 'bg-sky-100 text-sky-800',
+  MATCHED: 'bg-sky-100 text-sky-800',
+  HANDSHAKE_PENDING: 'bg-sky-100 text-sky-800',
+  IN_TRIP: 'bg-brand-100 text-brand-700',
+  ACKNOWLEDGED: 'bg-sky-100 text-sky-800',
+  OPEN: 'bg-brand-100 text-brand-700',
+  RESOLVED: 'bg-emerald-100 text-emerald-800',
 }
 
 export function StatusPill({ status, className }) {

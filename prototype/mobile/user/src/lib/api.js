@@ -508,6 +508,19 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
 
       audit: (params = {}) => request(`/v1/admin/audit${qs(params)}`),
 
+      /* ── Support: trips, customers, overview, pricing ──────────────── */
+
+      settings: () => request('/v1/admin/settings'),
+      /** q: trip ref (TRP-1A2B3C), name, phone or address; plus status/from/to/cursor. */
+      trips: (params = {}) => request(`/v1/admin/trips${qs(params)}`),
+      trip: (id) => request(`/v1/admin/trips/${id}`),
+      customers: (params = {}) => request(`/v1/admin/customers${qs(params)}`),
+      customer: (id) => request(`/v1/admin/customers/${id}`),
+      overview: (days = 30) => request(`/v1/admin/overview?days=${days}`),
+      rateCards: () => request('/v1/admin/rate-cards'),
+      updateRateCard: (skillId, patch) =>
+        request(`/v1/admin/rate-cards/${encodeURIComponent(skillId)}`, { method: 'PATCH', body: patch }),
+
       /* ── Customer payments (FINANCE; OPS_MANAGER read-only) ─────────── */
 
       payments: (params = {}) => request(`/v1/admin/payments${qs(params)}`),

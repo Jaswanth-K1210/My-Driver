@@ -51,10 +51,10 @@ export async function seed(): Promise<void> {
     await pool.query(
       `INSERT INTO rate_cards (skill_id, label, per_km_rate, hourly_rate)
        VALUES ($1, $2, $3, $4)
+       -- Prices are owned by the console (Pricing) once a tier exists:
+       -- re-seeding refreshes the label but never overwrites a price.
        ON CONFLICT (skill_id) DO UPDATE
-         SET label = EXCLUDED.label,
-             per_km_rate = EXCLUDED.per_km_rate,
-             hourly_rate = EXCLUDED.hourly_rate`,
+         SET label = EXCLUDED.label`,
       [c.skill_id, c.label, c.per_km, c.hourly],
     )
   }
