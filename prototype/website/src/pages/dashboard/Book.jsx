@@ -6,6 +6,7 @@ import {
   Car,
   ChevronDown,
   ChevronUp,
+  Clock,
   Compass,
   CreditCard,
   Gauge,
@@ -25,7 +26,8 @@ import {
 } from '../../components/app/BookingFields.jsx'
 import { useTrip } from '../../context/tripStore.js'
 import { useToast } from '../../context/toastStore.js'
-import { REQUIREMENTS } from '../../data/mock.js'
+import { REQUIREMENTS, VEHICLE_TYPES } from '../../data/mock.js'
+import { isEnabled, vehicleEnabled } from '../../lib/features.js'
 import { getRecommendedSkillId, quoteFor, serverQuote } from '../../lib/booking.js'
 import { api } from '../../lib/apiClient.js'
 import { cn, formatINR } from '../../lib/utils.js'
@@ -103,6 +105,11 @@ export default function Book() {
     }
   }
 
+  // Steps renumber themselves when a phase toggle hides one.
+  const showVehicleStep = VEHICLE_TYPES.filter((v) => vehicleEnabled(v.id)).length > 1
+  const steps = [showVehicleStep && 'vehicle', 'car', 'trip', 'tier', 'safety'].filter(Boolean)
+  const step = (key) => steps.indexOf(key) + 1
+
   const activeReq = REQUIREMENTS.find((r) => r.id === config.requirement) ?? REQUIREMENTS[0]
 
   return (
@@ -115,7 +122,9 @@ export default function Book() {
       <div>
         <form onSubmit={submit} className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0 space-y-4">
-          {/* ── CARD 1: VEHICLE TYPE ── */}
+          {/* ── CARD 1: VEHICLE TYPE (only when more than cars is enabled) ── */}
+          {showVehicleStep && (
+          <>
           <div className="rounded-3xl border border-slate-200 bg-white p-6">
             <button
               type="button"
@@ -127,7 +136,7 @@ export default function Book() {
                   <Car className="h-5 w-5" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">1. Vehicle type</h2>
+                  <h2 className="text-base font-bold text-slate-900">{step('vehicle')}. Vehicle type</h2>
                   {!openSections.vehicle && (
                     <p className="text-xs font-medium text-brand-600 capitalize">Selected: {config.vehicleType}</p>
                   )}
@@ -152,6 +161,9 @@ export default function Book() {
             )}
           </div>
 
+          </>
+          )}
+
           {/* ── CARD 2: CAR SPECIFICATIONS & GARAGE ── */}
           <div className="rounded-3xl border border-slate-200 bg-white p-6">
             <button
@@ -164,7 +176,7 @@ export default function Book() {
                   <Gauge className="h-5 w-5" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">2. Your car</h2>
+                  <h2 className="text-base font-bold text-slate-900">{step('car')}. Your car</h2>
                   {!openSections.car && (
                     <p className="text-xs font-medium text-slate-500">
                       {config.carDetails.company} {config.carDetails.model} · {config.carDetails.engineType} · {config.carDetails.transmission}
@@ -210,7 +222,7 @@ export default function Book() {
                   {config.requirement === 'full_time' && <CalendarDays className="h-5 w-5" />}
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">3. Trip and route</h2>
+                  <h2 className="text-base font-bold text-slate-900">{step('trip')}. Trip and route</h2>
                   {!openSections.requirement && (
                     <p className="text-xs font-medium text-slate-500">
                       {activeReq.label} · {config.tripType === 'two_way' ? 'Round Trip' : 'One Way'}
@@ -242,9 +254,10 @@ export default function Book() {
                   <TripDetailsForm config={config} setConfig={setConfig} />
                 </div>
 
+                {isEnabled('scheduledPickup') ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div>
-                    <label className="mb-1 block text-xs font-bold text-slate-700">Pickup Schedule</label>
+                    <label className="mb-1 block text-xs font-bold text-slate-700">Pickup time</label>
                     <TimePicker value={config.pickupTime} onChange={(pickupTime) => set({ pickupTime })} />
                   </div>
                   <div>
@@ -268,6 +281,12 @@ export default function Book() {
                     </div>
                   </div>
                 </div>
+                ) : (
+                  <p className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2.5 text-xs font-semibold text-slate-600">
+                    <Clock className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                    Pickup now · your driver is dispatched as soon as you book
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -284,7 +303,7 @@ export default function Book() {
                   <ShieldCheck className="h-5 w-5" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">4. Driver tier</h2>
+                  <h2 className="text-base font-bold text-slate-900">{step('tier')}. Driver tier</h2>
                   {!openSections.driver && (
                     <p className="text-xs font-medium text-emerald-600">
                       Tier: {quote.skill.label} (₹{quote.skill.rate}/km)
@@ -323,7 +342,7 @@ export default function Book() {
                   <Gauge className="h-5 w-5" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">5. Safety</h2>
+                  <h2 className="text-base font-bold text-slate-900">{step('safety')}. Safety</h2>
                   <p className="text-xs font-medium text-slate-500">
                     Speed limit {config.ceiling} km/h · the driver is alerted above it
                   </p>

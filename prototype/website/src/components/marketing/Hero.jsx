@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { ArrowRight, Car, ChevronDown, ChevronUp, Compass, CreditCard, MapPin, Plane, ShieldCheck } from 'lucide-react'
 import { HERO_WORDS, STATS, TRUST_MARKS, REQUIREMENTS } from '../../data/mock.js'
 import { useTrip } from '../../context/tripStore.js'
+import { isEnabled } from '../../lib/features.js'
 import { DEFAULT_CONFIG, getRecommendedSkillId, quoteFor } from '../../lib/booking.js'
 import { formatINR } from '../../lib/utils.js'
 import {
@@ -146,10 +147,12 @@ function HeroBooking() {
             <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
               <TripDetailsForm config={config} setConfig={setConfig} />
             </div>
-            <div>
-              <label className="mb-1 block text-xs font-bold text-slate-700">Pickup Schedule</label>
-              <TimePicker value={config.pickupTime} onChange={(pickupTime) => set({ pickupTime })} />
-            </div>
+            {isEnabled('scheduledPickup') && (
+              <div>
+                <label className="mb-1 block text-xs font-bold text-slate-700">Pickup time</label>
+                <TimePicker value={config.pickupTime} onChange={(pickupTime) => set({ pickupTime })} />
+              </div>
+            )}
           </div>
         )}
       </div>

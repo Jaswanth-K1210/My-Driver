@@ -36,15 +36,23 @@ import { getMinDurationForConfig, getRecommendedSkillId, getRouteLegTelemetry } 
 import { clamp, cn } from '../../lib/utils.js'
 import PlacePicker from './PlacePicker.jsx'
 import { GarageChips } from './Garage.jsx'
+import { requirementEnabled, vehicleEnabled } from '../../lib/features.js'
 
 /* ── 1. Vehicle Type Selector ───────────────────────────────────────────── */
 
+// Full class names, so Tailwind keeps them in the build.
+const SM_COLS = { 1: 'sm:grid-cols-1', 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-4' }
+
+/** Vehicle choice. Hidden when the phase toggles leave only one type (cars). */
 export function VehicleTypeSelector({ value, onChange }) {
+  const types = VEHICLE_TYPES.filter((v) => vehicleEnabled(v.id))
+  if (types.length < 2) return null
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-      {VEHICLE_TYPES.map((v) => {
+    <div className={cn('grid grid-cols-1 gap-3', SM_COLS[Math.min(4, types.length)])}>
+      {types.map((v) => {
         const isSelected = v.id === value
-        const isAvailable = v.available
+        // An enabled phase toggle is what makes a type bookable.
+        const isAvailable = v.available || vehicleEnabled(v.id)
 
         return (
           <button
@@ -77,7 +85,7 @@ export function VehicleTypeSelector({ value, onChange }) {
                 {v.id === 'caravan' && <Tent className="h-5 w-5" />}
               </div>
 
-              {v.badge ? (
+              {v.badge && !isAvailable ? (
                 <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-amber-700">
                   {v.badge}
                 </span>
@@ -256,9 +264,10 @@ export function CarSpecPicker({ carDetails, onChange, onAutoMatchSkill }) {
 /* ── 3. Requirement Selector ────────────────────────────────────────────── */
 
 export function RequirementSelector({ value, onChange, onAutoMatchSkill }) {
+  const options = REQUIREMENTS.filter((r) => requirementEnabled(r.id))
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {REQUIREMENTS.map((r) => {
+    <div className={cn('grid grid-cols-2 gap-3', SM_COLS[Math.min(4, options.length)])}>
+      {options.map((r) => {
         const isSelected = r.id === value
         return (
           <button

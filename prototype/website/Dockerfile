@@ -13,9 +13,12 @@ ARG VITE_APP_TARGET=customer
 ARG VITE_API_URL
 ARG VITE_GOOGLE_CLIENT_ID=""
 ARG VITE_PUBLIC_SITE_URL=""
+# Comma-separated phase toggles to switch on (see src/lib/features.js).
+ARG VITE_FEATURES=""
 RUN test -n "$VITE_API_URL" || (echo "VITE_API_URL build arg is required" && exit 1)
 ENV VITE_APP_TARGET=$VITE_APP_TARGET VITE_API_URL=$VITE_API_URL \
-    VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID VITE_PUBLIC_SITE_URL=$VITE_PUBLIC_SITE_URL
+    VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID VITE_PUBLIC_SITE_URL=$VITE_PUBLIC_SITE_URL \
+    VITE_FEATURES=$VITE_FEATURES
 RUN npm run check && npx vite build && \
     mkdir /out && cp -r "$( [ "$VITE_APP_TARGET" = admin ] && echo dist-admin || echo dist )"/. /out/
 
