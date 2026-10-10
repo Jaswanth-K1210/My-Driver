@@ -30,8 +30,8 @@ be as currently built.
 | Average trip length | 60 minutes | Placeholder |
 | Place searches per booking | 6, half served from cache | 300 ms debounce, two or more location fields |
 | SMS per trip | 1.2 | Login OTPs and guardian links, averaged |
-| Photos per trip | 16 inspection photos + 1 selfie, about 40 MB | Pre and post inspection, 8 zones each, full-resolution JPEG at quality 88, no resize |
-| Telemetry rate | 1 row per second per live trip | Driver app `timeInterval: 1000`; the customer app does not send location |
+| Photos per trip | 16 inspection photos + 1 selfie, about 40 MB | Pre and post inspection, 8 zones each. The server re-encodes at full resolution and quality 88. Size is an estimate; measure a real inspection before budgeting |
+| Telemetry rate | 1 row per second per live trip | Driver app `timeInterval: 1000`. Neither customer app sends location today; the backend accepts it, and switching it on doubles telemetry rows |
 
 Three scales are used throughout:
 
@@ -270,6 +270,19 @@ accumulate because nothing deletes or archives photos.
 
 At scale B and above, photo storage costs more than the database server.
 
+Everything else kept in S3 is small next to inspection photos. Sizes here are
+assumptions.
+
+| Other objects | Assumed size | A | B | C |
+|---|---|---|---|---|
+| Trip certificates (PDF) | 100 KB per trip | 0.3 GB a month | 3 GB a month | 30 GB a month |
+| Driver KYC documents | 10 MB per driver, once | about 1 GB | about 10 GB | about 100 GB |
+| Database backups (7 daily + 4 weekly dumps) | 11 copies of the database | 22 GB, about Rs 50 a month | 110 GB, about Rs 260 a month | 1.3 TB, about Rs 3,200 a month |
+
+Certificates and KYC documents together stay under 1% of photo storage. KYC
+documents are the most sensitive objects in the bucket; keep them in India and
+expire them after offboarding.
+
 **Ways to save**
 
 1. **Resize before storing.** Downscaling to about 1600 px in the existing
@@ -321,7 +334,23 @@ operations work. Get a quote before deciding.
 Hosting at C is three API servers behind a load balancer, the database pair,
 a Redis node and data transfer.
 
-## Part 4. Savings, in order of impact
+## Part 4. Sensitivity
+
+The bill is most sensitive to fare size, place-search caching and photo size;
+telemetry volume barely moves it. Figures are for scale B (1,000 trips a day),
+where the as-built total is about Rs 10.3 lakh.
+
+| If this changes | Line affected | Effect at scale B |
+|---|---|---|
+| Average fare is Rs 1,200, not Rs 600 | Razorpay | Rs 4.25 lakh becomes Rs 8.5 lakh |
+| No place searches hit the cache | Google Places | Rs 2.6 lakh becomes about Rs 4.9 lakh |
+| Photos are 10 MB per trip, not 40 MB | S3 at month 12 | Rs 35,000 becomes about Rs 9,000 |
+| Photos are 80 MB per trip | S3 at month 12 | Rs 35,000 becomes about Rs 70,000 |
+| Customer phones also send location | Telemetry rows and Redis commands | Rows double to about 16 GB; still one server, under Rs 1,000 a month more disk |
+| Trips average 2 hours, not 1 | Telemetry rows and Redis commands | Same as above; integration fees unchanged |
+| Rupee moves 10% against the dollar | Every dollar-priced line (Places, Twilio, AWS) | About Rs 59,000 either way |
+
+## Part 5. Savings, in order of impact
 
 1. **Move SMS off Twilio's international route.** Indian DLT-registered
    transactional SMS is quoted at Rs 0.12–0.30 against about Rs 8. The code has
@@ -336,7 +365,7 @@ a Redis node and data transfer.
    point at which a bigger database server is needed.
 6. **Set a Redis memory limit** (2.4). This is protection, not a saving.
 
-## Part 5. Confirm before budgeting
+## Part 6. Confirm before budgeting
 
 - **Razorpay and UPI.** The booking flow holds the fare and captures later.
   Check that this is supported for UPI on your plan, and the UPI fee.
