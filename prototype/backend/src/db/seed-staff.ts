@@ -63,7 +63,7 @@ writeFileSync(
 **Do not commit this file (it is gitignored).** Generated ${new Date().toISOString()} by
 \`npm run seed:staff\`. Re-running that command rotates every password below.
 
-Sign in at **http://localhost:5173/admin/login**. There is no signup.
+Sign in at **http://localhost:5174/login**. There is no signup.
 
 | Role | Email | Password | Can access |
 |---|---|---|---|

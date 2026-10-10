@@ -104,6 +104,8 @@ export async function findNearbyDrivers(
         AND $2 = ANY(certifications)
         AND onboarding_status = 'APPROVED'
         AND (NOT $4::boolean OR night_shield_certified)
+        -- Demo drivers fill the console map but nobody is behind them to accept.
+        AND NOT EXISTS (SELECT 1 FROM users u WHERE u.id = user_id AND u.is_demo)
       ORDER BY mydriver_score DESC
       LIMIT $3`,
     [nearby, certification, limit, requireNightShield],

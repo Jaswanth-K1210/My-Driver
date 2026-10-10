@@ -19,6 +19,8 @@ import { createHash, randomBytes } from 'node:crypto'
 import type { PoolClient } from 'pg'
 import { env } from '../config/env.js'
 import { closeDb, pool } from './client.js'
+import { closeRedis } from '../redis/client.js'
+import { upsertDriverLocation } from '../modules/trips/geo-index.js'
 import { seed } from './seed.js'
 
 if (env.NODE_ENV === 'production') {
@@ -84,11 +86,40 @@ async function event(c: PoolClient, tripId: string, type: string, at: Date, acto
   )
 }
 
+/**
+ * Driver positions live only in Redis, so they are (re)placed on every run:
+ * drivers on a live demo trip sit between its pickup and drop, and a dozen
+ * approved demo drivers go ONLINE around the city. Dispatch ignores demo
+ * drivers, so real test bookings are never offered to them.
+ */
+async function placeOnMap() {
+  const { rows: onTrip } = await pool.query<{ driver_id: string; lat: number; lng: number }>(
+    `SELECT t.driver_id, (t.pickup_lat + t.drop_lat) / 2 AS lat, (t.pickup_lng + t.drop_lng) / 2 AS lng
+       FROM trips t JOIN users u ON u.id = t.driver_id
+      WHERE u.is_demo AND t.status IN ('MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP', 'ESCALATED')`,
+  )
+  for (const d of onTrip) await upsertDriverLocation(d.driver_id, { lat: Number(d.lat), lng: Number(d.lng) }, { force: true })
+
+  const { rows: idle } = await pool.query<{ user_id: string }>(
+    `UPDATE driver_profiles SET availability = 'ONLINE'
+      WHERE user_id IN (SELECT dp.user_id FROM driver_profiles dp JOIN users u ON u.id = dp.user_id
+                         WHERE u.is_demo AND dp.onboarding_status = 'APPROVED' AND dp.availability <> 'ON_TRIP'
+                         ORDER BY dp.user_id LIMIT 12)
+      RETURNING user_id`,
+  )
+  for (const [i, d] of idle.entries()) {
+    const [, lat, lng] = PLACES[i % PLACES.length]!
+    await upsertDriverLocation(d.user_id, { lat: lat + between(-0.008, 0.008), lng: lng + between(-0.008, 0.008) }, { force: true })
+  }
+  console.log(`demo map: ${onTrip.length} drivers on trips, ${idle.length} online`)
+}
+
 async function main() {
   await seed()
   const { rows: existing } = await pool.query(`SELECT count(*)::int AS n FROM users WHERE is_demo`)
   if (existing[0].n > 0) {
-    console.log(`demo data already present (${existing[0].n} demo accounts); nothing to do`)
+    console.log(`demo data already present (${existing[0].n} demo accounts)`)
+    await placeOnMap()
     return
   }
 
@@ -325,6 +356,7 @@ async function main() {
 
     await c.query('COMMIT')
     console.log(`demo data seeded: 40 customers, ${states.length} drivers, ${trips} trips (3 live, 2 open incidents)`)
+    await placeOnMap()
     console.log(`visible in the console while ADMIN_DEMO_DATA=show (current: ${env.ADMIN_DEMO_DATA})`)
   } catch (err) {
     await c.query('ROLLBACK')
@@ -336,3 +368,4 @@ async function main() {
 
 await main()
 await closeDb()
+await closeRedis()
