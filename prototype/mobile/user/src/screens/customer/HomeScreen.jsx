@@ -20,6 +20,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useEffect, useState } from 'react'
 import { quoteFor, serverQuote } from '../../lib/booking'
 import { api } from '../../lib/apiClient'
+import { requirementEnabled } from '../../lib/features'
 import { clamp, formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 import Button from '../../components/Button'
@@ -173,7 +174,7 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
             {config.requirement === 'airport' && (
               <AirportForm config={config} onChange={onChange} />
             )}
-            {config.requirement === 'full_time' && (
+            {config.requirement === 'full_time' && requirementEnabled('full_time') && (
               <FullTimeForm config={config} onChange={onChange} />
             )}
           </View>

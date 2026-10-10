@@ -55,7 +55,7 @@ export default function SkillPicker({ config, onChange }) {
                     flexDirection: 'row',
                     alignItems: 'center',
                     gap: 4,
-                    backgroundColor: colors.green,
+                    backgroundColor: colors.graphite,
                     borderRadius: radius.pill,
                     paddingHorizontal: 8,
                     paddingVertical: 3,

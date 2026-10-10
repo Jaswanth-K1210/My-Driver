@@ -40,14 +40,6 @@ export const colors = {
   brand: '#E01E26',
   brandPressed: '#B0161C',
   brandSoft: '#FDECEC',
-
-  // Semantic utility colors
-  green: '#16a34a',
-  greenSoft: '#dcfce7',
-  amber: '#d97706',
-  amberSoft: '#fef3c7',
-  blue: '#2563eb',
-  blueSoft: '#eff6ff',
 }
 
 export const spacing = {

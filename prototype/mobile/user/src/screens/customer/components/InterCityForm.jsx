@@ -92,15 +92,15 @@ export default function InterCityForm({ config, onChange }) {
             flexDirection: 'row',
             alignItems: 'flex-start',
             gap: space.sm,
-            backgroundColor: colors.blueSoft,
+            backgroundColor: colors.surfaceAlt,
             borderRadius: radius.md,
             borderWidth: 1,
-            borderColor: '#bfdbfe',
+            borderColor: colors.border,
             padding: space.sm,
           }}
         >
-          <Info size={15} color={colors.blue} style={{ marginTop: 1 }} />
-          <Text style={{ ...type.tiny, color: '#1e3a5f', flex: 1 }}>
+          <Info size={15} color={colors.textMuted} style={{ marginTop: 1 }} />
+          <Text style={{ ...type.tiny, color: colors.text, flex: 1 }}>
             <Text style={{ fontWeight: '800' }}>Travel Requirement: </Text>
             {minDur.label}
           </Text>

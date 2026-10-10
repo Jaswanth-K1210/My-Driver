@@ -9,6 +9,7 @@
  *   placeholder  — text when nothing selected
  *   title        — modal header title
  *   searchable   — show a search input (for long lists)
+ *   placeSearch  — also search live places through the backend (location pickers only)
  */
 import { useEffect, useState } from 'react'
 import {
@@ -21,6 +22,8 @@ import {
 } from 'react-native'
 import { Check, ChevronDown, X } from 'lucide-react-native'
 import { colors, radius, space, type } from '../../../theme/tokens'
+import { api } from '../../../lib/apiClient'
+import { getLocationById, registerPlace } from '../../../lib/booking'
 
 export default function ModalPicker({
   value,
@@ -29,27 +32,42 @@ export default function ModalPicker({
   placeholder = 'Select...',
   title = 'Select',
   searchable = false,
+  placeSearch = false,
 }) {
   const [visible, setVisible] = useState(false)
   const [query, setQuery] = useState('')
   const [remoteOptions, setRemoteOptions] = useState(null)
 
   useEffect(() => {
-    if (!searchable || !query) {
+    if (!placeSearch || query.trim().length < 2) {
       setRemoteOptions(null)
-      return
+      return undefined
     }
+    // A slow response for an older query must not overwrite a newer one.
+    let stale = false
     const timer = setTimeout(() => {
-      import('../../../lib/apiClient').then(({ api }) => {
-        api.locations.search(query).then(results => {
-          setRemoteOptions(results.map(r => ({ id: r.id, label: r.name, sublabel: r.address })))
-        }).catch(() => {})
-      })
+      api.locations
+        .search(query.trim())
+        .then(({ results }) => {
+          if (stale) return
+          setRemoteOptions(results.map((r) => ({ id: r.id, label: r.name, sublabel: r.address, place: r })))
+        })
+        .catch(() => {
+          // Search is an enhancement: fall back to filtering the built-in list.
+          if (!stale) setRemoteOptions(null)
+        })
     }, 300)
-    return () => clearTimeout(timer)
-  }, [query, searchable])
+    return () => {
+      stale = true
+      clearTimeout(timer)
+    }
+  }, [query, placeSearch])
 
-  const selected = options.find((o) => o.id === value) || (remoteOptions && remoteOptions.find(o => o.id === value))
+  // A searched place is not in `options`, so resolve its label from the registry.
+  const searchedPlace = placeSearch && value ? getLocationById(value) : null
+  const selected =
+    options.find((o) => o.id === value) ||
+    (searchedPlace ? { id: searchedPlace.id, label: searchedPlace.name, sublabel: searchedPlace.address } : null)
   const filtered = remoteOptions ? remoteOptions : (
     searchable && query
       ? options.filter((o) =>
@@ -195,7 +213,7 @@ export default function ModalPicker({
                 return (
                   <Pressable
                     onPress={() => {
-                      onChange(item.id)
+                      onChange(item.place ? registerPlace(item.place) : item.id)
                       setVisible(false)
                     }}
                     style={({ pressed }) => ({

@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: prototype/backend
@@ -40,8 +40,8 @@ jobs:
       JWT_SECRET: ci-only-jwt-secret-at-least-32-characters-long
       TOKEN_PEPPER: ci-only-token-pepper-at-least-32-characters
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -52,13 +52,13 @@ jobs:
       - run: npm test
 
   website:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: prototype/website
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -79,10 +79,10 @@ jobs:
           ! grep -l "Book a driver" dist-admin/assets/*.js
 
   images:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: [backend, website]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - run: docker build -t mydriver-api:ci prototype/backend
       - run: docker build --build-arg VITE_API_URL=https://api.example.invalid -t mydriver-web:ci prototype/website
       - run: docker build --build-arg VITE_APP_TARGET=admin --build-arg VITE_API_URL=https://api.example.invalid -t mydriver-admin:ci prototype/website

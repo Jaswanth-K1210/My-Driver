@@ -56,7 +56,7 @@ function formatDuration(minutes) {
 /* ── Sub-components ──────────────────────────────────────────────────────── */
 
 /** One row of the route timeline (dot + optional connector line + content). */
-function TimelineRow({ dotColor = '#9ca3af', dotBorder = '#f3f4f6', isLast = false, lineColor = '#E5E5EA', children }) {
+function TimelineRow({ dotColor = colors.textFaint, dotBorder = colors.surfaceSunken, isLast = false, lineColor = colors.border, children }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'stretch' }}>
       {/* Left: dot + connector */}
@@ -117,7 +117,7 @@ function StopRemoveButton({ onPress }) {
         borderRadius: radius.sm,
         borderWidth: 1,
         borderColor: pressed ? '#fca5a5' : colors.border,
-        backgroundColor: pressed ? '#fff1f2' : colors.surface,
+        backgroundColor: pressed ? colors.redSofter : colors.surface,
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
@@ -150,7 +150,7 @@ function TelemetryFooter({ telemetry, style }) {
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Navigation size={13} color={colors.green} style={{ transform: [{ rotate: '45deg' }] }} />
+          <Navigation size={13} color={colors.graphite} style={{ transform: [{ rotate: '45deg' }] }} />
           <Text style={{ ...type.caption, color: colors.text, fontWeight: '800' }}>
             ~{telemetry.distanceKm} km
           </Text>
@@ -165,13 +165,13 @@ function TelemetryFooter({ telemetry, style }) {
       </View>
       <View
         style={{
-          backgroundColor: colors.greenSoft,
+          backgroundColor: colors.surfaceSunken,
           borderRadius: 6,
           paddingHorizontal: 8,
           paddingVertical: 3,
         }}
       >
-        <Text style={{ ...type.micro, color: colors.green }}>{telemetry.tag}</Text>
+        <Text style={{ ...type.micro, color: colors.graphite }}>{telemetry.tag}</Text>
       </View>
     </View>
   )
@@ -354,8 +354,8 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.green }} />
-            <Text style={{ ...type.micro, color: colors.green, letterSpacing: 0.5, fontWeight: '900' }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.graphite }} />
+            <Text style={{ ...type.micro, color: colors.graphite, letterSpacing: 0.5, fontWeight: '900' }}>
               {isTwoWay ? 'LEG 1: OUTBOUND' : 'JOURNEY ROUTE'}
             </Text>
           </View>
@@ -365,7 +365,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
         </View>
 
         {/* Pickup */}
-        <TimelineRow dotColor={colors.green} dotBorder={colors.greenSoft} isLast={false}>
+        <TimelineRow dotColor={colors.graphite} dotBorder={colors.surfaceSunken} isLast={false}>
           <RowLabel>Pickup (From)</RowLabel>
           <ModalPicker
             value={pickupId}
@@ -374,6 +374,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
             placeholder="Select pickup location"
             title="Pickup Location"
             searchable
+            placeSearch
           />
         </TimelineRow>
 
@@ -381,8 +382,8 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
         {stops.map((stop, i) => (
           <TimelineRow
             key={stop.id}
-            dotColor="#9ca3af"
-            dotBorder="#f3f4f6"
+            dotColor={colors.textFaint}
+            dotBorder={colors.surfaceSunken}
             isLast={false}
           >
             <RowLabel>Stop {i + 1}</RowLabel>
@@ -395,6 +396,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
                   placeholder={`Select stop ${i + 1}…`}
                   title={`Stop ${i + 1}`}
                   searchable
+                  placeSearch
                 />
               </View>
               <StopRemoveButton onPress={() => removeStop(stop.id)} />
@@ -421,7 +423,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
             </Text>
           </Pressable>
           {!canAddStop && stops.length > 0 && stops.length < 3 ? (
-            <Text style={{ ...type.micro, color: colors.amber, marginTop: 3 }}>
+            <Text style={{ ...type.micro, color: colors.textMuted, marginTop: 3 }}>
               Select a location above first
             </Text>
           ) : null}
@@ -441,6 +443,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
             placeholder="Select destination"
             title="Destination"
             searchable
+            placeSearch
           />
         </TimelineRow>
 
@@ -455,7 +458,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
             borderRadius: radius.lg,
             borderWidth: 1,
             borderColor: colors.brandSoft,
-            backgroundColor: '#fff8f8',
+            backgroundColor: colors.redSofter,
             padding: space.md,
             gap: 0,
           }}
@@ -493,7 +496,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
           </View>
 
           {/* Return Origin (locked) */}
-          <TimelineRow dotColor="#d1d5db" dotBorder="#f9fafb" isLast={false} lineColor={colors.brandSoft}>
+          <TimelineRow dotColor={colors.borderStrong} dotBorder={colors.surfaceAlt} isLast={false} lineColor={colors.brandSoft}>
             <RowLabel>Return Origin (Auto)</RowLabel>
             <View
               style={{
@@ -531,7 +534,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
             <TimelineRow
               key={stop.id}
               dotColor={colors.brandSoft}
-              dotBorder="#fff"
+              dotBorder={colors.surface}
               isLast={false}
               lineColor={colors.brandSoft}
             >
@@ -545,6 +548,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
                     placeholder={`Return stop ${i + 1}…`}
                     title={`Return Stop ${i + 1}`}
                     searchable
+                    placeSearch
                   />
                 </View>
                 <StopRemoveButton onPress={() => removeReturnStop(stop.id)} />
@@ -571,7 +575,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
               </Text>
             </Pressable>
             {!canAddReturnStop && returnStops.length > 0 && returnStops.length < 3 ? (
-              <Text style={{ ...type.micro, color: colors.amber, marginTop: 3 }}>
+              <Text style={{ ...type.micro, color: colors.textMuted, marginTop: 3 }}>
                 Select a location above first
               </Text>
             ) : null}
@@ -606,13 +610,14 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
               placeholder="Select return destination"
               title="Final Return Destination"
               searchable
+              placeSearch
             />
           </TimelineRow>
 
           {/* Return Telemetry */}
           <TelemetryFooter
             telemetry={returnTelemetry}
-            style={{ borderColor: colors.brandSoft, backgroundColor: '#fff8f8' }}
+            style={{ borderColor: colors.brandSoft, backgroundColor: colors.redSofter }}
           />
         </View>
       )}
@@ -642,10 +647,10 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
                 justifyContent: 'center',
               }}
             >
-              <Compass size={14} color={colors.green} />
+              <Compass size={14} color={colors.onGraphite} />
             </View>
             <View>
-              <Text style={{ ...type.micro, color: '#94a3b8', letterSpacing: 0.5 }}>
+              <Text style={{ ...type.micro, color: colors.textFaint, letterSpacing: 0.5 }}>
                 TOTAL ROUND TRIP
               </Text>
               <Text style={{ ...type.caption, color: '#fff' }}>
@@ -665,7 +670,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
                 paddingVertical: 5,
               }}
             >
-              <Text style={{ ...type.caption, color: '#86efac', fontWeight: '900' }}>
+              <Text style={{ ...type.caption, color: colors.onGraphite, fontWeight: '900' }}>
                 ~{totalKm} km
               </Text>
             </View>

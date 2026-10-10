@@ -177,15 +177,15 @@ export default function FullTimeForm({ config, onChange }) {
             flexDirection: 'row',
             alignItems: 'flex-start',
             gap: space.sm,
-            backgroundColor: colors.amberSoft,
+            backgroundColor: colors.surfaceAlt,
             borderRadius: radius.md,
             borderWidth: 1,
-            borderColor: '#fcd34d',
+            borderColor: colors.border,
             padding: space.sm,
           }}
         >
-          <Info size={15} color={colors.amber} style={{ marginTop: 1 }} />
-          <Text style={{ ...type.tiny, color: '#92400e', flex: 1 }}>
+          <Info size={15} color={colors.textMuted} style={{ marginTop: 1 }} />
+          <Text style={{ ...type.tiny, color: colors.text, flex: 1 }}>
             <Text style={{ fontWeight: '800' }}>12 Hours / Day Regular Baseline: </Text>
             Full-time drivers are assigned for up to 12 working hours daily. Any additional duty hour is billed transparently at{' '}
             <Text style={{ fontWeight: '800' }}>₹150 / hour</Text> overtime.

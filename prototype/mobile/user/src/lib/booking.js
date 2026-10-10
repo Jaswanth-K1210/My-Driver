@@ -27,9 +27,21 @@ export function haversineDistanceKm(a, b) {
   return Math.max(1, (meters / 1000) * ROAD_FACTOR)
 }
 
+/**
+ * Places picked from live search. The booking state stores location ids, so a
+ * searched place is registered here and every getLocationById / dropFor call
+ * resolves it like a built-in one.
+ */
+const searchedPlaces = new Map()
+export function registerPlace(place) {
+  searchedPlaces.set(place.id, place)
+  return place.id
+}
+
 export function getLocationById(id) {
   if (!id || id === 'same_as_pickup') return null
   return (
+    searchedPlaces.get(id) ||
     CITY_LOCATIONS.find((l) => l.id === id) ||
     INTERCITY_DESTINATIONS.find((l) => l.id === id) ||
     AIRPORT_LOCATIONS.find((l) => l.id === id) ||
@@ -125,7 +137,7 @@ export function skillFor(skillId, skills = SKILLS) {
 }
 
 export function dropFor(dropId) {
-  return DROPS.find((d) => d.id === dropId) || CITY_LOCATIONS.find((d) => d.id === dropId) || DROPS[0]
+  return searchedPlaces.get(dropId) || DROPS.find((d) => d.id === dropId) || CITY_LOCATIONS.find((d) => d.id === dropId) || DROPS[0]
 }
 
 export function packageFor(packageId) {
@@ -211,7 +223,10 @@ export function getMinDurationForConfig(config) {
   if (config.requirement === 'inter_city') {
     const dest = getLocationById(config.interCityDetails?.destinationId || config.interCityDestination || 'vijayawada') ?? INTERCITY_DESTINATIONS[0]
     const isTwoWay = config.tripType === 'two_way'
-    const baseEstHours = dest?.estHours || Math.ceil((dest?.distanceKm || 200) / 55)
+    // A searched city has no stored distance; measure it from the pickup.
+    const start = getLocationById(config.interCityDetails?.startLocationId || 'start_hitec') ?? CITY_LOCATIONS[0]
+    const destKm = Math.round(dest?.distanceKm || haversineDistanceKm(start, dest))
+    const baseEstHours = dest?.estHours || Math.ceil(destKm / 55)
 
     const validOutboundStops = (config.interCityDetails?.stops || [])
       .map((s) => getLocationById(s.locationId))
@@ -228,8 +243,8 @@ export function getMinDurationForConfig(config) {
       minHours: totalEstDriveHours,
       minDays: totalEstDriveHours > 24 ? Math.ceil(totalEstDriveHours / 24) : 0,
       label: isTwoWay
-        ? `${dest.name} Round Trip (~${(dest.distanceKm || 250) * 2}km) requires min. ${totalEstDriveHours} hrs driving time`
-        : `${dest.name} (~${dest.distanceKm || 250}km) requires min. ${totalEstDriveHours} hrs driving time`,
+        ? `${dest.name} Round Trip (~${destKm * 2}km) requires min. ${totalEstDriveHours} hrs driving time`
+        : `${dest.name} (~${destKm}km) requires min. ${totalEstDriveHours} hrs driving time`,
     }
   }
 
