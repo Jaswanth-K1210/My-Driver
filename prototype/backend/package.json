@@ -21,7 +21,8 @@
     "grant-role": "tsx src/db/grant-role.ts",
     "seed:staff": "tsx src/db/seed-staff.ts",
     "create-staff": "tsx src/db/create-staff.ts",
-    "seed:demo": "tsx src/db/seed-demo.ts"
+    "seed:demo": "tsx src/db/seed-demo.ts",
+    "docs:api": "tsx src/tools/api-doc.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.717.0",

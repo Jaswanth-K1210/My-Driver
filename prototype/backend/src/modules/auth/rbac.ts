@@ -19,7 +19,7 @@ export async function requireAuth(request: FastifyRequest, _reply: FastifyReply)
 
 /** Use as a preHandler array: `[requireAuth, requireRole('DRIVER')]`. */
 export function requireRole(...roles: Role[]) {
-  return async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
+  const check = async (request: FastifyRequest, _reply: FastifyReply): Promise<void> => {
     if (!request.auth) {
       throw unauthorized('UNAUTHENTICATED', 'A valid access token is required')
     }
@@ -27,4 +27,6 @@ export function requireRole(...roles: Role[]) {
       throw forbidden('FORBIDDEN_ROLE', `This endpoint requires one of: ${roles.join(', ')}`)
     }
   }
+  // Read by the API documentation generator (src/tools/api-doc.ts).
+  return Object.assign(check, { roles })
 }
