@@ -8,6 +8,7 @@ import Card from '../../components/Card'
 import { useToast } from '../../components/Toast'
 import { useAuth } from '../../context/AuthContext'
 import { api } from '../../lib/apiClient'
+import { unregisterPush } from '../../lib/push'
 import { colors, radius, space, type } from '../../theme/tokens'
 
 const input = {
@@ -269,6 +270,7 @@ export default function OnboardingScreen({ onboarding, reload, onLogout }) {
           accessibilityRole="button"
           accessibilityLabel="Log out"
           onPress={async () => {
+            await unregisterPush()
             await signOut()
             onLogout?.()
           }}

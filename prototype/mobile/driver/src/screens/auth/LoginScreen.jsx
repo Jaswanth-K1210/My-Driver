@@ -254,7 +254,7 @@ const styles = StyleSheet.create({
   },
   tabActive: {
     backgroundColor: colors.surface,
-    shadowColor: '#000',
+    shadowColor: colors.text,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 4,
@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingVertical: 16,
     paddingHorizontal: 20,
-    shadowColor: '#000',
+    shadowColor: colors.text,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.04,
     shadowRadius: 4,
@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#4285F4',
+    backgroundColor: colors.graphite,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
   googleIcon: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: colors.onGraphite,
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
   },
   googleBtnText: {

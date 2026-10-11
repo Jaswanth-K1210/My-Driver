@@ -11,13 +11,21 @@ export default function TripSummaryScreen({ request, result, onDone }) {
   // The server recomputes the score on completion; refreshSummary() already
   // ran in completeTrip(), so this is the post-trip figure.
   const { summary } = useDriver()
-  const minutes = Math.max(1, Math.round(result.durationSec / 60))
-  // The server froze this at completion: fare minus the ₹19 platform fee.
-  const payout = Math.round(request.earnings ?? result.earnings ?? request.fare)
+  // The server's figures come first. What this phone counted (time on the
+  // drive screen, harsh events) is lost if the app restarted mid-trip, and is
+  // then left out rather than guessed.
+  const minutes =
+    request.durationMin ?? (result.durationSec != null ? Math.max(1, Math.round(result.durationSec / 60)) : null)
+  // Frozen by the server at completion: the fare less the platform fee.
+  const payout = request.earnings ?? result.earnings ?? null
+  const fee = payout != null ? Math.round(request.fare - payout) : null
 
   const stats = [
-    { label: 'Duration', value: `${minutes} min`, alert: false },
-    { label: 'Harsh events', value: String(result.events), alert: result.events > 0 },
+    ...(minutes != null ? [{ label: 'Duration', value: `${Math.round(minutes)} min`, alert: false }] : []),
+    ...(result.events != null
+      ? [{ label: 'Harsh events', value: String(result.events), alert: result.events > 0 }]
+      : []),
+    // Completion is blocked until both inspections hold all 8 photos.
     { label: 'Inspection', value: '8/8', alert: false },
   ]
 
@@ -45,12 +53,13 @@ export default function TripSummaryScreen({ request, result, onDone }) {
         contentContainerStyle={{ padding: space.lg, gap: space.md }}
       >
         <Card tone="alert" style={{ alignItems: 'center', padding: space.xl }}>
-          <Text style={{ ...type.caption, color: colors.textMuted }}>Your payout (82%)</Text>
+          <Text style={{ ...type.caption, color: colors.textMuted }}>Your payout</Text>
           <Text style={{ ...type.display, color: colors.red, marginTop: space.xs }}>
-            {formatINR(payout)}
+            {payout != null ? formatINR(Math.round(payout)) : '—'}
           </Text>
           <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: space.xs }}>
-            Fare {formatINR(request.fare)} · weekly settlement
+            Fare {formatINR(request.fare)}
+            {fee > 0 ? ` · platform fee ${formatINR(fee)}` : ''} · weekly settlement
           </Text>
         </Card>
 
@@ -66,11 +75,13 @@ export default function TripSummaryScreen({ request, result, onDone }) {
         <Card style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
           <BadgeCheck size={32} color={colors.red} />
           <View style={{ flex: 1 }}>
-            <Text style={{ ...type.body, color: colors.text }}>Score impact</Text>
+            <Text style={{ ...type.body, color: colors.text }}>
+              {summary?.mydriver_score != null
+                ? `MyDriver score ${Math.round(summary.mydriver_score)}`
+                : 'MyDriver score'}
+            </Text>
             <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 17 }}>
-              {result.events === 0
-                ? `Clean run — score holds at ${Math.round(summary?.mydriver_score ?? 100)}.`
-                : `${result.events} event${result.events > 1 ? 's' : ''} logged — minor review, no deduction.`}
+              Recalculated after every trip from speed, braking, cornering and customer ratings.
             </Text>
           </View>
         </Card>

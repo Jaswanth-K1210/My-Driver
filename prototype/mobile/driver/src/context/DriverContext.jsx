@@ -1,6 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import * as Location from 'expo-location'
+import * as Notifications from 'expo-notifications'
+import { AppState } from 'react-native'
 import { api } from '../lib/apiClient'
+import { useToast } from '../components/Toast'
+import { alertNewOffer, isOfferPush, onPushTokenChange, registerForPush } from '../lib/push'
+import * as telemetry from '../lib/telemetry'
+import { startTracking, stopTracking } from '../lib/tracking'
 import { useAuth } from './AuthContext'
 
 const DriverCtx = createContext(null)
@@ -20,6 +26,17 @@ async function currentPosition() {
   const { coords } = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
   return { lat: coords.latitude, lng: coords.longitude }
 }
+
+/** Statuses in which the car is moving and its location must be streamed. */
+const DRIVING = ['IN_TRIP', 'ESCALATED']
+/** Statuses in which this driver still has a trip to act on or to see settled. */
+const MINE = ['MATCHED', 'HANDSHAKE_PENDING', ...DRIVING, 'COMPLETED']
+
+// Offers last 20 seconds. Polling is the only delivery that is known to work,
+// so it stays fast until this device has actually received an offer push;
+// after that it is only a safety net.
+const OFFER_POLL_MS = 2500
+const OFFER_POLL_WITH_PUSH_MS = 10_000
 
 const shortId = (id) => `TRP-${String(id).replace(/-/g, '').slice(0, 6).toUpperCase()}`
 
@@ -66,6 +83,7 @@ function toRequest(trip) {
     skill: trip.required_certification,
     ceiling: trip.speed_ceiling_kmh,
     distanceKm: Number(trip.distance_km ?? trip.estimated_distance_km ?? 0),
+    durationMin: trip.duration_min ?? null,
     fare: Math.round(trip.fare_amount ?? trip.estimated_fare ?? 0),
     earnings: trip.driver_earnings,
     pickupCoords: trip.pickup,
@@ -75,11 +93,12 @@ function toRequest(trip) {
 
 /**
  * Owns the driver side of the lifecycle against the real API:
- * availability, incoming offers over the socket, acceptance, the handshake,
- * telemetry streaming and completion.
+ * availability, incoming offers (push, with polling as the fallback),
+ * acceptance, the handshake, location tracking and completion.
  */
 export function DriverProvider({ children }) {
   const { isAuthenticated } = useAuth()
+  const { toast } = useToast()
 
   const [online, setOnline] = useState(false)
   const [summary, setSummary] = useState(null)
@@ -87,9 +106,15 @@ export function DriverProvider({ children }) {
   const [trip, setTrip] = useState(null)
   const [connection, setConnection] = useState('closed')
   const [busy, setBusy] = useState(false)
+  // 'off' | 'background' | 'foreground' | 'denied' — see lib/tracking.js.
+  const [tracking, setTracking] = useState('off')
+  const [queued, setQueued] = useState(0)
+  const [pushStatus, setPushStatus] = useState({ ok: false, reason: 'pending' })
+  const [pushDelivers, setPushDelivers] = useState(false)
 
   const realtimeRef = useRef(null)
   const tripIdRef = useRef(null)
+  const alertedOfferRef = useRef(null)
 
   const refreshSummary = useCallback(async () => {
     try {
@@ -103,9 +128,8 @@ export function DriverProvider({ children }) {
   }, [])
 
   /**
-   * Pending offers are only reachable by polling — see the note on
-   * api.driver.offers(). An offer lives 20 seconds, so this runs every 2.5s
-   * while online and idle, which is well inside that window.
+   * Pending offers are fetched here whether the trigger was a push or the
+   * poll — see the note on api.driver.offers(). An offer lives 20 seconds.
    */
   const refreshOffers = useCallback(async () => {
     if (tripIdRef.current) return
@@ -116,12 +140,50 @@ export function DriverProvider({ children }) {
         if (!next) return null
         // Don't churn the card (and its countdown) on every poll tick.
         if (current && current.serverId === next.trip_id) return current
-        return toOffer(next)
+        const fresh = toOffer(next)
+        // A push has already sounded for this offer; a polled one has not.
+        if (alertedOfferRef.current !== next.trip_id) {
+          alertedOfferRef.current = next.trip_id
+          void alertNewOffer(fresh)
+        }
+        return fresh
       })
     } catch {
       // A failed poll is not an error worth showing; the next tick retries.
     }
   }, [])
+
+  /**
+   * Re-reads the trip from the server. The customer or the Safety Desk can
+   * cancel it, and the socket frame that says so is missed whenever the
+   * connection is down, so this also runs on reconnect and on return to the app.
+   */
+  const syncTrip = useCallback(async () => {
+    const id = tripIdRef.current
+    if (!id) return
+    let next
+    try {
+      next = await api.trips.get(id)
+    } catch (err) {
+      // No longer this driver's trip (reassigned). Anything else: try again later.
+      if (!['TRIP_NOT_FOUND', 'FORBIDDEN_TRIP'].includes(err?.code)) return
+      next = null
+    }
+    if (tripIdRef.current !== id) return
+    if (next && MINE.includes(next.status)) {
+      setTrip(toRequest(next))
+      return
+    }
+    tripIdRef.current = null
+    setTrip(null)
+    realtimeRef.current?.unsubscribe(id)
+    toast(
+      next?.status === 'CANCELLED' ? 'This trip was cancelled. You are back online.' : 'This trip is no longer assigned to you.',
+      'warning',
+      5000,
+    )
+    void refreshSummary()
+  }, [toast, refreshSummary])
 
   /* ── Socket: offers and trip state ───────────────────────────────────── */
   const ensureRealtime = useCallback(async () => {
@@ -129,6 +191,7 @@ export function DriverProvider({ children }) {
 
     const conn = api.realtime({ onState: setConnection })
     realtimeRef.current = conn
+    telemetry.setTransport(conn)
 
     // Kept as a fast path only. In Phase 1 this frame does not actually reach
     // the offered driver: TRIP_OFFER is published to the trip channel, and
@@ -138,18 +201,13 @@ export function DriverProvider({ children }) {
       void refreshOffers()
     })
 
-    conn.on('TRIP_STATE_CHANGED', async (frame) => {
-      if (frame.trip_id !== tripIdRef.current) return
-      try {
-        setTrip(toRequest(await api.trips.get(frame.trip_id)))
-      } catch {
-        // Refetch can race a cancellation; the next frame corrects it.
-      }
+    conn.on('TRIP_STATE_CHANGED', (frame) => {
+      if (frame.trip_id === tripIdRef.current) void syncTrip()
     })
 
     await conn.connect()
     return conn
-  }, [refreshOffers])
+  }, [refreshOffers, syncTrip])
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -161,16 +219,82 @@ export function DriverProvider({ children }) {
     void refreshSummary()
   }, [isAuthenticated, ensureRealtime, refreshSummary])
 
-  /* ── Offer polling ───────────────────────────────────────────────────── */
+  /* ── Push: register the device, and treat an offer push as "look now" ── */
+  useEffect(() => {
+    if (!isAuthenticated) return undefined
+    void registerForPush().then(setPushStatus)
+    const offTokenChange = onPushTokenChange()
+
+    const onPush = (notification) => {
+      if (!isOfferPush(notification)) return
+      const data = notification.request.content.data
+      // `local` marks the alert this app raised itself for a polled offer.
+      if (!data.local) {
+        alertedOfferRef.current = data.trip_id ?? alertedOfferRef.current
+        setPushDelivers(true)
+      }
+      void refreshOffers()
+    }
+    const received = Notifications.addNotificationReceivedListener(onPush)
+    const tapped = Notifications.addNotificationResponseReceivedListener((r) => onPush(r.notification))
+    return () => {
+      offTokenChange()
+      received.remove()
+      tapped.remove()
+    }
+  }, [isAuthenticated, refreshOffers])
+
+  /* ── Offer polling: the fallback, and the only path until push delivers ─ */
   useEffect(() => {
     if (!isAuthenticated || !online || trip) {
       if (!online) setOffer(null)
       return undefined
     }
     void refreshOffers()
-    const timer = setInterval(() => void refreshOffers(), 2500)
-    return () => clearInterval(timer)
-  }, [isAuthenticated, online, trip, refreshOffers])
+    const every = pushDelivers ? OFFER_POLL_WITH_PUSH_MS : OFFER_POLL_MS
+    const timer = setInterval(() => void refreshOffers(), every)
+    // Timers stop while the app is in the background; catch up on return.
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void refreshOffers()
+    })
+    return () => {
+      clearInterval(timer)
+      appState.remove()
+    }
+  }, [isAuthenticated, online, trip, pushDelivers, refreshOffers])
+
+  /* ── Location tracking for the whole drive, screen on or off ──────────── */
+  const driving = trip ? DRIVING.includes(trip.status) : false
+  const drivingTripId = driving ? trip.serverId : null
+  useEffect(() => {
+    if (!drivingTripId) return undefined
+    let cancelled = false
+    startTracking(drivingTripId)
+      .then((mode) => !cancelled && setTracking(mode))
+      .catch(() => !cancelled && setTracking('denied'))
+    return () => {
+      cancelled = true
+      setTracking('off')
+      void stopTracking()
+    }
+  }, [drivingTripId])
+
+  useEffect(() => telemetry.onQueueChange(({ queued: n }) => setQueued(n)), [])
+
+  // Back online: replay whatever was buffered while the socket was down, and
+  // pick up any trip change whose frame was missed.
+  useEffect(() => {
+    if (connection !== 'open') return
+    void telemetry.flush(true)
+    void syncTrip()
+  }, [connection, syncTrip])
+
+  useEffect(() => {
+    const appState = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void syncTrip()
+    })
+    return () => appState.remove()
+  }, [syncTrip])
 
   /* ── Expire the offer card when its 20s window closes ─────────────────── */
   useEffect(() => {
@@ -192,9 +316,13 @@ export function DriverProvider({ children }) {
       try {
         const { items } = await api.trips.list({ limit: 5 })
         const active = items.find((t) =>
-          ['MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP'].includes(t.status),
+          ['MATCHED', 'HANDSHAKE_PENDING', ...DRIVING].includes(t.status),
         )
-        if (cancelled || !active) return
+        if (cancelled) return
+        // The trip ended while the app was closed: the location service from
+        // that drive may still be running, and nothing else would stop it.
+        if (!active || !DRIVING.includes(active.status)) void stopTracking()
+        if (!active) return
         tripIdRef.current = active.id
         setTrip(toRequest(active))
         const conn = await ensureRealtime()
@@ -266,11 +394,19 @@ export function DriverProvider({ children }) {
     return res
   }, [])
 
-  const sendTelemetry = useCallback((coords, sensors) => {
-    const id = tripIdRef.current
-    if (!id || !realtimeRef.current) return
-    realtimeRef.current.sendDriverTelemetry(id, coords, sensors)
-  }, [])
+  /** Only possible before the drive starts; the server refuses it afterwards. */
+  const cancelTrip = useCallback(
+    async (reason) => {
+      const id = tripIdRef.current
+      if (!id) throw new Error('No active trip')
+      await api.trips.cancel(id, reason)
+      tripIdRef.current = null
+      setTrip(null)
+      realtimeRef.current?.unsubscribe(id)
+      await refreshSummary()
+    },
+    [refreshSummary],
+  )
 
   const sendSos = useCallback(async () => {
     const id = tripIdRef.current
@@ -281,6 +417,8 @@ export function DriverProvider({ children }) {
   const completeTrip = useCallback(async () => {
     const id = tripIdRef.current
     if (!id) throw new Error('No active trip')
+    // Send what is still buffered first: the fare uses the distance travelled.
+    await telemetry.flush(true)
     const done = await api.driver.complete(id)
     setTrip(toRequest(done))
     await refreshSummary()
@@ -301,10 +439,13 @@ export function DriverProvider({ children }) {
       offer,
       trip,
       connection,
+      tracking,
+      queued,
+      pushStatus,
       goOnline,
       respondToOffer,
       submitHandshake,
-      sendTelemetry,
+      cancelTrip,
       sendSos,
       completeTrip,
       clearTrip,
@@ -312,8 +453,8 @@ export function DriverProvider({ children }) {
       refreshOffers,
     }),
     [
-      online, busy, summary, offer, trip, connection,
-      goOnline, respondToOffer, submitHandshake, sendTelemetry, sendSos, completeTrip, clearTrip,
+      online, busy, summary, offer, trip, connection, tracking, queued, pushStatus,
+      goOnline, respondToOffer, submitHandshake, cancelTrip, sendSos, completeTrip, clearTrip,
       refreshSummary, refreshOffers,
     ],
   )

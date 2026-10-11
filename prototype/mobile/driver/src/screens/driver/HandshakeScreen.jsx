@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react'
-import { Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { Alert, Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { ArrowLeft, Check, KeyRound, ScanFace, ShieldCheck } from 'lucide-react-native'
+import { Check, KeyRound, ScanFace, ShieldCheck, X } from 'lucide-react-native'
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
 import { useToast } from '../../components/Toast'
+import TripMap from '../../components/TripMap'
 import * as ImagePicker from 'expo-image-picker'
 import { useDriver } from '../../context/DriverContext'
 import { colors, radius, space, type } from '../../theme/tokens'
@@ -17,9 +18,10 @@ const OTP_LENGTH = 4
  * the trip may start. Nothing on this screen claims a match by itself.
  */
 
-export default function HandshakeScreen({ request, onVerified, onBack }) {
-  const { submitHandshake } = useDriver()
+export default function HandshakeScreen({ request, onVerified }) {
+  const { submitHandshake, cancelTrip } = useDriver()
   const [submitting, setSubmitting] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const { toast } = useToast()
   const [selfie, setSelfie] = useState(null)
   const [otp, setOtp] = useState(['', '', '', ''])
@@ -101,6 +103,25 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
     }
   }
 
+  const confirmCancel = () =>
+    Alert.alert('Cancel this trip?', 'The customer will be told that you cancelled.', [
+      { text: 'Keep trip', style: 'cancel' },
+      {
+        text: 'Cancel trip',
+        style: 'destructive',
+        onPress: async () => {
+          setCancelling(true)
+          try {
+            await cancelTrip('Cancelled by the driver before pickup')
+            toast('Trip cancelled', 'info')
+          } catch (err) {
+            setCancelling(false)
+            toast(err?.message ?? 'Could not cancel the trip', 'warning')
+          }
+        },
+      },
+    ])
+
   const matched = Boolean(selfie)
 
   return (
@@ -116,11 +137,12 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Back to requests"
-          onPress={() => onBack?.()}
+          accessibilityLabel="Cancel trip"
+          disabled={cancelling || submitting}
+          onPress={confirmCancel}
           style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 8 }}
         >
-          <ArrowLeft size={16} color={colors.text} />
+          <X size={16} color={colors.text} />
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={{ ...type.title, color: colors.text }}>Pickup handshake</Text>
@@ -134,6 +156,7 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: space.lg, gap: space.lg }}
       >
+        <TripMap destination={request.pickupCoords} destinationLabel={request.pickup} title="Pickup" />
         <Card>
           <View
             style={{
@@ -249,7 +272,7 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
           <Button
             label={submitting ? 'Verifying…' : 'Verify & unlock engine'}
             icon={ShieldCheck}
-            disabled={!matched || submitting}
+            disabled={!matched || submitting || cancelling}
             onPress={verify}
             style={{ marginTop: space.lg }}
           />

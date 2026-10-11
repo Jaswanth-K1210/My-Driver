@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { IndianRupee, LogOut, TrendingUp, XCircle, Zap } from 'lucide-react-native'
+import { IndianRupee, XCircle, Zap } from 'lucide-react-native'
 import { ActivityIndicator } from 'react-native'
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
@@ -30,13 +30,13 @@ function MiniStat({ value, label, alert }) {
   )
 }
 
-export default function DriverHomeScreen({ onLogout }) {
+export default function DriverHomeScreen() {
   const { toast } = useToast()
-  const { user, signOut } = useAuth()
+  const { user } = useAuth()
   const { online, busy, summary, offer, goOnline, respondToOffer, connection } = useDriver()
   const [acting, setActing] = useState(false)
 
-  // Offers arrive over the WebSocket from the real dispatcher.
+  // Offers come from the real dispatcher: by push, with polling as the fallback.
   const request = offer
 
   const respond = async (accept) => {
@@ -61,7 +61,7 @@ export default function DriverHomeScreen({ onLogout }) {
   }
 
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
 
       <View
         style={{
@@ -82,17 +82,6 @@ export default function DriverHomeScreen({ onLogout }) {
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
           {summary?.rating ? <Pill label={`★ ${summary.rating.toFixed(1)}`} tone="brand" /> : null}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Log out of MyDriver"
-            onPress={async () => {
-            await signOut()
-            onLogout?.()
-          }}
-            style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 10 }}
-          >
-            <LogOut size={16} color={colors.text} />
-          </Pressable>
         </View>
       </View>
 
@@ -124,35 +113,10 @@ export default function DriverHomeScreen({ onLogout }) {
             </View>
             <View style={{ flexDirection: 'row', gap: space.sm }}>
               <MiniStat value={String(summary?.trips_today ?? 0)} label="Trips today" />
-              <MiniStat
-                value={summary?.rating != null ? summary.rating.toFixed(1) : '—'}
-                label="Harsh events"
-                alert={false}
-              />
+              <MiniStat value={String(summary?.total_trips ?? 0)} label="Total trips" />
             </View>
           </View>
         </Card>
-
-        <View style={{ flexDirection: 'row', gap: space.sm }}>
-          <Card style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md }}>
-            <Zap size={16} color={colors.red} />
-            <View style={{ flex: 1 }}>
-              <Text numberOfLines={1} style={{ ...type.caption, color: colors.text }}>
-                Telematics live
-              </Text>
-              <Text style={{ ...type.micro, color: colors.textMuted }}>50 Hz sampling</Text>
-            </View>
-          </Card>
-          <Card style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md }}>
-            <TrendingUp size={16} color={colors.graphite} />
-            <View style={{ flex: 1 }}>
-              <Text numberOfLines={1} style={{ ...type.caption, color: colors.text }}>
-                +0.4 this week
-              </Text>
-              <Text style={{ ...type.micro, color: colors.textMuted }}>Score trend</Text>
-            </View>
-          </Card>
-        </View>
 
         <Card>
           <Toggle
