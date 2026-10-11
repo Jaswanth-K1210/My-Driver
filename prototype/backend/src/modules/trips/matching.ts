@@ -5,6 +5,7 @@ import { getPushProvider } from '../../providers/push/index.js'
 import { releaseForTrip } from '../payments/service.js'
 import { broadcastOffer, broadcastStateChange } from './broadcast.js'
 import { findNearbyDrivers, SEARCH_RADIUS_KM, setAvailability } from './geo-index.js'
+import { flagPendingOffer } from './offer-hint.js'
 import {
   getTripById,
   getTripForParticipant,
@@ -89,6 +90,9 @@ export async function startDispatch(tripId: string): Promise<void> {
   if (!driverId) return endWithNoDrivers(trip)
 
   const round = trip.dispatch_round + 1
+  // Raised before the offer is written so the driver's poll can never see the
+  // row without the flag. If the insert rolls back, the flag just expires.
+  await flagPendingOffer(driverId, OFFER_TTL_SECONDS)
   const client = await pool.connect()
   let expiresAt: Date
   try {
@@ -126,7 +130,8 @@ export async function startDispatch(tripId: string): Promise<void> {
     .send(driverId, {
       title: 'New trip request',
       body: 'A customer nearby is requesting a driver',
-      data: { trip_id: tripId, expires_in: String(OFFER_TTL_SECONDS) },
+      data: { type: 'TRIP_OFFER', trip_id: tripId, expires_in: String(OFFER_TTL_SECONDS) },
+      channel: 'offers',
     })
     .catch(() => undefined)
 }

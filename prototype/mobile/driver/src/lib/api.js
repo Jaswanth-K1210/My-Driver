@@ -382,6 +382,8 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
     devices: {
       register: (platform, token) =>
         request('/v1/me/devices', { method: 'POST', body: { platform, token } }),
+      /** Call before logout, while the session can still authenticate it. */
+      unregister: (token) => request('/v1/me/devices', { method: 'DELETE', body: { token } }),
     },
 
     /** Safety Desk. Requires SAFETY_DESK_AGENT, OPS_MANAGER or SUPER_ADMIN. */
@@ -637,6 +639,15 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
         }),
 
       summary: () => request('/v1/driver/summary'),
+
+      /** Today, this week and unsettled totals, 7 daily bars, recent trips and payouts. */
+      earnings: () => request('/v1/driver/earnings'),
+
+      /** Status of every active test for this driver. Never includes questions. */
+      assessments: () => request('/v1/driver/assessments'),
+
+      /** Score, rating, badges, Night Shield and the latest of each document. */
+      profile: () => request('/v1/driver/profile'),
 
       /** KYC checklist, uploaded documents and what still blocks approval. */
       onboarding: () => request('/v1/driver/onboarding'),

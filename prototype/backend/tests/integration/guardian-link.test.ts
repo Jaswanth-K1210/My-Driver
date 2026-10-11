@@ -211,4 +211,28 @@ describe('guardian tracking links', () => {
     const { rows } = await pool.query('SELECT count(*)::int AS n FROM device_tokens')
     expect(rows[0].n).toBe(1)
   })
+
+  it('removes a push device token at sign-out, and only the caller\'s', async () => {
+    const payload = { platform: 'android', token: 'fcm-device-token-signout' }
+    await app.inject({ method: 'POST', url: '/v1/me/devices', headers: bearer(customer.accessToken), payload })
+
+    const res = await app.inject({
+      method: 'DELETE', url: '/v1/me/devices', headers: bearer(customer.accessToken),
+      payload: { token: payload.token },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json()).toEqual({ removed: true })
+    const { rows } = await pool.query('SELECT count(*)::int AS n FROM device_tokens')
+    expect(rows[0].n).toBe(0)
+
+    // A second call, or a token that was never this user's, is not an error.
+    const again = await app.inject({
+      method: 'DELETE', url: '/v1/me/devices', headers: bearer(customer.accessToken),
+      payload: { token: payload.token },
+    })
+    expect(again.json()).toEqual({ removed: false })
+
+    const anonymous = await app.inject({ method: 'DELETE', url: '/v1/me/devices', payload: { token: payload.token } })
+    expect(anonymous.statusCode).toBe(401)
+  })
 })

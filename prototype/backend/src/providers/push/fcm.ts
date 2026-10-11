@@ -104,8 +104,11 @@ export class FcmPushProvider implements PushProvider {
             token,
             notification: { title: payload.title, body: payload.body },
             ...(payload.data ? { data: payload.data } : {}),
-            android: { priority: 'HIGH' },
-            apns: { headers: { 'apns-priority': '10' } },
+            android: {
+              priority: 'HIGH',
+              notification: { sound: 'default', ...(payload.channel ? { channel_id: payload.channel } : {}) },
+            },
+            apns: { headers: { 'apns-priority': '10' }, payload: { aps: { sound: 'default' } } },
           },
         }),
       })

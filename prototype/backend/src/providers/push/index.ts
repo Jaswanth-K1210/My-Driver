@@ -5,6 +5,12 @@ export type PushPayload = {
   title: string
   body: string
   data?: Record<string, string>
+  /**
+   * Android notification channel the app has created (the driver app's
+   * 'offers' channel carries the alert sound and vibration). Omit it and the
+   * app's default channel is used.
+   */
+  channel?: string
 }
 
 export interface PushProvider {

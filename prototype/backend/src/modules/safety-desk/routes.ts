@@ -23,6 +23,7 @@ import {
 import {
   activeTrips,
   audit,
+  auditView,
   callParty,
   deskStats,
   dispatchGuardians,
@@ -182,11 +183,32 @@ export function registerSafetyRoutes(app: FastifyInstance): void {
     },
   )
 
+  // Sign-out on a phone: without this the next person to use it keeps getting
+  // the previous account's trip offers. Idempotent, and scoped to the caller.
+  r.delete(
+    '/v1/me/devices',
+    {
+      onRequest: [requireAuth],
+      schema: {
+        body: z.object({ token: z.string().min(8).max(512) }).strict(),
+        response: { 200: z.object({ removed: z.boolean() }) },
+      },
+    },
+    async (request) => {
+      const { rowCount } = await pool.query(
+        `DELETE FROM device_tokens WHERE user_id = $1 AND token = $2`,
+        [request.auth!.userId, request.body.token],
+      )
+      return { removed: (rowCount ?? 0) > 0 }
+    },
+  )
+
   /* ── Safety Desk ─────────────────────────────────────────────────────── */
 
   r.get(
     '/v1/admin/stats',
     {
+      logLevel: 'warn', // polled by every open console tab
       onRequest: [requireAuth, requireRole(...DESK_ROLES)],
       schema: {
         response: {
@@ -205,6 +227,7 @@ export function registerSafetyRoutes(app: FastifyInstance): void {
   r.get(
     '/v1/admin/drivers/live',
     {
+      logLevel: 'warn', // polled by every open console tab
       onRequest: [requireAuth, requireRole(...DESK_ROLES)],
       schema: {
         response: {
@@ -226,8 +249,9 @@ export function registerSafetyRoutes(app: FastifyInstance): void {
       },
     },
     async (request) => {
-      // Viewing where drivers are is a privacy-relevant read, so it is audited.
-      await audit(request.auth!.userId, request.auth!.role, 'VIEW_DRIVER_MAP', null)
+      // Viewing where drivers are is a privacy-relevant read, so it is audited:
+      // once per agent per window, since the map polls this every few seconds.
+      await auditView(request.auth!.userId, request.auth!.role, 'VIEW_DRIVER_MAP')
       return liveDrivers()
     },
   )
@@ -235,6 +259,7 @@ export function registerSafetyRoutes(app: FastifyInstance): void {
   r.get(
     '/v1/admin/trips/active',
     {
+      logLevel: 'warn', // polled by every open console tab
       onRequest: [requireAuth, requireRole(...DESK_ROLES)],
       schema: {
         response: {
@@ -255,8 +280,8 @@ export function registerSafetyRoutes(app: FastifyInstance): void {
       },
     },
     async (request) => {
-      // Viewing the live board is itself an audited act.
-      await audit(request.auth!.userId, request.auth!.role, 'VIEW_LIVE_BOARD', null)
+      // Viewing the live board is itself an audited act, once per agent per window.
+      await auditView(request.auth!.userId, request.auth!.role, 'VIEW_LIVE_BOARD')
       return activeTrips()
     },
   )
@@ -264,6 +289,7 @@ export function registerSafetyRoutes(app: FastifyInstance): void {
   r.get(
     '/v1/admin/escalations',
     {
+      logLevel: 'warn', // polled by every open console tab
       onRequest: [requireAuth, requireRole(...DESK_ROLES)],
       schema: {
         querystring: z.object({ include_resolved: z.coerce.boolean().default(false) }),

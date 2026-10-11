@@ -14,6 +14,7 @@ import { registerAdminOpsRoutes } from './modules/admin-ops/routes.js'
 import { registerAdminSupportRoutes } from './modules/admin-support/routes.js'
 import { registerAuthRoutes } from './modules/auth/routes.js'
 import { registerCatalogueRoutes } from './modules/catalogue/routes.js'
+import { registerDriverAppRoutes } from './modules/driver-app/routes.js'
 import { registerKycRoutes } from './modules/kyc/routes.js'
 import { registerLocationRoutes } from './modules/locations/routes.js'
 import { registerTelemetryRoutes } from './modules/trips/telemetry-routes.js'
@@ -126,6 +127,7 @@ export async function buildApp(opts: { onRoute?: (route: RouteOptions) => void }
   registerCatalogueRoutes(app)
   registerLocationRoutes(app)
   registerTelemetryRoutes(app)
+  registerDriverAppRoutes(app)
 
   // "Is this process alive" — for the container runtime.
   app.get('/health', async () => ({ status: 'ok', service: 'mydriver-backend' }))
