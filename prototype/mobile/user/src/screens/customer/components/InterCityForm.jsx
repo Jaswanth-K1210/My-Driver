@@ -121,6 +121,7 @@ export default function InterCityForm({ config, onChange }) {
                 const active = days === d
                 return (
                   <Pressable
+                    accessibilityRole="button"
                     key={d}
                     onPress={() => !belowMin && setDays(d)}
                     disabled={belowMin}
@@ -135,7 +136,7 @@ export default function InterCityForm({ config, onChange }) {
                       opacity: belowMin ? 0.45 : 1,
                     }}
                   >
-                    <Text style={{ ...type.micro, color: active ? colors.brand : belowMin ? colors.textFaint : colors.text, fontWeight: '800' }}>
+                    <Text style={{ ...type.micro, color: active ? colors.brand : belowMin ? colors.textMuted : colors.text, fontWeight: '800' }}>
                       {d}{d === 1 ? 'D' : 'D'}
                     </Text>
                   </Pressable>
@@ -154,6 +155,7 @@ export default function InterCityForm({ config, onChange }) {
               }}
             >
               <Pressable
+                accessibilityRole="button"
                 onPress={() => setDays(days - 1)}
                 disabled={!canDecDays}
                 style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center', opacity: canDecDays ? 1 : 0.3 }}
@@ -164,6 +166,7 @@ export default function InterCityForm({ config, onChange }) {
                 {days}d
               </Text>
               <Pressable
+                accessibilityRole="button"
                 onPress={() => setDays(Math.min(30, days + 1))}
                 style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}
               >
@@ -188,6 +191,7 @@ export default function InterCityForm({ config, onChange }) {
                 const active = hours === h
                 return (
                   <Pressable
+                    accessibilityRole="button"
                     key={h}
                     onPress={() => !belowMin && setHours(h)}
                     disabled={belowMin}
@@ -202,7 +206,7 @@ export default function InterCityForm({ config, onChange }) {
                       opacity: belowMin ? 0.45 : 1,
                     }}
                   >
-                    <Text style={{ ...type.micro, color: active ? colors.brand : belowMin ? colors.textFaint : colors.text, fontWeight: '800' }}>
+                    <Text style={{ ...type.micro, color: active ? colors.brand : belowMin ? colors.textMuted : colors.text, fontWeight: '800' }}>
                       {h}h
                     </Text>
                   </Pressable>
@@ -221,6 +225,7 @@ export default function InterCityForm({ config, onChange }) {
               }}
             >
               <Pressable
+                accessibilityRole="button"
                 onPress={() => setHours(hours - 1)}
                 disabled={!canDecHours}
                 style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center', opacity: canDecHours ? 1 : 0.3 }}
@@ -231,6 +236,7 @@ export default function InterCityForm({ config, onChange }) {
                 {hours}h
               </Text>
               <Pressable
+                accessibilityRole="button"
                 onPress={() => setHours(Math.min(23, hours + 1))}
                 style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}
               >
@@ -249,7 +255,7 @@ export default function InterCityForm({ config, onChange }) {
             backgroundColor: colors.brandSoft,
             borderRadius: radius.md,
             borderWidth: 1,
-            borderColor: '#fca5a5',
+            borderColor: colors.red,
             paddingHorizontal: space.md,
             paddingVertical: 10,
           }}

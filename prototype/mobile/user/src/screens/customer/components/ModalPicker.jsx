@@ -86,6 +86,7 @@ export default function ModalPicker({
     <>
       {/* ─── Trigger Button ─── */}
       <Pressable
+        accessibilityRole="button"
         onPress={open}
         style={({ pressed }) => ({
           flexDirection: 'row',
@@ -121,6 +122,7 @@ export default function ModalPicker({
       >
         {/* Scrim */}
         <Pressable
+          accessibilityRole="button"
           style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }}
           onPress={() => setVisible(false)}
         />
@@ -153,6 +155,7 @@ export default function ModalPicker({
           >
             <Text style={{ ...type.title, color: colors.text }}>{title}</Text>
             <Pressable
+              accessibilityRole="button"
               onPress={() => setVisible(false)}
               style={{
                 padding: space.sm,
@@ -175,6 +178,7 @@ export default function ModalPicker({
               }}
             >
               <TextInput
+                accessibilityLabel="Search"
                 value={query}
                 onChangeText={setQuery}
                 placeholder="Search..."
@@ -212,6 +216,7 @@ export default function ModalPicker({
                 const isSelected = item.id === value
                 return (
                   <Pressable
+                    accessibilityRole="button"
                     onPress={() => {
                       onChange(item.place ? registerPlace(item.place) : item.id)
                       setVisible(false)

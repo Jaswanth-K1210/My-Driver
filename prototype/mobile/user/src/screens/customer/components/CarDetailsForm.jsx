@@ -12,8 +12,8 @@ import {
   ENGINE_TYPES,
   TRANSMISSIONS,
 } from '../../../data/mock'
-import { getRecommendedSkillId } from '../../../lib/booking'
-import { api } from '../../../lib/apiClient'
+import { carDetailsFrom, getRecommendedSkillId } from '../../../lib/booking'
+import { useTrip } from '../../../context/TripContext'
 import { colors, radius, space, type } from '../../../theme/tokens'
 import ModalPicker from './ModalPicker'
 
@@ -42,39 +42,22 @@ function SectionLabel({ children }) {
 }
 
 export default function CarDetailsForm({ config, onChange }) {
+  // The garage is shared with Profile, where cars are added, edited and removed.
+  const { garage, garageStatus, reloadGarage } = useTrip()
   const [tab, setTab] = useState('garage') // 'garage' | 'new'
-  const [garage, setGarage] = useState(null)
 
+  // With no saved cars there is nothing to pick from: open the form instead.
+  const empty = garage !== null && garage.length === 0
   useEffect(() => {
-    let cancelled = false
-    api.me.vehicles
-      .list()
-      .then((r) => {
-        if (cancelled) return
-        const cars = (r.items ?? r ?? []).map((v) => ({ ...v, engineType: v.engine_type }))
-        setGarage(cars)
-        if (cars.length === 0) setTab('new')
-      })
-      .catch(() => !cancelled && (setGarage([]), setTab('new')))
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    if (empty) setTab('new')
+  }, [empty])
 
   const carDetails = config.carDetails ?? {}
   const currentBrand = CAR_BRANDS.find((b) => b.company === carDetails.company) ?? CAR_BRANDS[0]
 
   // ── Saved garage handler ──
   const handleSavedSelect = (car) => {
-    const updated = {
-      company: car.company,
-      model: car.model,
-      engineType: car.engineType,
-      transmission: car.transmission,
-      plate: car.plate,
-      isCustom: false,
-      savedVehicleId: car.id,
-    }
+    const updated = carDetailsFrom(car)
     onChange({ ...config, carDetails: updated, skillId: getRecommendedSkillId(updated, config.requirement) })
   }
 
@@ -112,6 +95,7 @@ export default function CarDetailsForm({ config, onChange }) {
           const active = tab === t.id
           return (
             <Pressable
+              accessibilityRole="button"
               key={t.id}
               onPress={() => setTab(t.id)}
               style={{
@@ -120,7 +104,7 @@ export default function CarDetailsForm({ config, onChange }) {
                 alignItems: 'center',
                 borderRadius: radius.md - 2,
                 backgroundColor: active ? colors.surface : 'transparent',
-                shadowColor: active ? '#000' : 'transparent',
+                shadowColor: active ? colors.graphite : 'transparent',
                 shadowOpacity: 0.06,
                 shadowRadius: 4,
                 elevation: active ? 1 : 0,
@@ -146,8 +130,27 @@ export default function CarDetailsForm({ config, onChange }) {
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <SectionLabel>My Garage (Saved Vehicles)</SectionLabel>
           </View>
-          {garage === null ? (
+          {garage === null && garageStatus === 'error' ? (
+            <View style={{ gap: space.sm }}>
+              <Text style={{ ...type.caption, color: colors.textMuted }}>
+                Could not load your saved cars. Check your connection, or enter the car under New Vehicle.
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Try loading saved cars again"
+                hitSlop={8}
+                onPress={reloadGarage}
+                style={{ alignSelf: 'flex-start', paddingVertical: 6 }}
+              >
+                <Text style={{ ...type.bodyBold, color: colors.brand }}>Try again</Text>
+              </Pressable>
+            </View>
+          ) : garage === null ? (
             <Text style={{ ...type.caption, color: colors.textMuted }}>Loading your cars…</Text>
+          ) : garage.length === 0 ? (
+            <Text style={{ ...type.caption, color: colors.textMuted }}>
+              No saved cars yet. Add one in Profile, or enter the car under New Vehicle.
+            </Text>
           ) : null}
           {(garage ?? []).map((car) => {
             const selected = carDetails.savedVehicleId === car.id
@@ -155,6 +158,9 @@ export default function CarDetailsForm({ config, onChange }) {
               <Pressable
                 key={car.id}
                 onPress={() => handleSavedSelect(car)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected }}
+                accessibilityLabel={`${car.company} ${car.model}${car.plate ? `, ${car.plate}` : ''}`}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -177,7 +183,7 @@ export default function CarDetailsForm({ config, onChange }) {
                     flexShrink: 0,
                   }}
                 >
-                  <Car size={16} color={selected ? '#fff' : colors.textMuted} />
+                  <Car size={16} color={selected ? colors.onRed : colors.textMuted} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text
@@ -190,7 +196,7 @@ export default function CarDetailsForm({ config, onChange }) {
                     {car.company} {car.model}
                   </Text>
                   <Text style={{ ...type.tiny, color: colors.textMuted }}>
-                    {car.transmission} · {car.engineType} · {car.plate}
+                    {[car.transmission, car.engine_type, car.plate].filter(Boolean).join(' · ')}
                   </Text>
                 </View>
                 {selected ? <Check size={16} color={colors.brand} /> : null}
@@ -230,6 +236,7 @@ export default function CarDetailsForm({ config, onChange }) {
             <SectionLabel>Car Model</SectionLabel>
             {isCustomBrand ? (
               <TextInput
+                accessibilityLabel="Car model"
                 value={carDetails.model}
                 onChangeText={(v) => updateField('model', v)}
                 placeholder="Enter car model"
@@ -264,6 +271,7 @@ export default function CarDetailsForm({ config, onChange }) {
                 const active = carDetails.engineType === eng
                 return (
                   <Pressable
+                    accessibilityRole="button"
                     key={eng}
                     onPress={() => updateField('engineType', eng)}
                     style={{
@@ -278,7 +286,7 @@ export default function CarDetailsForm({ config, onChange }) {
                     <Text
                       style={{
                         ...type.caption,
-                        color: active ? '#fff' : colors.text,
+                        color: active ? colors.onGraphite : colors.text,
                         fontWeight: '800',
                       }}
                     >
@@ -298,6 +306,7 @@ export default function CarDetailsForm({ config, onChange }) {
                 const active = carDetails.transmission === trans
                 return (
                   <Pressable
+                    accessibilityRole="button"
                     key={trans}
                     onPress={() => updateField('transmission', trans)}
                     style={{
@@ -313,11 +322,11 @@ export default function CarDetailsForm({ config, onChange }) {
                       backgroundColor: active ? colors.brand : colors.surface,
                     }}
                   >
-                    {active ? <Check size={13} color="#fff" /> : null}
+                    {active ? <Check size={13} color={colors.onGraphite} /> : null}
                     <Text
                       style={{
                         ...type.caption,
-                        color: active ? '#fff' : colors.text,
+                        color: active ? colors.onGraphite : colors.text,
                         fontWeight: '800',
                       }}
                     >

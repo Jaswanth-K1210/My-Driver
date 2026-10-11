@@ -1,6 +1,7 @@
+import { useEffect } from 'react'
 import { Alert, View } from 'react-native'
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
-import { Archive, Home, UserRound } from 'lucide-react-native'
+import { Home, Receipt, UserRound } from 'lucide-react-native'
 import { colors, type } from '../../theme/tokens'
 import { TripProvider, useTrip } from '../../context/TripContext'
 import HomeScreen from './HomeScreen'
@@ -30,8 +31,26 @@ const tabScreenOptions = {
  * backend-side, so there is no local timer pretending a driver was found.
  */
 function Flow({ onLogout }) {
-  const { phase, trip, payment, openCheckout, config, setConfig, summary, startMatching, cancelTrip, finishTrip } =
-    useTrip()
+  const {
+    phase, trip, payment, openCheckout, config, setConfig, summary, startMatching, cancelTrip, finishTrip,
+    notice, clearNotice,
+  } = useTrip()
+
+  // A trip that ended without the customer doing it: cancelled by the driver
+  // or the Safety Desk, or no driver found.
+  useEffect(() => {
+    if (!notice) return
+    Alert.alert(notice.title, notice.message, [{ text: 'OK', onPress: clearNotice }], { onDismiss: clearNotice })
+  }, [notice, clearNotice])
+
+  // The trip stays on screen until the server confirms the cancellation.
+  const cancel = async (reason) => {
+    try {
+      await cancelTrip(reason)
+    } catch (err) {
+      Alert.alert('Could not cancel', err?.message ?? 'Please try again.')
+    }
+  }
 
   const findDriver = async (nextConfig) => {
     try {
@@ -47,9 +66,7 @@ function Flow({ onLogout }) {
         payment={payment}
         trip={trip}
         onPay={openCheckout}
-        onCancel={() => {
-          void cancelTrip('Payment not completed')
-        }}
+        onCancel={() => cancel('Payment not completed')}
       />
     )
   }
@@ -58,9 +75,8 @@ function Flow({ onLogout }) {
     return (
       <MatchingScreen
         status={trip?.statusLabel}
-        onCancel={() => {
-          void cancelTrip('Cancelled while matching')
-        }}
+        trip={trip}
+        onCancel={() => cancel('Cancelled while matching')}
       />
     )
   }
@@ -69,9 +85,7 @@ function Flow({ onLogout }) {
     return (
       <LiveTripScreen
         trip={trip}
-        onCancel={() => {
-          void cancelTrip()
-        }}
+        onCancel={() => cancel()}
       />
     )
   }
@@ -80,7 +94,7 @@ function Flow({ onLogout }) {
     return (
       <TripCompleteScreen
         trip={trip}
-        summary={summary ?? { maxSpeed: 0, breaches: 0 }}
+        summary={summary}
         onSave={finishTrip}
       />
     )
@@ -90,14 +104,14 @@ function Flow({ onLogout }) {
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <Tab.Navigator screenOptions={tabScreenOptions}>
         <Tab.Screen
-          name="Ride"
+          name="Book"
           options={{ tabBarIcon: ({ color, size }) => <Home size={size} color={color} /> }}
         >
           {() => <HomeScreen config={config} onChange={setConfig} onFindDriver={findDriver} />}
         </Tab.Screen>
         <Tab.Screen
-          name="Vault"
-          options={{ tabBarIcon: ({ color, size }) => <Archive size={size} color={color} /> }}
+          name="Trips"
+          options={{ tabBarIcon: ({ color, size }) => <Receipt size={size} color={color} /> }}
         >
           {() => <VaultScreen />}
         </Tab.Screen>

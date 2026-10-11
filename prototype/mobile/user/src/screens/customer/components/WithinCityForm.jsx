@@ -95,6 +95,7 @@ export default function WithinCityForm({ config, onChange }) {
               const active = config.durationHours === h
               return (
                 <Pressable
+                  accessibilityRole="button"
                   key={h}
                   onPress={() => !belowMin && setDuration(h)}
                   disabled={belowMin}
@@ -112,7 +113,7 @@ export default function WithinCityForm({ config, onChange }) {
                   <Text
                     style={{
                       ...type.caption,
-                      color: active ? colors.brand : belowMin ? colors.textFaint : colors.text,
+                      color: active ? colors.brand : belowMin ? colors.textMuted : colors.text,
                       fontWeight: '800',
                     }}
                   >
@@ -136,6 +137,7 @@ export default function WithinCityForm({ config, onChange }) {
             }}
           >
             <Pressable
+              accessibilityRole="button"
               onPress={() => setDuration(Math.max(minDur.minHours, config.durationHours - 1))}
               disabled={config.durationHours <= minDur.minHours}
               style={{
@@ -160,6 +162,7 @@ export default function WithinCityForm({ config, onChange }) {
               {config.durationHours}h
             </Text>
             <Pressable
+              accessibilityRole="button"
               onPress={() => setDuration(Math.min(24, config.durationHours + 1))}
               style={{
                 width: 28,

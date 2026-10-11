@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Pressable, ScrollView, Share, Text, View } from 'react-native'
+import { ActivityIndicator, Linking, Pressable, ScrollView, Share, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import {
   AlertTriangle,
   Car,
   Gauge,
+  KeyRound,
+  RefreshCw,
   Siren,
   Star,
   Users,
   X,
 } from 'lucide-react-native'
-import MapCanvas from '../../components/MapCanvas'
+import TripMap from '../../components/TripMap'
 import BottomSheet from '../../components/BottomSheet'
 import Button from '../../components/Button'
 import Card from '../../components/Card'
@@ -18,6 +20,7 @@ import { useToast } from '../../components/Toast'
 import { api } from '../../lib/apiClient'
 import { useTrip } from '../../context/TripContext'
 import { formatINR, maskPhone } from '../../lib/utils'
+import { useTripleVolumePress } from '../../lib/volumeSos'
 import { colors, radius, space, type } from '../../theme/tokens'
 
 // City average used for the ETA; the driver's live position supplies the distance.
@@ -31,13 +34,6 @@ const km = (a, b) => {
   const dLng = (b.lng - a.lng) * r
   const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2
   return 12742 * Math.asin(Math.sqrt(h))
-}
-
-function statusFor(progress) {
-  if (progress < 8) return 'Driver is arriving at pickup'
-  if (progress < 90) return 'On the way'
-  if (progress < 100) return 'Arriving at destination'
-  return 'Trip complete'
 }
 
 function MapBadge({ children, tone = 'neutral', style }) {
@@ -62,7 +58,7 @@ function MapBadge({ children, tone = 'neutral', style }) {
 }
 
 export default function LiveTripScreen({ trip, onCancel }) {
-  const { driverPosition, connection, rawTrip } = useTrip()
+  const { driverPosition, connection, rawTrip, setSummary } = useTrip()
   const [guardians, setGuardians] = useState([])
 
   // Real guardians from the account, for the share sheet.
@@ -99,22 +95,20 @@ export default function LiveTripScreen({ trip, onCancel }) {
     wasOverRef.current = over
   }, [liveSpeed, trip.ceiling, toast])
 
+  // Kept for the trip-complete screen. Only what this phone actually saw: if
+  // the app was closed for part of the trip, the figures cover the rest.
+  useEffect(() => {
+    if (liveSpeed == null) return
+    setSummary({ maxSpeed, breaches })
+  }, [liveSpeed, maxSpeed, breaches, setSummary])
+
   const pickup = rawTrip?.pickup
   const drop = rawTrip?.drop
-  const total = pickup && drop ? km(pickup, drop) : null
-  const left = driverPosition && drop ? km(driverPosition, drop) : null
-  const progress = total && left != null ? Math.max(0, Math.min(100, (1 - left / total) * 100)) : 0
+  // Before the handshake the driver is heading to the pickup, after it to the drop.
+  const arriving = trip.status === 'HANDSHAKE_PENDING'
+  const heading = arriving ? pickup : drop
+  const left = driverPosition && heading ? km(driverPosition, heading) : null
   const etaMin = left != null ? Math.max(1, Math.ceil((left / CITY_KMH) * 60)) : null
-
-  // Latest telemetry and callback are read through refs so this effect depends
-  // only on `progress`. Listing them as deps (as the web prototype did) re-ran
-  // the effect mid-countdown, and the cleanup then cancelled the completion
-  // timeout permanently, hanging the trip at 100%.
-  const statsRef = useRef({ maxSpeed: 0, breaches: 0 })
-
-  useEffect(() => {
-    statsRef.current = { maxSpeed, breaches }
-  })
 
   // There is deliberately no local completion timer. The driver ends the trip
   // server-side and TRIP_STATE_CHANGED moves this screen on; finishing locally
@@ -136,19 +130,45 @@ export default function LiveTripScreen({ trip, onCancel }) {
     if (sosStage !== 'armed') return undefined
     const t = setTimeout(() => {
       if (countdown <= 1) {
-        setSosStage('fired')
+        // Say it was sent only once the server has it.
+        setSosStage('sending')
         api.trips
           .sos(rawTrip.id, { silent: true })
-          .then(() => toast('SOS sent. The Safety Desk and your guardians have been alerted.', 'danger', 5000))
-          .catch(() => toast('SOS could not reach us. Call 112 now.', 'danger', 8000))
+          .then(() => setSosStage('fired'))
+          .catch(() => setSosStage('failed'))
       } else {
         setCountdown((c) => c - 1)
       }
     }, 1000)
     return () => clearTimeout(t)
-  }, [sosStage, countdown, toast, rawTrip?.id])
+  }, [sosStage, countdown, rawTrip?.id])
+
+  // Optional second trigger, switched on in Profile: three presses of a volume
+  // button open the same countdown without touching the screen.
+  useTripleVolumePress(sosStage === 'idle', startSosCountdown)
 
   const overCeiling = liveSpeed != null && liveSpeed > trip.ceiling
+
+  // The code the driver must enter to start the trip. Every request mints a
+  // new one and cancels the last, so it is fetched once per trip, not on each
+  // render, and again only when the customer asks.
+  const [pickupCode, setPickupCode] = useState({ status: 'idle', otp: null })
+  const codeForTrip = useRef(null)
+  const loadPickupCode = useCallback(async () => {
+    setPickupCode({ status: 'loading', otp: null })
+    try {
+      const { otp } = await api.trips.handshakeOtp(rawTrip.id)
+      setPickupCode({ status: 'ready', otp })
+    } catch {
+      setPickupCode({ status: 'error', otp: null })
+    }
+  }, [rawTrip?.id])
+
+  useEffect(() => {
+    if (!arriving || !rawTrip?.id || codeForTrip.current === rawTrip.id) return
+    codeForTrip.current = rawTrip.id
+    void loadPickupCode()
+  }, [arriving, rawTrip?.id, loadPickupCode])
 
   /** Texts every saved guardian, or hands the link to the share sheet. */
   const shareLink = async (bySms) => {
@@ -180,14 +200,20 @@ export default function LiveTripScreen({ trip, onCancel }) {
           paddingVertical: space.sm,
         }}
       >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Cancel trip"
-          onPress={() => setConfirmCancel(true)}
-          style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 8 }}
-        >
-          <X size={16} color={colors.text} />
-        </Pressable>
+        {arriving ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cancel trip"
+            hitSlop={10}
+            onPress={() => setConfirmCancel(true)}
+            style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 10 }}
+          >
+            <X size={16} color={colors.text} />
+          </Pressable>
+        ) : (
+          // Once the trip has started it can only be ended by the driver.
+          <View style={{ width: 36 }} />
+        )}
         <View style={{ alignItems: 'center' }}>
           <Text style={{ ...type.caption, color: colors.text }}>Trip {trip.id}</Text>
           <Text style={{ ...type.micro, color: colors.textMuted }}>
@@ -210,7 +236,48 @@ export default function LiveTripScreen({ trip, onCancel }) {
         </View>
       </View>
 
-      {confirmCancel ? (
+      {arriving ? (
+        <Card tone="alert" style={{ marginHorizontal: space.lg, marginBottom: space.sm }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+            <KeyRound size={20} color={colors.red} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ ...type.micro, color: colors.redPressed, letterSpacing: 0.6 }}>PICKUP CODE</Text>
+              <Text style={{ ...type.tiny, color: colors.text, lineHeight: 16 }}>
+                {pickupCode.status === 'error'
+                  ? 'Could not get your code. Check your connection.'
+                  : 'Tell your driver this code at the car, not before. It starts the trip.'}
+              </Text>
+            </View>
+            {pickupCode.status === 'ready' ? (
+              <Text
+                selectable
+                accessibilityLabel={`Pickup code ${pickupCode.otp.split('').join(' ')}`}
+                style={{ ...type.display, color: colors.redDeep, letterSpacing: 4 }}
+              >
+                {pickupCode.otp}
+              </Text>
+            ) : pickupCode.status === 'loading' ? (
+              <ActivityIndicator color={colors.red} />
+            ) : null}
+          </View>
+          {pickupCode.status === 'ready' || pickupCode.status === 'error' ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={pickupCode.status === 'error' ? 'Try again' : 'Get a new pickup code'}
+              hitSlop={8}
+              onPress={loadPickupCode}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.sm, alignSelf: 'flex-start', paddingVertical: 6 }}
+            >
+              <RefreshCw size={13} color={colors.redPressed} />
+              <Text style={{ ...type.caption, color: colors.redPressed }}>
+                {pickupCode.status === 'error' ? 'Try again' : 'Get a new code'}
+              </Text>
+            </Pressable>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {confirmCancel && arriving ? (
         <Card tone="alert" style={{ marginHorizontal: space.lg, marginBottom: space.sm }}>
           <Text style={{ ...type.caption, color: colors.redPressed }}>Cancel this trip?</Text>
           <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.sm }}>
@@ -228,20 +295,31 @@ export default function LiveTripScreen({ trip, onCancel }) {
       <View
         style={{
           marginHorizontal: space.lg,
-          height: 200,
+          height: 240,
           borderRadius: radius.lg,
           borderWidth: 1,
           borderColor: colors.border,
           overflow: 'hidden',
         }}
       >
-        <MapCanvas progress={progress} style={{ width: '100%', height: '100%' }} />
+        <TripMap
+          pickup={pickup}
+          drop={drop}
+          driver={driverPosition}
+          pickupLabel={trip.from}
+          dropLabel={trip.to}
+          style={{ width: '100%', height: '100%' }}
+        />
         <MapBadge tone={overCeiling ? 'alert' : 'neutral'} style={{ left: 10, top: 10 }}>
           {liveSpeed != null ? `${liveSpeed} km/h · limit ${trip.ceiling}` : `Limit ${trip.ceiling} km/h`}
         </MapBadge>
-        {etaMin != null ? <MapBadge style={{ right: 10, top: 10 }}>{`ETA ${etaMin} min`}</MapBadge> : null}
+        {etaMin != null ? (
+          <MapBadge style={{ right: 10, top: 10 }}>
+            {arriving ? `Driver about ${etaMin} min away` : `About ${etaMin} min to go`}
+          </MapBadge>
+        ) : null}
         <MapBadge style={{ left: 10, bottom: 10 }}>
-          {`${trip.statusLabel ?? statusFor(progress)}${connection === 'open' ? '' : ' · reconnecting'}`}
+          {`${trip.statusLabel}${connection === 'open' ? '' : ' · reconnecting'}`}
         </MapBadge>
       </View>
 
@@ -330,7 +408,7 @@ export default function LiveTripScreen({ trip, onCancel }) {
           </Card>
         </View>
 
-        <Text style={{ ...type.tiny, color: colors.textFaint, textAlign: 'center', lineHeight: 16 }}>
+        <Text style={{ ...type.tiny, color: colors.textMuted, textAlign: 'center', lineHeight: 16 }}>
           Hold SOS for a second to alert the Safety Desk and your guardians.
         </Text>
       </ScrollView>
@@ -425,8 +503,9 @@ export default function LiveTripScreen({ trip, onCancel }) {
         </View>
       </BottomSheet>
 
-      {sosStage === 'armed' || sosStage === 'fired' ? (
+      {sosStage !== 'idle' ? (
         <View
+          accessibilityViewIsModal
           style={{
             position: 'absolute',
             top: 0,
@@ -453,21 +532,73 @@ export default function LiveTripScreen({ trip, onCancel }) {
                   justifyContent: 'center',
                 }}
               >
-                <Text style={{ ...type.display, color: colors.red }}>{countdown}</Text>
+                <Text accessibilityLiveRegion="polite" style={{ ...type.display, color: colors.red }}>
+                  {countdown}
+                </Text>
               </View>
-              <Text style={{ ...type.title, color: colors.text }}>SOS activating…</Text>
+              <Text style={{ ...type.title, color: colors.text }}>Sending SOS in {countdown}</Text>
               <Text
                 style={{
-                  ...type.tiny,
+                  ...type.caption,
                   color: colors.textMuted,
                   textAlign: 'center',
-                  maxWidth: 250,
+                  maxWidth: 270,
                   lineHeight: 18,
                 }}
               >
-                Safety Desk will be alerted with live location and VisionCam stream. Guardians will be notified.
+                The Safety Desk will get your live location and your guardians will be told. Your driver is not
+                notified.
               </Text>
-              <Button label="Cancel — I am safe" variant="subtle" onPress={() => setSosStage('idle')} />
+              <Button label="Cancel, I am safe" variant="subtle" onPress={() => setSosStage('idle')} />
+            </>
+          ) : sosStage === 'sending' ? (
+            <>
+              <View
+                style={{
+                  width: 96,
+                  height: 96,
+                  borderRadius: radius.pill,
+                  backgroundColor: colors.redSoft,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Siren size={40} color={colors.red} />
+              </View>
+              <Text accessibilityLiveRegion="assertive" style={{ ...type.title, color: colors.text }}>
+                Sending SOS
+              </Text>
+            </>
+          ) : sosStage === 'failed' ? (
+            <>
+              <View
+                style={{
+                  width: 96,
+                  height: 96,
+                  borderRadius: radius.pill,
+                  backgroundColor: colors.redDeep,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <AlertTriangle size={40} color={colors.onRed} />
+              </View>
+              <Text
+                accessibilityLiveRegion="assertive"
+                style={{ ...type.title, color: colors.redDeep, textAlign: 'center' }}
+              >
+                The SOS did not reach us
+              </Text>
+              <Text
+                style={{ ...type.caption, color: colors.textMuted, textAlign: 'center', maxWidth: 270, lineHeight: 18 }}
+              >
+                Your phone could not reach MyDriver. If you are in danger, call 112 now.
+              </Text>
+              <View style={{ width: '100%', maxWidth: 270, gap: space.sm }}>
+                <Button label="Call 112" icon={Siren} variant="danger" onPress={() => Linking.openURL('tel:112')} />
+                <Button label="Try the SOS again" variant="outline" onPress={startSosCountdown} />
+                <Button label="Close" variant="ghost" onPress={() => setSosStage('idle')} />
+              </View>
             </>
           ) : (
             <>
@@ -485,14 +616,15 @@ export default function LiveTripScreen({ trip, onCancel }) {
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <AlertTriangle size={16} color={colors.redDeep} />
-                <Text style={{ ...type.title, color: colors.redDeep }}>Emergency protocol active</Text>
+                <Text accessibilityLiveRegion="assertive" style={{ ...type.title, color: colors.redDeep }}>
+                  SOS sent
+                </Text>
               </View>
               <View style={{ width: '100%', maxWidth: 270, gap: space.sm }}>
                 {[
-                  'Safety Desk escalated to L3',
-                  'Live location streaming',
-                  'Guardians notified via SMS',
-                  'VisionCam evidence sealing',
+                  'The Safety Desk has been alerted',
+                  'Your live location is shared with the Safety Desk',
+                  'Your guardians are being notified',
                 ].map((item) => (
                   <View
                     key={item}
@@ -511,11 +643,14 @@ export default function LiveTripScreen({ trip, onCancel }) {
                     <View
                       style={{ width: 6, height: 6, borderRadius: radius.pill, backgroundColor: colors.red }}
                     />
-                    <Text style={{ ...type.tiny, color: colors.redPressed }}>{item}</Text>
+                    <Text style={{ ...type.caption, color: colors.redPressed, flex: 1 }}>{item}</Text>
                   </View>
                 ))}
               </View>
-              <Button label="Close" variant="ghost" onPress={() => setSosStage('idle')} />
+              <View style={{ width: '100%', maxWidth: 270, gap: space.sm }}>
+                <Button label="Call 112" icon={Siren} variant="outline" onPress={() => Linking.openURL('tel:112')} />
+                <Button label="Back to the trip" variant="ghost" onPress={() => setSosStage('idle')} />
+              </View>
             </>
           )}
         </View>

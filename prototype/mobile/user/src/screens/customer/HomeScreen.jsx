@@ -11,7 +11,7 @@
  *
  * Sticky CTA: "Find [Skill] Driver" — disabled until quote.ready
  */
-import { ScrollView, Text, View } from 'react-native'
+import { ActivityIndicator, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Slider from '@react-native-community/slider'
 import { Gauge, Search } from 'lucide-react-native'
@@ -50,10 +50,10 @@ function SectionHeader({ step, children }) {
             justifyContent: 'center',
           }}
         >
-          <Text style={{ ...type.micro, color: '#fff' }}>{step}</Text>
+          <Text style={{ ...type.micro, color: colors.onGraphite }}>{step}</Text>
         </View>
       )}
-      <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.6 }}>
+      <Text accessibilityRole="header" style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.6 }}>
         {String(children).toUpperCase()}
       </Text>
     </View>
@@ -63,36 +63,59 @@ function SectionHeader({ step, children }) {
 /* ── Main Component ──────────────────────────────────────────────────────── */
 
 export default function HomeScreen({ config, onChange, onFindDriver }) {
-  const { skills } = useTrip()
+  const { skills, skillsStatus, reloadSkills } = useTrip()
   const { user } = useAuth()
 
+  // The price shown, and held at checkout, is the server's. The local quote
+  // only supplies the words (route, trip type, duration) and tells us the
+  // form is complete enough to ask for a price.
   const [server, setServer] = useState(null)
+  const [priceStatus, setPriceStatus] = useState('idle') // 'idle' | 'loading' | 'ready' | 'error'
+  const [priceAttempt, setPriceAttempt] = useState(0)
 
-  const platformFee = server ? server.fare.platform_fee : 19
-  const baseNightFee = server ? (server.fare.night_fee > 0 ? server.fare.night_fee : 30) : 30
-  const local = quoteFor(config, skills, { platformFee, nightFee: baseNightFee })
-  const quote = local
+  const local = quoteFor(config, skills)
 
   useEffect(() => {
     if (!local.ready) {
       setServer(null)
+      setPriceStatus('idle')
       return undefined
     }
     let cancelled = false
+    setPriceStatus('loading')
     const timer = setTimeout(() => {
-      serverQuote(api, config, skills)
-        .then((q) => {
-          if (!cancelled && q) setServer(q)
-        })
-        .catch(() => {
-          if (!cancelled) setServer(null)
-        })
+      serverQuote(api, config, skills).then((q) => {
+        if (cancelled) return
+        // serverQuote resolves to null when the request failed. A price from
+        // an earlier form state must not stay on screen as if it were current.
+        setServer(q)
+        setPriceStatus(q ? 'ready' : 'error')
+      })
     }, 250)
     return () => {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [config, skills, local.ready])
+  }, [config, skills, local.ready, priceAttempt])
+
+  const priced = priceStatus === 'ready' && server
+  const quote = {
+    skill: local.skill,
+    ready: Boolean(priced),
+    total: priced ? server.fare.total : 0,
+    lines: [
+      // Words only from the local quote: its rupee figures are not the server's.
+      ...local.lines.filter((l) => !String(l.value).includes('₹') && !/distance/i.test(l.label)),
+      ...(priced
+        ? [
+            ...(server.distance_km > 0 ? [{ label: 'Distance', value: `${server.distance_km.toFixed(1)} km` }] : []),
+            { label: `${local.skill?.label ?? 'Driver'} fare`, value: formatINR(server.fare.base) },
+            { label: 'Platform fee', value: formatINR(server.fare.platform_fee) },
+            ...(server.fare.night_fee > 0 ? [{ label: 'Night fee', value: formatINR(server.fare.night_fee) }] : []),
+          ]
+        : []),
+    ],
+  }
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
@@ -185,6 +208,9 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
             <SkillPicker
               config={config}
               onChange={onChange}
+              skills={skills}
+              status={skillsStatus}
+              onRetry={reloadSkills}
             />
           </View>
 
@@ -223,6 +249,8 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
               step={5}
               value={config.ceiling}
               onValueChange={(v) => onChange({ ...config, ceiling: clamp(Math.round(v), 40, 120) })}
+              accessibilityLabel="Speed limit for this trip"
+              accessibilityValue={{ min: 40, max: 120, now: config.ceiling, text: `${config.ceiling} kilometres per hour` }}
               minimumTrackTintColor={colors.brand}
               maximumTrackTintColor={colors.surfaceSunken}
               thumbTintColor={colors.brand}
@@ -270,10 +298,26 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
                 }}
               >
                 <Text style={{ ...type.bodyBold, color: colors.text }}>Estimated total</Text>
-                <Text style={{ ...type.bodyBold, color: colors.brand }}>
-                  {quote.ready ? formatINR(quote.total) : '--'}
-                </Text>
+                {priceStatus === 'loading' ? (
+                  <ActivityIndicator color={colors.brand} accessibilityLabel="Getting your price" />
+                ) : (
+                  <Text style={{ ...type.bodyBold, color: colors.brand }}>
+                    {quote.ready ? formatINR(quote.total) : '--'}
+                  </Text>
+                )}
               </View>
+              {priceStatus === 'error' ? (
+                <View style={{ gap: space.sm, marginTop: space.sm }}>
+                  <Text style={{ ...type.caption, color: colors.redPressed }}>
+                    Could not get a price. Check your connection and try again.
+                  </Text>
+                  <Button label="Try again" variant="subtle" onPress={() => setPriceAttempt((n) => n + 1)} />
+                </View>
+              ) : quote.ready ? (
+                <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 4, lineHeight: 16 }}>
+                  This amount is held when you book. You are charged the final fare when the trip ends.
+                </Text>
+              ) : null}
             </View>
           </Card>
         </View>
@@ -290,7 +334,7 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
         }}
       >
         <Button
-          label={`Find ${quote.skill?.label ?? 'Standard'} Driver`}
+          label={quote.skill ? `Find ${quote.skill.label} Driver` : 'Find a driver'}
           icon={Search}
           disabled={!quote.ready}
           onPress={() => onFindDriver(config)}

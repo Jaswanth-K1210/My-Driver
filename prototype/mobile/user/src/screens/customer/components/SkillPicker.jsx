@@ -1,17 +1,59 @@
 /**
  * SkillPicker — Smart Driver Certification & Tier selector.
- * Renders full cards with label, tagline, rate/km, description, and ETA.
+ * Tiers, names and prices come from the server's rate cards (useTrip().skills),
+ * so a price change in the console shows here. Nothing is bundled.
  * Shows a "Recommended" badge on the auto-matched tier for the current vehicle + requirement.
  */
-import { Pressable, Text, View } from 'react-native'
-import { Check, Sparkles } from 'lucide-react-native'
-import { SKILLS } from '../../../data/mock'
+import { ActivityIndicator, Pressable, Text, View } from 'react-native'
+import { Check, RefreshCw, Sparkles } from 'lucide-react-native'
 import { getRecommendedSkillId } from '../../../lib/booking'
 import { colors, radius, space, type } from '../../../theme/tokens'
 
-export default function SkillPicker({ config, onChange }) {
+export default function SkillPicker({ config, onChange, skills = [], status = 'ready', onRetry }) {
   const recommendedId = getRecommendedSkillId(config.carDetails, config.requirement)
-  const skills = SKILLS
+
+  if (!skills.length) {
+    const failed = status === 'error'
+    return (
+      <View
+        style={{
+          borderRadius: radius.lg,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: colors.surfaceAlt,
+          padding: space.lg,
+          alignItems: 'center',
+          gap: space.sm,
+        }}
+      >
+        {failed ? (
+          <>
+            <Text style={{ ...type.body, color: colors.text, textAlign: 'center' }}>
+              Could not load driver tiers and prices
+            </Text>
+            <Text style={{ ...type.caption, color: colors.textMuted, textAlign: 'center' }}>
+              Check your connection and try again.
+            </Text>
+            <Pressable
+              onPress={onRetry}
+              accessibilityRole="button"
+              accessibilityLabel="Try loading driver tiers again"
+              hitSlop={8}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: space.sm }}
+            >
+              <RefreshCw size={14} color={colors.brand} />
+              <Text style={{ ...type.bodyBold, color: colors.brand }}>Try again</Text>
+            </Pressable>
+          </>
+        ) : (
+          <>
+            <ActivityIndicator color={colors.brand} />
+            <Text style={{ ...type.caption, color: colors.textMuted }}>Loading driver tiers and prices</Text>
+          </>
+        )}
+      </View>
+    )
+  }
 
   return (
     <View style={{ gap: space.md }}>
@@ -36,6 +78,9 @@ export default function SkillPicker({ config, onChange }) {
             <Pressable
               key={skill.id}
               onPress={() => onChange({ ...config, skillId: skill.id })}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: isSelected }}
+              accessibilityLabel={`${skill.label}, ${skill.rate} rupees per kilometre${isRecommended ? ', recommended' : ''}`}
               style={{
                 borderRadius: radius.lg,
                 borderWidth: isSelected ? 1.5 : 1,
@@ -62,8 +107,8 @@ export default function SkillPicker({ config, onChange }) {
                     zIndex: 1,
                   }}
                 >
-                  <Sparkles size={9} color="#fff" />
-                  <Text style={{ ...type.micro, color: '#fff' }}>Recommended</Text>
+                  <Sparkles size={9} color={colors.onGraphite} />
+                  <Text style={{ ...type.micro, color: colors.onGraphite }}>Recommended</Text>
                 </View>
               )}
 
@@ -92,16 +137,20 @@ export default function SkillPicker({ config, onChange }) {
               </View>
 
               {/* Tagline */}
-              <Text style={{ ...type.tiny, color: colors.brand, fontWeight: '700', marginBottom: 4 }}>
-                {skill.tagline}
-              </Text>
+              {skill.tagline ? (
+                <Text style={{ ...type.tiny, color: colors.brand, fontWeight: '700', marginBottom: 4 }}>
+                  {skill.tagline}
+                </Text>
+              ) : null}
 
               {/* Description */}
-              <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 16 }} numberOfLines={2}>
-                {skill.description}
-              </Text>
+              {skill.description ? (
+                <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 16 }} numberOfLines={2}>
+                  {skill.description}
+                </Text>
+              ) : null}
 
-              {/* Footer: ETA + Selected status */}
+              {/* Footer: hourly rate + Selected status */}
               <View
                 style={{
                   flexDirection: 'row',
@@ -110,17 +159,17 @@ export default function SkillPicker({ config, onChange }) {
                   marginTop: space.sm,
                   paddingTop: space.sm,
                   borderTopWidth: 1,
-                  borderTopColor: isSelected ? '#fca5a5' : colors.border,
+                  borderTopColor: colors.border,
                 }}
               >
-                <Text style={{ ...type.micro, color: colors.textFaint }}>ETA: {skill.eta}</Text>
+                <Text style={{ ...type.micro, color: colors.textMuted }}>₹{skill.hourlyRate}/hour for hourly hire</Text>
                 {isSelected ? (
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                     <Check size={12} color={colors.brand} />
                     <Text style={{ ...type.micro, color: colors.brand, fontWeight: '800' }}>Selected</Text>
                   </View>
                 ) : (
-                  <Text style={{ ...type.micro, color: colors.textFaint }}>Tap to choose</Text>
+                  <Text style={{ ...type.micro, color: colors.textMuted }}>Tap to choose</Text>
                 )}
               </View>
             </Pressable>

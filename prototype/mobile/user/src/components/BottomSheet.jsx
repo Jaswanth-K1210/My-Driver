@@ -7,6 +7,7 @@ export default function BottomSheet({ open, onClose, title, children }) {
     <Modal visible={open} transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>
         <Pressable
+          accessibilityRole="button"
           accessibilityLabel="Close sheet"
           onPress={onClose}
           style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(12,12,16,0.45)' }]}

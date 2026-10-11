@@ -103,9 +103,10 @@ export default function SignupScreen({ navigation }) {
           <View style={styles.form}>
             <Text style={styles.inputLabel}>Full Name</Text>
             <TextInput
+              accessibilityLabel="Full name"
               style={styles.input}
               placeholder="Full name"
-              placeholderTextColor={colors.textFaint}
+              placeholderTextColor={colors.textMuted}
               value={name}
               onChangeText={setName}
               autoCapitalize="words"
@@ -113,9 +114,10 @@ export default function SignupScreen({ navigation }) {
 
             <Text style={styles.inputLabel}>Email</Text>
             <TextInput
+              accessibilityLabel="Email address"
               style={styles.input}
               placeholder="you@email.com"
-              placeholderTextColor={colors.textFaint}
+              placeholderTextColor={colors.textMuted}
               value={email}
               onChangeText={setEmail}
               keyboardType="email-address"
@@ -128,9 +130,10 @@ export default function SignupScreen({ navigation }) {
                 <Text style={styles.countryCodeText}>+91</Text>
               </View>
               <TextInput
+                accessibilityLabel="Mobile number, 10 digits"
                 style={[styles.input, styles.phoneInput]}
                 placeholder="98765 43210"
-                placeholderTextColor={colors.textFaint}
+                placeholderTextColor={colors.textMuted}
                 value={phone}
                 onChangeText={setPhone}
                 keyboardType="phone-pad"
@@ -141,6 +144,7 @@ export default function SignupScreen({ navigation }) {
 
           <View style={styles.tabContainer}>
             <TouchableOpacity
+              accessibilityRole="button"
               style={[styles.tab, method === 'google' && styles.tabActive]}
               onPress={() => setMethod('google')}
               activeOpacity={0.7}
@@ -150,6 +154,7 @@ export default function SignupScreen({ navigation }) {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
+              accessibilityRole="button"
               style={[styles.tab, method === 'phone' && styles.tabActive]}
               onPress={() => { setMethod('phone'); setOtpSent(false); setOtp(['', '', '', '', '', '']) }}
               activeOpacity={0.7}
@@ -163,6 +168,7 @@ export default function SignupScreen({ navigation }) {
           <View style={styles.methodSection}>
             {method === 'google' ? (
               <TouchableOpacity
+                accessibilityRole="button"
                 style={styles.googleButton}
                 onPress={handleGoogleSignUp}
                 activeOpacity={0.7}
@@ -176,6 +182,7 @@ export default function SignupScreen({ navigation }) {
               <View>
                 {!otpSent ? (
                   <TouchableOpacity
+                    accessibilityRole="button"
                     style={styles.primaryButton}
                     onPress={handleSendOtp}
                     activeOpacity={0.8}
@@ -196,6 +203,7 @@ export default function SignupScreen({ navigation }) {
                       {otp.map((digit, index) => (
                         <TextInput
                           key={index}
+                          accessibilityLabel={`Code digit ${index + 1}`}
                           style={styles.otpInput}
                           value={digit}
                           onChangeText={(text) => handleOtpChange(text, index)}
@@ -206,6 +214,7 @@ export default function SignupScreen({ navigation }) {
                       ))}
                     </View>
                     <TouchableOpacity
+                      accessibilityRole="button"
                       style={styles.primaryButton}
                       onPress={handleVerifyOtp}
                       activeOpacity={0.8}
@@ -218,6 +227,7 @@ export default function SignupScreen({ navigation }) {
                       )}
                     </TouchableOpacity>
                     <TouchableOpacity
+                      accessibilityRole="button"
                       style={styles.resendButton}
                       onPress={() => { setOtpSent(false); setOtp(['', '', '', '', '', '']) }}
                       activeOpacity={0.6}
@@ -231,6 +241,7 @@ export default function SignupScreen({ navigation }) {
           </View>
 
           <TouchableOpacity
+            accessibilityRole="button"
             style={styles.footerLink}
             onPress={() => navigation.goBack()}
             activeOpacity={0.6}

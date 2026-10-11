@@ -43,6 +43,7 @@ export default function FullTimeForm({ config, onChange }) {
             <MapPin size={15} color={colors.textMuted} />
           </View>
           <TextInput
+            accessibilityLabel="Area where the driver will work"
             value={ft.locality}
             onChangeText={(v) => patchFT({ locality: v })}
             placeholder="e.g. HITEC City, Jubilee Hills, Gachibowli"
@@ -91,6 +92,7 @@ export default function FullTimeForm({ config, onChange }) {
               const active = ft.durationUnit === unit
               return (
                 <Pressable
+                  accessibilityRole="button"
                   key={unit}
                   onPress={() => patchFT({ durationUnit: unit })}
                   style={{
@@ -136,6 +138,7 @@ export default function FullTimeForm({ config, onChange }) {
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             <Pressable
+              accessibilityRole="button"
               onPress={() => setCount(ft.durationCount - 1)}
               style={{
                 width: 32,
@@ -154,6 +157,7 @@ export default function FullTimeForm({ config, onChange }) {
               {ft.durationCount}
             </Text>
             <Pressable
+              accessibilityRole="button"
               onPress={() => setCount(ft.durationCount + 1)}
               style={{
                 width: 32,

@@ -56,7 +56,7 @@ function formatDuration(minutes) {
 /* ── Sub-components ──────────────────────────────────────────────────────── */
 
 /** One row of the route timeline (dot + optional connector line + content). */
-function TimelineRow({ dotColor = colors.textFaint, dotBorder = colors.surfaceSunken, isLast = false, lineColor = colors.border, children }) {
+function TimelineRow({ dotColor = colors.textMuted, dotBorder = colors.surfaceSunken, isLast = false, lineColor = colors.border, children }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'stretch' }}>
       {/* Left: dot + connector */}
@@ -110,13 +110,14 @@ function RowLabel({ children }) {
 function StopRemoveButton({ onPress }) {
   return (
     <Pressable
+      accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => ({
         width: 34,
         height: 34,
         borderRadius: radius.sm,
         borderWidth: 1,
-        borderColor: pressed ? '#fca5a5' : colors.border,
+        borderColor: pressed ? colors.red : colors.border,
         backgroundColor: pressed ? colors.redSofter : colors.surface,
         alignItems: 'center',
         justifyContent: 'center',
@@ -308,6 +309,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
             const active = config.tripType === opt.id
             return (
               <Pressable
+                accessibilityRole="button"
                 key={opt.id}
                 onPress={() => setTripType(opt.id)}
                 style={{
@@ -315,7 +317,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
                   paddingVertical: 6,
                   borderRadius: radius.md - 2,
                   backgroundColor: active ? colors.surface : 'transparent',
-                  shadowColor: active ? '#000' : 'transparent',
+                  shadowColor: active ? colors.graphite : 'transparent',
                   shadowOpacity: 0.06,
                   shadowRadius: 4,
                   elevation: active ? 1 : 0,
@@ -382,7 +384,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
         {stops.map((stop, i) => (
           <TimelineRow
             key={stop.id}
-            dotColor={colors.textFaint}
+            dotColor={colors.textMuted}
             dotBorder={colors.surfaceSunken}
             isLast={false}
           >
@@ -407,15 +409,16 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
         {/* Add Stop */}
         <View style={{ paddingLeft: 32, marginBottom: space.sm }}>
           <Pressable
+            accessibilityRole="button"
             onPress={addStop}
             disabled={!canAddStop}
             style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
           >
-            <Plus size={13} color={canAddStop ? colors.brand : colors.textFaint} />
+            <Plus size={13} color={canAddStop ? colors.brand : colors.textMuted} />
             <Text
               style={{
                 ...type.caption,
-                color: canAddStop ? colors.brand : colors.textFaint,
+                color: canAddStop ? colors.brand : colors.textMuted,
                 fontWeight: '800',
               }}
             >
@@ -517,7 +520,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
               <Text
                 style={{
                   ...type.micro,
-                  color: colors.textFaint,
+                  color: colors.textMuted,
                   backgroundColor: colors.border,
                   paddingHorizontal: 6,
                   paddingVertical: 2,
@@ -559,15 +562,16 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
           {/* Add Return Stop */}
           <View style={{ paddingLeft: 32, marginBottom: space.sm }}>
             <Pressable
+              accessibilityRole="button"
               onPress={addReturnStop}
               disabled={!canAddReturnStop}
               style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
             >
-              <Plus size={13} color={canAddReturnStop ? colors.brand : colors.textFaint} />
+              <Plus size={13} color={canAddReturnStop ? colors.brand : colors.textMuted} />
               <Text
                 style={{
                   ...type.caption,
-                  color: canAddReturnStop ? colors.brand : colors.textFaint,
+                  color: canAddReturnStop ? colors.brand : colors.textMuted,
                   fontWeight: '800',
                 }}
               >
@@ -650,10 +654,10 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
               <Compass size={14} color={colors.onGraphite} />
             </View>
             <View>
-              <Text style={{ ...type.micro, color: colors.textFaint, letterSpacing: 0.5 }}>
+              <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5 }}>
                 TOTAL ROUND TRIP
               </Text>
-              <Text style={{ ...type.caption, color: '#fff' }}>
+              <Text style={{ ...type.caption, color: colors.onRed }}>
                 Outbound + Return
                 {stops.length + returnStops.length > 0
                   ? ` (${stops.length + returnStops.length} stops)`
@@ -682,7 +686,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
                 paddingVertical: 5,
               }}
             >
-              <Text style={{ ...type.caption, color: '#fff', fontWeight: '900' }}>
+              <Text style={{ ...type.caption, color: colors.onRed, fontWeight: '900' }}>
                 ~{formatDuration(totalMinutes)}
               </Text>
             </View>

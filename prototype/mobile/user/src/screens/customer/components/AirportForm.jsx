@@ -45,6 +45,7 @@ export default function AirportForm({ config, onChange }) {
               const active = ad.flow === opt.id
               return (
                 <Pressable
+                  accessibilityRole="button"
                   key={opt.id}
                   onPress={() => patchAD({ flow: opt.id })}
                   style={{
@@ -85,6 +86,7 @@ export default function AirportForm({ config, onChange }) {
               const active = config.tripType === opt.id
               return (
                 <Pressable
+                  accessibilityRole="button"
                   key={opt.id}
                   onPress={() => setTripType(opt.id)}
                   style={{
@@ -142,6 +144,7 @@ export default function AirportForm({ config, onChange }) {
             <Plane size={15} color={colors.textMuted} />
           </View>
           <TextInput
+            accessibilityLabel="Flight number"
             value={ad.flightNumber}
             onChangeText={(v) => patchAD({ flightNumber: v.toUpperCase() })}
             placeholder="e.g. 6E-2415 / AI-840"

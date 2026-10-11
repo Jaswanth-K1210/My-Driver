@@ -5,7 +5,6 @@ import {
   HOUR_PACKAGES,
   INTERCITY_DESTINATIONS,
   PICKUP,
-  SKILLS,
   START_LOCATIONS,
 } from '../data/mock.js'
 
@@ -111,6 +110,19 @@ export const DEFAULT_CONFIG = {
   visionMode: null,
 }
 
+/** The booking's car details for a car saved in the garage (/v1/me/vehicles). */
+export function carDetailsFrom(car) {
+  return {
+    company: car.company,
+    model: car.model,
+    engineType: car.engine_type,
+    transmission: car.transmission,
+    plate: car.plate ?? '',
+    isCustom: false,
+    savedVehicleId: car.id,
+  }
+}
+
 /** Determines the most suitable driver certification for given car specs and requirement. */
 export function getRecommendedSkillId(carDetails = {}, requirement = 'within_city') {
   if (requirement === 'inter_city') {
@@ -132,8 +144,9 @@ export function getRecommendedSkillId(carDetails = {}, requirement = 'within_cit
   return 'MD-Standard'
 }
 
-export function skillFor(skillId, skills = SKILLS) {
-  return skills.find((s) => s.id === skillId) ?? skills[0]
+/** `skills` is the live tier list from the rate cards (see lib/skills.js). */
+export function skillFor(skillId, skills = []) {
+  return skills.find((s) => s.id === skillId) ?? skills[0] ?? null
 }
 
 export function dropFor(dropId) {
@@ -311,8 +324,11 @@ export function getRouteLegTelemetry(startId, stops = [], destId, isInterCity = 
  * Supports Within City, Inter City, Airport, and Full Time contracts.
  * Accurately handles multi-stop waypoints and round-trip return legs.
  */
-export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nightFee: 30 }) {
+export function quoteFor(config, skills = [], fees = { platformFee: 19, nightFee: 30 }) {
   const skill = skillFor(config.skillId, skills)
+  // No rate cards yet (still loading, or the server could not be reached):
+  // there is no price to estimate from.
+  if (!skill) return { skill: null, nightFee: 0, ready: false, lines: [], base: 0, total: 0, distanceKm: 0 }
   const nightFee = config.skillId === 'MD-Night' ? fees.nightFee : 0
 
   // 1. Full Time Contract
@@ -559,8 +575,8 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
   }
 }
 
-export function bookingPayloadFor(config, skills = SKILLS) {
-  const skill = skillFor(config.skillId, skills)
+export function bookingPayloadFor(config, skills = []) {
+  const skill = skills.find((s) => s.id === config.skillId) ?? { id: config.skillId }
 
   const basePayload = {
     stops: config.stops,
@@ -647,7 +663,7 @@ export function bookingPayloadFor(config, skills = SKILLS) {
 }
 
 /** Server quote for the current config. Falls back to the local estimate. */
-export async function serverQuote(api, config, skills = SKILLS) {
+export async function serverQuote(api, config, skills = []) {
   try {
     const payload = bookingPayloadFor(config, skills)
     const quoteBody = { ...payload }

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/apiClient'
 import { APP_ROLE } from '../lib/config'
+import { unregisterPush } from '../lib/push'
 
 const AuthCtx = createContext(null)
 
@@ -72,6 +73,9 @@ export function AuthProvider({ children }) {
   )
 
   const signOut = useCallback(async () => {
+    // While the session is still valid: a signed-out phone must stop
+    // receiving this account's trip notifications.
+    await unregisterPush()
     await api.auth.logout()
     setUser(null)
   }, [])

@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Archive, Check, Star } from 'lucide-react-native'
-import MapCanvas from '../../components/MapCanvas'
+import TripMap from '../../components/TripMap'
 import Button from '../../components/Button'
 import Card from '../../components/Card'
 import { useTrip } from '../../context/TripContext'
+import { api } from '../../lib/apiClient'
 import { formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 
@@ -14,29 +15,35 @@ export default function TripCompleteScreen({ trip, summary, onSave }) {
   const [rating, setRating] = useState(0)
   const [saving, setSaving] = useState(false)
 
-  // Every figure here is the server's frozen record of the completed trip.
-  // maxSpeed + breaches come from the live telemetry summary captured during the ride.
-  const stats = [
-    { label: 'Fare paid', value: formatINR(trip.fare), alert: false },
-    { label: 'Distance', value: `${Number(trip.distanceKm).toFixed(1)} km`, alert: false },
-    {
-      label: 'Duration',
-      value: trip.durationMin ? `${trip.durationMin} min` : '—',
-      alert: false,
-    },
-    { label: 'Ceiling', value: `${trip.ceiling} km/h`, alert: false },
-    {
-      label: 'Max speed',
-      value: summary?.maxSpeed ? `${summary.maxSpeed} km/h` : '—',
-      alert: summary?.maxSpeed > trip.ceiling,
-    },
-    {
-      label: 'Ceiling breaches',
-      value: summary?.breaches != null ? String(summary.breaches) : '0',
-      alert: summary?.breaches > 0,
-    },
-  ]
+  // What was actually charged, from the server's payment record.
+  const [payment, setPayment] = useState(null)
+  useEffect(() => {
+    let cancelled = false
+    api.payments
+      .forTrip(trip.serverId)
+      .then((r) => !cancelled && setPayment(r.payment ?? null))
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [trip.serverId])
+  const due = payment?.amount_due > 0 ? payment.amount_due : 0
 
+  // Fare, distance, duration and the limit are the server's frozen record of
+  // the trip. Top speed and breaches are what this phone saw on the live
+  // screen, and are left out when it saw nothing.
+  const stats = [
+    { label: 'Final fare', value: formatINR(trip.fare), alert: false },
+    { label: 'Distance', value: `${Number(trip.distanceKm).toFixed(1)} km`, alert: false },
+    ...(trip.durationMin ? [{ label: 'Duration', value: `${trip.durationMin} min`, alert: false }] : []),
+    { label: 'Speed limit', value: `${trip.ceiling} km/h`, alert: false },
+    ...(summary
+      ? [
+          { label: 'Top speed seen', value: `${summary.maxSpeed} km/h`, alert: summary.maxSpeed > trip.ceiling },
+          { label: 'Times over the limit', value: String(summary.breaches), alert: summary.breaches > 0 },
+        ]
+      : []),
+  ]
 
   const finish = async () => {
     setSaving(true)
@@ -65,7 +72,7 @@ export default function TripCompleteScreen({ trip, summary, onSave }) {
         </View>
         <Text style={{ ...type.headline, color: colors.text, marginTop: space.md }}>You have arrived</Text>
         <Text style={{ ...type.tiny, color: colors.textMuted }}>
-          Trip {trip.id} · sealed into your Trip Vault
+          Trip {trip.id} · receipt and photos are under Trips
         </Text>
       </View>
 
@@ -82,7 +89,13 @@ export default function TripCompleteScreen({ trip, summary, onSave }) {
             overflow: 'hidden',
           }}
         >
-          <MapCanvas progress={100} style={{ width: '100%', height: '100%' }} />
+          <TripMap
+            pickup={trip.pickup}
+            drop={trip.drop}
+            pickupLabel={trip.from}
+            dropLabel={trip.to}
+            style={{ width: '100%', height: '100%' }}
+          />
         </View>
 
         <Card>
@@ -99,8 +112,18 @@ export default function TripCompleteScreen({ trip, summary, onSave }) {
           </View>
         </Card>
 
+        {due > 0 ? (
+          <Card tone="alert">
+            <Text style={{ ...type.bodyBold, color: colors.redPressed }}>{formatINR(due)} still to pay</Text>
+            <Text style={{ ...type.caption, color: colors.text, marginTop: 4, lineHeight: 18 }}>
+              The final fare was more than the amount held at booking. Paying the difference in the app is not
+              available yet. It is shown on this trip's receipt.
+            </Text>
+          </Card>
+        ) : null}
+
         <Card style={{ alignItems: 'center' }}>
-          <Text style={{ ...type.caption, color: colors.textMuted }}>How was {trip.driver.name}?</Text>
+          <Text style={{ ...type.caption, color: colors.textMuted }}>How was {trip.driver?.name ?? 'your driver'}?</Text>
           <View
             accessibilityRole="radiogroup"
             accessibilityLabel="Driver rating"
