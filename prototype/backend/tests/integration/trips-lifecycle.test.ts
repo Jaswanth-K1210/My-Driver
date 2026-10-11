@@ -5,6 +5,7 @@ import { pool } from '../../src/db/client.js'
 import { seed } from '../../src/db/seed.js'
 import { awaitDispatchIdle } from '../../src/modules/trips/dispatch-tracker.js'
 import { expireStaleOffers } from '../../src/modules/trips/sweeper.js'
+import { ConsolePushProvider, setPushProvider } from '../../src/providers/push/index.js'
 import { bearer, loginAs } from '../helpers/auth.js'
 import { resetDb } from '../helpers/db.js'
 import { resetRedis } from '../helpers/redis.js'
@@ -360,6 +361,67 @@ describe('trip lifecycle', () => {
       )
       expect(rows[0].cancellation_reason).toBe('Changed my mind')
       expect(rows[0].cancelled_by).toBe(customer.userId)
+    })
+
+    describe('customer push notifications', () => {
+      let push: ConsolePushProvider
+      beforeEach(() => { push = new ConsolePushProvider(); setPushProvider(push) })
+      afterAll(() => setPushProvider(undefined))
+
+      const toCustomer = () =>
+        push.sent.filter((m) => m.userId === customer.userId).map((m) => m.payload.data?.type)
+
+      it('tells the customer when a driver accepts, the trip starts and it ends', async () => {
+        const tripId = await toInTrip()
+        await complete(tripId)
+
+        // The offer itself (MATCHED) is dispatch detail and is not announced.
+        expect(toCustomer()).toEqual(['DRIVER_MATCHED', 'TRIP_STARTED', 'TRIP_ENDED'])
+        const last = push.sent.filter((m) => m.userId === customer.userId).at(-1)!.payload
+        expect(last.channel).toBe('trips')
+        expect(last.data).toMatchObject({ trip_id: tripId, status: 'COMPLETED' })
+      })
+
+      it('says a payment is due when the fare ran over the hold', async () => {
+        const tripId = await toInTrip()
+        await pool.query(
+          `INSERT INTO payments (trip_id, customer_id, provider, provider_order_id, amount_authorized,
+                                 amount_captured, amount_due, status)
+           VALUES ($1, $2, 'mock', 'order_push_test', 100, 100, 42.5, 'CAPTURED')`,
+          [tripId, customer.userId],
+        )
+        await complete(tripId)
+
+        const due = push.sent.find((m) => m.payload.data?.type === 'PAYMENT_DUE')!
+        expect(due.userId).toBe(customer.userId)
+        expect(due.payload.body).toContain('₹42.50')
+      })
+
+      it('does not notify the customer of their own cancellation, but does when the driver cancels', async () => {
+        const own = await bookAndDispatch()
+        await app.inject({
+          method: 'POST', url: `/v1/trips/${own}/cancel`,
+          headers: bearer(customer.accessToken), payload: { reason: 'Changed my mind' },
+        })
+        expect(toCustomer()).toEqual([])
+
+        const theirs = await bookAndDispatch()
+        await respond(theirs, true)
+        await app.inject({
+          method: 'POST', url: `/v1/trips/${theirs}/cancel`,
+          headers: bearer(driver.accessToken), payload: { reason: 'Car trouble' },
+        })
+        expect(toCustomer()).toEqual(['DRIVER_MATCHED', 'TRIP_CANCELLED'])
+      })
+
+      it('tells the customer when no driver could be found', async () => {
+        await app.inject({
+          method: 'POST', url: '/v1/driver/availability',
+          headers: bearer(driver.accessToken), payload: { availability: 'OFFLINE' },
+        })
+        await bookAndDispatch()
+        expect(toCustomer()).toEqual(['NO_DRIVERS_FOUND'])
+      })
     })
 
     it('refuses to cancel once the trip is under way', async () => {
