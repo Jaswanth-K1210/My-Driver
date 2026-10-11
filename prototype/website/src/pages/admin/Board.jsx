@@ -16,19 +16,23 @@ import { cn } from '../../lib/utils.js'
  * sorted table is the faster read anyway. The map is a separate piece of work
  * that needs coordinates in the API first.
  */
+const BOARD_POLL_MS = 10_000
+
 export default function Board() {
   const navigate = useNavigate()
 
-  const { data: stats } = useAdminPoll(() => api.admin.stats(), 4000)
-  const { data: queue } = useAdminPoll(() => api.admin.escalations(false), 4000)
-  const { data: trips, loading } = useAdminPoll(() => api.admin.activeTrips(), 4000)
+  // Agents work to a contact SLA measured in minutes, so 10 seconds is fresh
+  // enough and keeps three polls per open tab from loading the API.
+  const { data: stats } = useAdminPoll(() => api.admin.stats(), BOARD_POLL_MS)
+  const { data: queue } = useAdminPoll(() => api.admin.escalations(false), BOARD_POLL_MS)
+  const { data: trips, loading } = useAdminPoll(() => api.admin.activeTrips(), BOARD_POLL_MS)
 
   const items = queue?.items ?? []
   const active = trips ?? []
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Live board" subtitle="Safety Desk · refreshes every 4 seconds">
+      <PageHeader title="Live board" subtitle="Safety Desk · refreshes every 10 seconds">
         <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
           <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
           Monitoring

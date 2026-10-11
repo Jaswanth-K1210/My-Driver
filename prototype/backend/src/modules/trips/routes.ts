@@ -432,6 +432,9 @@ export function registerTripRoutes(app: FastifyInstance): void {
   r.get(
     '/v1/driver/offers',
     {
+      // Polled every few seconds by every online driver: keep it out of the
+      // request log, where it would drown everything else.
+      logLevel: 'warn',
       onRequest: [requireAuth, requireRole('DRIVER')],
       schema: {
         response: {

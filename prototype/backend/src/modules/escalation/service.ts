@@ -7,6 +7,7 @@ import { getSmsProvider } from '../../providers/sms/index.js'
 import { getHub } from '../../realtime/hub.js'
 import { redis } from '../../redis/client.js'
 import type { Role } from '../auth/otp.js'
+import { invalidateTripCache } from '../trips/broadcast.js'
 import {
   assertPromotion,
   AUTO_PROMOTE_AFTER_SECONDS,
@@ -148,6 +149,8 @@ export async function raiseEscalation(input: {
     }
 
     await client.query('COMMIT')
+    // The trip's status may have changed above; drop the gateway's cached copy.
+    await invalidateTripCache(input.tripId).catch(() => undefined)
     counter(`mydriver_escalation_${escalation.level.toLowerCase()}_total`)
 
     // Side effects run after commit: an SMS cannot be rolled back.
@@ -317,6 +320,8 @@ export async function promoteEscalation(
       )
     }
     await client.query('COMMIT')
+    // The trip's status may have changed above; drop the gateway's cached copy.
+    await invalidateTripCache(escalation.trip_id).catch(() => undefined)
 
     await announce(escalation).catch(() => undefined)
     await notifyGuardians(escalation).catch(() => undefined)
@@ -358,6 +363,8 @@ export async function resolveEscalation(
       [escalation.trip_id],
     )
     await client.query('COMMIT')
+    // The trip's status may have changed above; drop the gateway's cached copy.
+    await invalidateTripCache(escalation.trip_id).catch(() => undefined)
     return escalation
   } catch (err) {
     await client.query('ROLLBACK')

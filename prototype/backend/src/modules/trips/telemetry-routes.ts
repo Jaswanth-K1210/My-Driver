@@ -6,6 +6,7 @@ import { counter } from '../../lib/metrics.js'
 import { loadTripRoles } from '../../realtime/gateway.js'
 import { ingestTelemetry } from '../../telemetry/ingest.js'
 import { requireAuth } from '../auth/rbac.js'
+import { acceptsTelemetry } from './state-machine.js'
 
 export const MAX_BATCH_POINTS = 300
 // A phone can be offline for a while (tunnel, dead zone); older than this and
@@ -65,7 +66,7 @@ export function registerTelemetryRoutes(app: FastifyInstance): void {
 
       const source = trip.driver_id === userId ? 'DRIVER' : trip.customer_id === userId ? 'CUSTOMER' : null
       if (!source) throw forbidden('FORBIDDEN_TRIP', 'You are not a participant on this trip')
-      if (trip.status !== 'IN_TRIP' && trip.status !== 'HANDSHAKE_PENDING') {
+      if (!acceptsTelemetry(trip.status)) {
         throw conflict('TRIP_NOT_ACTIVE', 'Telemetry is only accepted on an active trip')
       }
 

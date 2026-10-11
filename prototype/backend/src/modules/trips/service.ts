@@ -11,6 +11,7 @@ import { captureForTrip, releaseForTrip } from '../payments/service.js'
 import { broadcastStateChange } from './broadcast.js'
 import { computeFare } from './fare.js'
 import { setAvailability } from './geo-index.js'
+import { mayHavePendingOffer } from './offer-hint.js'
 import { getRateCard } from './rate-cards.js'
 import { assertTransition, CANCELLABLE_FROM, type TripStatus } from './state-machine.js'
 import { isNightPickupIST } from '../../lib/time.js'
@@ -667,8 +668,13 @@ export type PendingOffer = {
  * channel that carries TRIP_OFFER, and `listTrips` (which filters on
  * driver_id) cannot see it either. Without this endpoint a pending offer is
  * unreachable from any client. The driver app polls it while ONLINE.
+ *
+ * Almost every poll finds nothing, so it checks the dispatch flag in Redis
+ * first and only queries Postgres when an offer may exist (offer-hint.ts).
  */
 export async function listPendingOffers(driverId: string): Promise<PendingOffer[]> {
+  if (!(await mayHavePendingOffer(driverId))) return []
+
   const { rows } = await pool.query(
     `SELECT o.trip_id,
             o.expires_at,

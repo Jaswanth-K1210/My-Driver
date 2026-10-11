@@ -106,7 +106,19 @@ services:
     image: redis:7.4-alpine
     # Redis holds OTP challenges, rate limits and the live geo index; AOF keeps
     # them across a restart. Nothing durable lives only here.
-    command: ['redis-server', '--requirepass', '${REDIS_PASSWORD:?set REDIS_PASSWORD}', '--appendonly', 'yes']
+    # maxmemory stops the place-search cache from growing until the host runs
+    # out of memory. volatile-lru evicts only keys that expire, least recently
+    # used first, so the driver geo index (no expiry) is never dropped.
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD:?set REDIS_PASSWORD}
+      - --appendonly
+      - 'yes'
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-512mb}
+      - --maxmemory-policy
+      - volatile-lru
     volumes: ['redisdata:/data']
     healthcheck:
       test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD}', 'ping']

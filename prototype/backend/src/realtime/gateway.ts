@@ -4,6 +4,7 @@ import type { WebSocket } from 'ws'
 import { pool } from '../db/client.js'
 import { counter } from '../lib/metrics.js'
 import type { Role } from '../modules/auth/otp.js'
+import { acceptsTelemetry } from '../modules/trips/state-machine.js'
 import { redis } from '../redis/client.js'
 import { ingestTelemetry } from '../telemetry/ingest.js'
 import { getHub } from './hub.js'
@@ -36,10 +37,13 @@ const fail = (socket: WebSocket, code: string, message: string): void =>
   send(socket, { type: 'ERROR', code, message })
 
 /**
- * Cached for 5 seconds: every telemetry frame would otherwise cost a query.
- * broadcast.ts drops this key on any status change so authorisation never
- * reads stale state.
+ * Cached for a minute: every telemetry frame would otherwise cost a query.
+ * Every status change drops this key (invalidateTripCache in broadcast.ts), so
+ * the TTL is only a backstop for a missed invalidation, not the freshness
+ * guarantee. Any new code that changes trips.status must invalidate too.
  */
+export const TRIP_ROLES_TTL_SECONDS = 60
+
 export async function loadTripRoles(tripId: string): Promise<TripRoles | null> {
   const key = `trip:{${tripId}}:roles`
 
@@ -52,7 +56,7 @@ export async function loadTripRoles(tripId: string): Promise<TripRoles | null> {
   )
   if (!rows[0]) return null
 
-  await redis.set(key, JSON.stringify(rows[0]), 'EX', 5)
+  await redis.set(key, JSON.stringify(rows[0]), 'EX', TRIP_ROLES_TTL_SECONDS)
   return rows[0]
 }
 
@@ -132,7 +136,7 @@ export async function registerRealtimeGateway(app: FastifyInstance): Promise<voi
       }
 
       // Telemetry from here down.
-      if (trip.status !== 'IN_TRIP' && trip.status !== 'HANDSHAKE_PENDING') {
+      if (!acceptsTelemetry(trip.status)) {
         return fail(socket, 'TRIP_NOT_ACTIVE', 'Telemetry is only accepted on an active trip')
       }
 

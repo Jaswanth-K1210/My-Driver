@@ -32,6 +32,15 @@ export const CANCELLABLE_FROM: readonly TripStatus[] = [
   'HANDSHAKE_PENDING',
 ]
 
+/**
+ * Location is accepted from the handshake until the trip ends. ESCALATED is
+ * included on purpose: an open incident (silent SOS, L3+) is exactly when the
+ * Safety Desk and the integrity engine need the car's position most.
+ */
+const TELEMETRY_FROM: readonly string[] = ['HANDSHAKE_PENDING', 'IN_TRIP', 'ESCALATED']
+
+export const acceptsTelemetry = (status: string): boolean => TELEMETRY_FROM.includes(status)
+
 export const canTransition = (from: TripStatus, to: TripStatus): boolean =>
   TRANSITIONS[from].includes(to)
 

@@ -1,5 +1,5 @@
 import { pool } from '../../db/client.js'
-import { hideDemo, hideDemoTrips } from '../../lib/demo.js'
+import { demoVisible, hideDemo, hideDemoTrips } from '../../lib/demo.js'
 import { notFound } from '../../lib/errors.js'
 import { getVoiceProvider } from '../../providers/voice/index.js'
 import type { Role } from '../auth/otp.js'
@@ -26,6 +26,22 @@ export async function audit(
      VALUES ($1, $2, $3, $4, $5::jsonb)`,
     [actorId, actorRole, action, subject, JSON.stringify(payload)],
   )
+}
+
+/**
+ * Audits a screen an agent keeps open and polling (the live map, the live
+ * board). One row per agent per screen per window records who was watching
+ * and when, without a row for every refresh of the same view.
+ */
+export const VIEW_AUDIT_WINDOW_SECONDS = 15 * 60
+
+export async function auditView(actorId: string, actorRole: Role, action: string): Promise<void> {
+  const first = await redis
+    .set(`audit:view:${action}:${actorId}`, '1', 'EX', VIEW_AUDIT_WINDOW_SECONDS, 'NX')
+    // Redis unreachable: write the row. Over-auditing is the safe failure.
+    .catch(() => 'OK')
+  if (first === null) return
+  await audit(actorId, actorRole, action, null, { window_seconds: VIEW_AUDIT_WINDOW_SECONDS })
 }
 
 export type LiveTrip = {
@@ -86,7 +102,25 @@ export type LiveDriver = {
  * ponytail: reads the whole index; switch to GEOSEARCH BYBOX on the visible
  * map bounds once online drivers reach the tens of thousands.
  */
+/**
+ * Every open console map polls this every few seconds, and each call reads
+ * every online driver from Redis and Postgres. The answer is the same for all
+ * agents, so it is shared for a few seconds instead of rebuilt per tab.
+ */
+const LIVE_DRIVERS_CACHE_SECONDS = 3
+
 export async function liveDrivers(): Promise<LiveDriver[]> {
+  // Demo visibility changes the result, so each setting has its own entry.
+  const cacheKey = `drivers:live:view:${demoVisible() ? 'demo' : 'real'}`
+  const cached = await redis.get(cacheKey).catch(() => null)
+  if (cached) return JSON.parse(cached) as LiveDriver[]
+
+  const drivers = await readLiveDrivers()
+  await redis.set(cacheKey, JSON.stringify(drivers), 'EX', LIVE_DRIVERS_CACHE_SECONDS).catch(() => undefined)
+  return drivers
+}
+
+async function readLiveDrivers(): Promise<LiveDriver[]> {
   const ids = await redis.zrange(GEO_KEY, 0, -1)
   if (ids.length === 0) return []
   const positions = await redis.geopos(GEO_KEY, ...ids)

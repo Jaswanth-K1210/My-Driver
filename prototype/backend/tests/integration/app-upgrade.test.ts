@@ -165,6 +165,20 @@ describe('user app upgrade APIs', () => {
       expect(Date.now() - last.at).toBeLessThan(10_000)
     })
 
+    it('keeps accepting location while a silent SOS has the trip ESCALATED', async () => {
+      const { tripId, driver } = await activeTrip()
+      const sos = await call('POST', `/v1/trips/${tripId}/sos`, { silent: true })
+      expect(sos.statusCode).toBe(200)
+      const { rows } = await pool.query(`SELECT status FROM trips WHERE id = $1`, [tripId])
+      expect(rows[0].status).toBe('ESCALATED')
+
+      const now = Date.now()
+      const res = await call('POST', `/v1/trips/${tripId}/telemetry`, { sent_at: now, points: [fix(now - 1000, 17.446)] }, driver.accessToken)
+      expect(res.statusCode).toBe(202)
+      const last = JSON.parse((await redis.get(`trip:{${tripId}}:last:driver`))!)
+      expect(last.lat).toBe(17.446)
+    })
+
     it('refuses non-participants and trips that are not active', async () => {
       const { tripId } = await activeTrip()
       const stranger = await makeCustomer(app, '+919811100003')

@@ -196,6 +196,30 @@ describe('realtime gateway', () => {
       expect(Number(rows[0].speed_kmh)).toBeCloseTo(48.5, 1)
     })
 
+    it('keeps streaming to the customer while a silent SOS has the trip ESCALATED', async () => {
+      await startTrip()
+      const customerWs = await open(customer)
+      sendFrame(customerWs, { type: 'SUBSCRIBE', trip_id: tripId })
+      await nextFrame(customerWs)
+
+      const driverWs = await open(driver)
+      // Prime the roles cache as IN_TRIP, so the SOS has to invalidate it.
+      sendFrame(driverWs, telemetry(HITEC_CITY))
+      await waitForFrame(customerWs, 'DRIVER_LOCATION')
+
+      const sos = await app.inject({
+        method: 'POST', url: `/v1/trips/${tripId}/sos`,
+        headers: bearer(customer.accessToken), payload: { silent: true },
+      })
+      expect(sos.statusCode).toBe(200)
+
+      await new Promise((r) => setTimeout(r, 1050))
+      sendFrame(driverWs, telemetry(GACHIBOWLI))
+      expect(await waitForFrame(customerWs, 'DRIVER_LOCATION')).toMatchObject({
+        coords: { lat: GACHIBOWLI.lat, lng: GACHIBOWLI.lng },
+      })
+    })
+
     it('drops frames beyond one per second without closing the socket', async () => {
       await startTrip()
       const ws = await open(driver)
