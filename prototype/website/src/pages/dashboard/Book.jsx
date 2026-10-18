@@ -56,7 +56,8 @@ export default function Book() {
 
   const platformFee = server ? server.fare.platform_fee : 19
   const baseNightFee = server ? (server.fare.night_fee > 0 ? server.fare.night_fee : 30) : 30
-  const local = quoteFor(config, skills, { platformFee, nightFee: baseNightFee })
+  const serverNightFee = server ? server.fare.night_fee : null
+  const local = quoteFor(config, skills, { platformFee, nightFee: baseNightFee, serverNightFee })
 
   // Server quote debounce
   useEffect(() => {
@@ -81,7 +82,7 @@ export default function Book() {
   }, [config, skills, local.ready])
 
   const quote = local
-  const total = server ? server.fare.total : local.total
+  const total = server && config.requirement !== 'full_time' ? server.fare.total : local.total
   const nightFee = server ? server.fare.night_fee : local.nightFee
 
   const set = (patch) => setConfig((prev) => ({ ...prev, ...patch }))

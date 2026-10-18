@@ -13,7 +13,9 @@ import { approvalBlockers, getKycStatus } from '../kyc/service.js'
 import { badRequest, conflict, notFound } from '../../lib/errors.js'
 import { getStorageProvider } from '../../providers/storage/index.js'
 import type { Role } from '../auth/otp.js'
+import { raiseEscalation } from '../escalation/service.js'
 import { audit } from '../safety-desk/service.js'
+import { removeDriverFromIndex } from '../trips/geo-index.js'
 
 export type OnboardingStatus =
   | 'PENDING'
@@ -293,6 +295,40 @@ export async function setOnboardingStatus(
       RETURNING user_id, onboarding_status`,
     [driverId, status, actorId, note ?? null],
   )
+
+  if (status !== 'APPROVED') {
+    await pool.query(
+      `UPDATE trip_offers SET status = 'EXPIRED', responded_at = now()
+        WHERE driver_id = $1 AND status = 'PENDING'`,
+      [driverId],
+    )
+    await removeDriverFromIndex(driverId)
+
+    const { rows: activeTrips } = await pool.query<{ id: string }>(
+      `SELECT id FROM trips
+        WHERE driver_id = $1 AND status IN ('IN_TRIP', 'ESCALATED')
+        ORDER BY requested_at DESC LIMIT 1`,
+      [driverId],
+    )
+    const activeTrip = activeTrips[0]
+    if (activeTrip) {
+      // A driver suspended or unapproved mid-trip must safely finish the ride
+      // under Safety Desk oversight, then be forced OFFLINE on completion.
+      await raiseEscalation({
+        tripId: activeTrip.id,
+        level: 'L2',
+        reason: 'DRIVER_SUSPENDED_DURING_TRIP',
+        details: { onboarding_status: status, note: note ?? null },
+        actorId,
+        actorRole,
+      }).catch(() => undefined)
+    } else {
+      await pool.query(
+        `UPDATE driver_profiles SET availability = 'OFFLINE', updated_at = now() WHERE user_id = $1`,
+        [driverId],
+      )
+    }
+  }
 
   await audit(actorId, actorRole, `DRIVER_${status}`, driverId, {
     from: before.onboarding_status,
@@ -723,7 +759,7 @@ export async function listPayouts(status: string | undefined, limit: number) {
 export async function unsettled(periodStart: string, periodEnd: string) {
   const { rows } = await pool.query(
     `SELECT t.driver_id, u.full_name AS driver_name, COUNT(*)::int AS trip_count,
-            COALESCE(SUM(t.driver_earnings), 0)::float8 AS gross,
+            COALESCE(SUM(t.fare_amount), 0)::float8 AS gross,
             COALESCE(SUM(t.platform_fee), 0)::float8 AS platform_fee
        FROM trips t
        JOIN users u ON u.id = t.driver_id
@@ -767,7 +803,7 @@ export async function generatePayout(
       platform_fee: string
     }>(
       `SELECT COUNT(*)::int AS trip_count,
-              COALESCE(SUM(driver_earnings), 0) AS gross,
+              COALESCE(SUM(fare_amount), 0) AS gross,
               COALESCE(SUM(platform_fee), 0) AS platform_fee
          FROM trips
         WHERE driver_id = $1 AND status = 'COMPLETED' AND payout_id IS NULL

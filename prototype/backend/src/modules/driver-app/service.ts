@@ -1,5 +1,5 @@
 import { pool } from '../../db/client.js'
-import { notFound } from '../../lib/errors.js'
+import { conflict, notFound } from '../../lib/errors.js'
 
 /**
  * Read-only views for the driver app's own screens: earnings, assessments and
@@ -46,10 +46,19 @@ export async function getDriverEarnings(driverId: string) {
 
   const trips = await pool.query(
     `SELECT t.id AS trip_id, t.completed_at, t.pickup_address, t.drop_address,
+            t.booking_type, t.hourly_package_hours, t.required_certification,
+            t.distance_km::float8 AS distance_km, t.duration_min,
             t.fare_amount::float8 AS fare_amount,
+            t.platform_fee::float8 AS platform_fee,
+            t.night_fee::float8 AS night_fee,
+            ROUND((COALESCE(t.fare_amount, 0) - COALESCE(t.platform_fee, 0) - COALESCE(t.night_fee, 0))::numeric, 2)::float8 AS base_fare,
             t.driver_earnings::float8 AS driver_earnings,
-            p.status AS payout_status
+            t.requirement, t.trip_type,
+            cu.full_name AS customer_name,
+            p.status AS payout_status,
+            p.reference AS payout_reference
        FROM trips t
+       LEFT JOIN users cu ON cu.id = t.customer_id
        LEFT JOIN driver_payouts p ON p.id = t.payout_id
       WHERE t.driver_id = $1 AND t.status = 'COMPLETED'
       ORDER BY t.completed_at DESC
@@ -144,7 +153,13 @@ export async function getDriverAssessments(driverId: string) {
 
 export async function getDriverProfile(driverId: string) {
   const { rows } = await pool.query(
-    `SELECT u.full_name, u.phone_number, u.created_at AS joined_at,
+    `SELECT u.full_name, u.email, u.phone_number, u.created_at AS joined_at,
+            p.vehicle_model, p.vehicle_plate,
+            (
+              COALESCE(btrim(u.full_name), '') <> ''
+              AND COALESCE(btrim(p.vehicle_model), '') <> ''
+              AND COALESCE(btrim(p.vehicle_plate), '') <> ''
+            ) AS profile_complete,
             p.mydriver_score::float8 AS mydriver_score, p.rating::float8 AS rating,
             p.rating_count, p.total_trips, p.certifications, p.onboarding_status
        FROM driver_profiles p JOIN users u ON u.id = p.user_id
@@ -189,4 +204,63 @@ export async function getDriverProfile(driverId: string) {
   )
 
   return { ...rows[0], badges: badges.rows, night_shield: nightShield, documents: documents.rows }
+}
+
+export type DriverProfilePatch = {
+  full_name?: string | undefined
+  email?: string | null | undefined
+  vehicle_model?: string | undefined
+  vehicle_plate?: string | undefined
+}
+
+export async function updateDriverProfile(driverId: string, patch: DriverProfilePatch) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+
+    if (patch.full_name !== undefined || patch.email !== undefined) {
+      const sets: string[] = ['updated_at = now()']
+      const vals: unknown[] = [driverId]
+      if (patch.full_name !== undefined) {
+        vals.push(patch.full_name.trim() || null)
+        sets.push(`full_name = $${vals.length}`)
+      }
+      if (patch.email !== undefined) {
+        const cleanEmail = patch.email ? patch.email.trim().toLowerCase() : null
+        vals.push(cleanEmail || null)
+        sets.push(`email = $${vals.length}`)
+      }
+      await client.query(`UPDATE users SET ${sets.join(', ')} WHERE id = $1`, vals)
+    }
+
+    if (patch.vehicle_model !== undefined || patch.vehicle_plate !== undefined) {
+      const sets: string[] = ['updated_at = now()']
+      const vals: unknown[] = [driverId]
+      if (patch.vehicle_model !== undefined) {
+        vals.push(patch.vehicle_model.trim() || null)
+        sets.push(`vehicle_model = $${vals.length}`)
+      }
+      if (patch.vehicle_plate !== undefined) {
+        vals.push(patch.vehicle_plate.trim().toUpperCase() || null)
+        sets.push(`vehicle_plate = $${vals.length}`)
+      }
+      const { rowCount } = await client.query(
+        `UPDATE driver_profiles SET ${sets.join(', ')} WHERE user_id = $1`,
+        vals,
+      )
+      if (rowCount === 0) throw notFound('DRIVER_NOT_FOUND', 'No driver profile')
+    }
+
+    await client.query('COMMIT')
+  } catch (err: unknown) {
+    await client.query('ROLLBACK')
+    if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === '23505') {
+      throw conflict('EMAIL_IN_USE', 'This email address is already linked to another account')
+    }
+    throw err
+  } finally {
+    client.release()
+  }
+
+  return getDriverProfile(driverId)
 }

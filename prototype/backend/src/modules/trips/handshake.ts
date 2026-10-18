@@ -1,5 +1,5 @@
 import { pool } from '../../db/client.js'
-import { AppError, conflict, notFound, unauthorized } from '../../lib/errors.js'
+import { AppError, conflict, forbidden, notFound, unauthorized } from '../../lib/errors.js'
 import { pepperedEquals } from '../../lib/hash.js'
 import { getLivenessProvider } from '../../providers/liveness/index.js'
 import { getStorageProvider } from '../../providers/storage/index.js'
@@ -30,9 +30,10 @@ export async function performHandshake(input: {
     pickup_handshake_otp_hash: string
     handshake_attempts: number
     face_reference_key: string | null
+    onboarding_status: string | null
   }>(
     `SELECT t.status, t.pickup_handshake_otp_hash, t.handshake_attempts,
-            d.face_reference_key
+            d.face_reference_key, d.onboarding_status
        FROM trips t
        LEFT JOIN driver_profiles d ON d.user_id = t.driver_id
       WHERE t.id = $1 AND t.driver_id = $2`,
@@ -41,6 +42,13 @@ export async function performHandshake(input: {
 
   const trip = rows[0]
   if (!trip) throw notFound('TRIP_NOT_FOUND', 'No such trip for this driver')
+  if (trip.onboarding_status !== 'APPROVED') {
+    throw forbidden(
+      'DRIVER_NOT_APPROVED',
+      `Driver approval is required to start a trip (current status: ${trip.onboarding_status ?? 'PENDING'})`,
+      { onboarding_status: trip.onboarding_status ?? 'PENDING' },
+    )
+  }
   if (trip.status !== 'HANDSHAKE_PENDING') {
     throw conflict('INVALID_TRIP_STATE', `Handshake is not available in state ${trip.status}`)
   }

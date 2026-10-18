@@ -8,7 +8,7 @@ import { requireAuth, requireRole } from '../auth/rbac.js'
 import { PaymentSchema } from '../payments/routes.js'
 import { createPaymentForTrip, paymentsEnabled } from '../payments/service.js'
 import { trackDispatch } from './dispatch-tracker.js'
-import { computeFare } from './fare.js'
+import { computeFare, estimateTripDistanceKm } from './fare.js'
 import { setAvailability } from './geo-index.js'
 import { performHandshake } from './handshake.js'
 import { respondToOffer, startDispatch } from './matching.js'
@@ -92,6 +92,8 @@ const TripViewSchema = z.object({
   distance_km: z.number().nullable(),
   duration_min: z.number().int().nullable(),
   fare_amount: z.number().nullable(),
+  platform_fee: z.number().nullable().optional(),
+  night_fee: z.number().nullable().optional(),
   driver_earnings: z.number().nullable(),
   requested_at: z.coerce.string(),
   completed_at: z.coerce.string().nullable(),
@@ -163,7 +165,15 @@ export function registerTripRoutes(app: FastifyInstance): void {
       }
 
       const card = await getRateCard(body.required_certification)
-      const distanceKm = body.drop ? estimateRoadDistanceKm(body.pickup, body.drop) : 0
+      const { distanceKm, stopsFee } = estimateTripDistanceKm({
+        pickup: body.pickup,
+        drop: body.drop,
+        stops: body.stops,
+        returnStops: body.return_stops,
+        returnDrop: body.return_drop,
+        tripType: body.trip_type,
+        requirement: body.requirement,
+      })
 
       return {
         distance_km: Math.round(distanceKm * 100) / 100,
@@ -175,6 +185,7 @@ export function registerTripRoutes(app: FastifyInstance): void {
           perKmRate: card.per_km_rate,
           hourlyRate: card.hourly_rate,
           pickupAt: new Date(),
+          stopsFee,
         }),
       }
     },
@@ -414,6 +425,11 @@ export function registerTripRoutes(app: FastifyInstance): void {
             trips_today: z.number().int(),
             earnings_today: z.number(),
             availability: z.enum(['OFFLINE', 'ONLINE', 'ON_TRIP']),
+            full_name: z.string().nullable(),
+            email: z.string().nullable(),
+            vehicle_model: z.string().nullable(),
+            vehicle_plate: z.string().nullable(),
+            profile_complete: z.boolean(),
           }),
         },
       },

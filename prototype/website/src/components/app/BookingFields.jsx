@@ -32,7 +32,7 @@ import {
   TRANSMISSIONS,
   VEHICLE_TYPES,
 } from '../../data/mock.js'
-import { getMinDurationForConfig, getRecommendedSkillId, getRouteLegTelemetry } from '../../lib/booking.js'
+import { getLocationById, getMinDurationForConfig, getRecommendedSkillId, getRouteLegTelemetry } from '../../lib/booking.js'
 import { clamp, cn } from '../../lib/utils.js'
 import PlacePicker from './PlacePicker.jsx'
 import { GarageChips } from './Garage.jsx'
@@ -372,9 +372,11 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
   const locations = isInterCity ? INTERCITY_DESTINATIONS : CITY_LOCATIONS
   const pickupLocations = CITY_LOCATIONS
 
-  const outboundDestObj = isInterCity 
-    ? INTERCITY_DESTINATIONS.find((d) => d.id === dropId)
-    : CITY_LOCATIONS.find((d) => d.id === dropId)
+  const outboundDestObj =
+    getLocationById(dropId) ??
+    (isInterCity
+      ? INTERCITY_DESTINATIONS.find((d) => d.id === dropId)
+      : CITY_LOCATIONS.find((d) => d.id === dropId))
   const outboundDestName = outboundDestObj?.name || (isInterCity ? 'Destination City' : 'Destination')
 
   // Live telemetry calculations
@@ -440,26 +442,44 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
         <div className="absolute left-[31.5px] top-[54px] bottom-[85px] w-[2px] bg-slate-100 z-0" />
 
         {/* 1. Pickup Location */}
-        <div className="relative z-10 flex items-start gap-3">
-          <div className="mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 ring-4 ring-white">
+        <div className="relative flex items-start gap-3">
+          <div className="relative z-10 mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 ring-4 ring-white">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
               Pickup
             </label>
-            <div><PlacePicker value={pickupId} onChange={handlePickupChange} options={pickupLocations} placeholder="Choose pickup" label="Pickup" /></div>
+            <div>
+              <PlacePicker
+                value={pickupId}
+                onChange={handlePickupChange}
+                options={pickupLocations}
+                placeholder="Choose pickup or enter custom location"
+                label="Pickup"
+                showCurrentLocation
+                autoDetectCurrentLocation
+              />
+            </div>
           </div>
         </div>
 
         {/* Outbound Stops */}
         {stops.map((stop, i) => (
-          <div key={stop.id} className="relative z-10 flex items-start gap-3">
-            <div className="mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-200 ring-4 ring-white">
+          <div key={stop.id} className="relative flex items-start gap-3">
+            <div className="relative z-10 mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-200 ring-4 ring-white">
               <div className="h-1.5 w-1.5 rounded-full bg-slate-600" />
             </div>
-            <div className="flex-1 flex items-center gap-2">
-              <div className="flex-1"><PlacePicker value={stop.locationId} onChange={(id) => updateStop(stop.id, id)} options={pickupLocations} placeholder={`Choose stop ${i + 1}`} /></div>
+            <div className="flex-1 min-w-0 flex items-center gap-2">
+              <div className="flex-1 min-w-0">
+                <PlacePicker
+                  value={stop.locationId}
+                  onChange={(id) => updateStop(stop.id, id)}
+                  options={pickupLocations}
+                  placeholder={`Choose stop ${i + 1}`}
+                  showCurrentLocation
+                />
+              </div>
               <button
                 type="button"
                 onClick={() => removeStop(stop.id)}
@@ -473,7 +493,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
         ))}
 
         {/* Add Outbound Stop Button */}
-        <div className="relative z-10 ml-[28px] flex items-center gap-2">
+        <div className="relative ml-[28px] flex items-center gap-2">
           <button
             type="button"
             disabled={!canAddStop}
@@ -489,20 +509,29 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
         </div>
 
         {/* Outbound Destination */}
-        <div className="relative z-10 flex items-start gap-3">
-          <div className="mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-900 ring-4 ring-white">
+        <div className="relative flex items-start gap-3">
+          <div className="relative z-10 mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-900 ring-4 ring-white">
             <div className="h-1.5 w-1.5 rounded-full bg-white" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
               {isTwoWay ? 'Turnaround point' : 'Drop'}
             </label>
-            <div><PlacePicker value={dropId} onChange={(id) => updateState(isInterCity ? { destinationId: id } : { dropId: id })} options={locations} placeholder="Choose drop" label="Drop" /></div>
+            <div>
+              <PlacePicker
+                value={dropId}
+                onChange={(id) => updateState(isInterCity ? { destinationId: id } : { dropId: id })}
+                options={locations}
+                placeholder="Choose drop or enter custom location"
+                label="Drop"
+                showCurrentLocation
+              />
+            </div>
           </div>
         </div>
 
         {/* Outbound Leg Telemetry Footer */}
-        <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 border border-slate-200/80 px-3.5 py-2.5 mt-2">
+        <div className="relative flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 border border-slate-200/80 px-3.5 py-2.5 mt-2">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
               <Navigation className="h-3.5 w-3.5 text-emerald-600 rotate-45" />
@@ -537,11 +566,11 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
           <div className="absolute left-[31.5px] top-[54px] bottom-[85px] w-[2px] bg-brand-100 z-0" />
 
           {/* 1. Return Origin (Locked/Auto-synced to Outbound Destination) */}
-          <div className="relative z-10 flex items-start gap-3">
-            <div className="mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-200 ring-4 ring-white">
+          <div className="relative flex items-start gap-3">
+            <div className="relative z-10 mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-200 ring-4 ring-white">
               <span className="text-[9px] leading-none text-slate-600 font-bold">↩</span>
             </div>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
                 Return Origin (From)
               </label>
@@ -554,12 +583,20 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
 
           {/* Return Stops */}
           {returnStops.map((stop, i) => (
-            <div key={stop.id} className="relative z-10 flex items-start gap-3">
-              <div className="mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-100 ring-4 ring-white">
+            <div key={stop.id} className="relative flex items-start gap-3">
+              <div className="relative z-10 mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-100 ring-4 ring-white">
                 <div className="h-1.5 w-1.5 rounded-full bg-brand-600" />
               </div>
-              <div className="flex-1 flex items-center gap-2">
-                <div className="flex-1"><PlacePicker value={stop.locationId} onChange={(id) => updateReturnStop(stop.id, id)} options={pickupLocations} placeholder={`Choose return stop ${i + 1}`} /></div>
+              <div className="flex-1 min-w-0 flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <PlacePicker
+                    value={stop.locationId}
+                    onChange={(id) => updateReturnStop(stop.id, id)}
+                    options={pickupLocations}
+                    placeholder={`Choose return stop ${i + 1}`}
+                    showCurrentLocation
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={() => removeReturnStop(stop.id)}
@@ -573,7 +610,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
           ))}
 
           {/* Add Return Stop Button */}
-          <div className="relative z-10 ml-[28px] flex items-center gap-2">
+          <div className="relative ml-[28px] flex items-center gap-2">
             <button
               type="button"
               disabled={!canAddReturnStop}
@@ -589,11 +626,11 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
           </div>
 
           {/* Return Destination Dropdown (Defaults to Pickup Location) */}
-          <div className="relative z-10 flex items-start gap-3">
-            <div className="mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-600 ring-4 ring-white">
+          <div className="relative flex items-start gap-3">
+            <div className="relative z-10 mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-600 ring-4 ring-white">
               <Check className="h-2.5 w-2.5 text-white" />
             </div>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <div className="mb-1 flex items-center justify-between">
                 <label className="text-[10px] font-bold uppercase tracking-wide text-brand-700">
                   Final Return Destination (To)
@@ -604,12 +641,22 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
                   </span>
                 )}
               </div>
-              <div><PlacePicker value={returnDropId} onChange={(id) => updateState({ returnDropId: id })} options={pickupLocations} placeholder="Choose return drop" tone="brand" label="Return drop" /></div>
+              <div>
+                <PlacePicker
+                  value={returnDropId}
+                  onChange={(id) => updateState({ returnDropId: id })}
+                  options={pickupLocations}
+                  placeholder="Choose return drop"
+                  tone="brand"
+                  label="Return drop"
+                  showCurrentLocation
+                />
+              </div>
             </div>
           </div>
 
           {/* Return Leg Telemetry Footer */}
-          <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white border border-brand-200/80 px-3.5 py-2.5 mt-2">
+          <div className="relative flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white border border-brand-200/80 px-3.5 py-2.5 mt-2">
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1.5 text-xs font-bold text-brand-950">
                 <Navigation className="h-3.5 w-3.5 text-brand-600 rotate-45" />
@@ -1091,6 +1138,7 @@ export function TripDetailsForm({ config, setConfig }) {
               onChange={(dropId) => setConfig((c) => ({ ...c, dropId }))}
               options={CITY_LOCATIONS}
               placeholder={config.airportDetails.flow === 'arrival' ? 'Where should we drop you?' : 'Where should we pick you up?'}
+              showCurrentLocation
             />
           </div>
 

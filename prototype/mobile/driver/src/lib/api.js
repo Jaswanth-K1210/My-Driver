@@ -649,6 +649,9 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
       /** Score, rating, badges, Night Shield and the latest of each document. */
       profile: () => request('/v1/driver/profile'),
 
+      /** Update driver full_name, email, vehicle_model and vehicle_plate. */
+      updateProfile: (patch) => request('/v1/driver/profile', { method: 'PATCH', body: patch }),
+
       /** KYC checklist, uploaded documents and what still blocks approval. */
       onboarding: () => request('/v1/driver/onboarding'),
       uploadDocument: (kind, file_base64, extra = {}) =>

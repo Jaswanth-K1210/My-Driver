@@ -30,16 +30,32 @@ function MiniStat({ value, label, alert }) {
   )
 }
 
-export default function DriverHomeScreen() {
+export default function DriverHomeScreen({ onOpenProfile }) {
   const { toast } = useToast()
   const { user } = useAuth()
-  const { online, busy, summary, offer, goOnline, respondToOffer, connection } = useDriver()
+  const {
+    online,
+    busy,
+    summary,
+    profileComplete,
+    offer,
+    onboardingGate,
+    goOnline,
+    respondToOffer,
+    connection,
+  } = useDriver()
   const [acting, setActing] = useState(false)
+  const canAct = Boolean(onboardingGate?.canStartOrAcceptNewRide)
 
   // Offers come from the real dispatcher: by push, with polling as the fallback.
-  const request = offer
+  const request = canAct ? offer : null
 
   const respond = async (accept) => {
+    if (accept && summary && !profileComplete) {
+      toast('Complete your driver profile before accepting a trip', 'warning')
+      onOpenProfile?.()
+      return
+    }
     setActing(true)
     try {
       await respondToOffer(accept)
@@ -52,6 +68,15 @@ export default function DriverHomeScreen() {
   }
 
   const toggleOnline = async (next) => {
+    if (next && !canAct) {
+      toast('Verify your driver approval status before going online', 'warning')
+      return
+    }
+    if (next && summary && !profileComplete) {
+      toast('Complete your driver profile (name & vehicle details) before going online', 'warning')
+      onOpenProfile?.()
+      return
+    }
     try {
       await goOnline(next)
       toast(next ? 'You are online — waiting for trips' : 'You are offline', 'info')
@@ -59,6 +84,9 @@ export default function DriverHomeScreen() {
       toast(err?.message ?? 'Could not change availability', 'warning')
     }
   }
+
+  const driverName = summary?.full_name || user?.full_name || user?.phone_number || 'Driver'
+  const vehicleLine = [summary?.vehicle_model, summary?.vehicle_plate].filter(Boolean).join(' · ')
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -72,13 +100,18 @@ export default function DriverHomeScreen() {
           paddingBottom: space.md,
         }}
       >
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={{ ...type.tiny, color: colors.textMuted }}>
             {online ? `Driver mode · online${connection === 'open' ? '' : ' · connecting'}` : 'Driver mode · offline'}
           </Text>
-          <Text style={{ ...type.body, color: colors.text }}>
-            {user?.full_name ?? user?.phone_number ?? 'Driver'}
+          <Text numberOfLines={1} style={{ ...type.bodyBold, color: colors.text }}>
+            {driverName}
           </Text>
+          {vehicleLine ? (
+            <Text numberOfLines={1} style={{ ...type.micro, color: colors.textMuted }}>
+              {vehicleLine}
+            </Text>
+          ) : null}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
           {summary?.rating ? <Pill label={`★ ${summary.rating.toFixed(1)}`} tone="brand" /> : null}
@@ -89,6 +122,24 @@ export default function DriverHomeScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.xxl, gap: space.lg }}
       >
+        {summary && !profileComplete && (
+          <Card tone="alert" style={{ gap: space.sm }}>
+            <Text style={{ ...type.bodyBold, color: colors.redPressed }}>
+              Complete your driver profile
+            </Text>
+            <Text style={{ ...type.tiny, color: colors.textMuted }}>
+              Add your full name and vehicle/plate details so customers can verify you on the live trip screen.
+            </Text>
+            {onOpenProfile && (
+              <Button
+                label="Set up profile details"
+                onPress={onOpenProfile}
+                style={{ paddingVertical: 10 }}
+              />
+            )}
+          </Card>
+        )}
+
         <Card style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
           <ScoreRing score={Math.round(summary?.mydriver_score ?? 0)} />
           <View style={{ flex: 1, gap: space.sm }}>
@@ -108,7 +159,7 @@ export default function DriverHomeScreen() {
                 <Text numberOfLines={1} style={{ ...type.bodyBold, color: colors.text }}>
                   {formatINR(Math.round(summary?.earnings_today ?? 0))}
                 </Text>
-                <Text style={{ ...type.micro, color: colors.textMuted }}>Today&apos;s earnings</Text>
+                <Text style={{ ...type.micro, color: colors.textMuted }}>Today&apos;s net earnings</Text>
               </View>
             </View>
             <View style={{ flexDirection: 'row', gap: space.sm }}>
@@ -212,9 +263,14 @@ export default function DriverHomeScreen() {
               <Pill label={request.skill} />
               <Pill label={`${request.distanceKm} km`} />
               <Pill label={`Ceiling ${request.ceiling}`} />
-              <Text style={{ ...type.title, color: colors.red, marginLeft: 'auto' }}>
-                {formatINR(request.fare)}
-              </Text>
+              <View style={{ marginLeft: 'auto', alignItems: 'flex-end' }}>
+                <Text style={{ ...type.title, color: colors.red }}>
+                  {formatINR(Math.round(request.earnings ?? Math.max(0, request.fare - 19)))}
+                </Text>
+                <Text style={{ ...type.micro, color: colors.textMuted }}>
+                  Your net · Fare {formatINR(request.fare)}
+                </Text>
+              </View>
             </View>
 
             <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.lg }}>

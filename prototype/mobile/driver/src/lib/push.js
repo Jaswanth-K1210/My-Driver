@@ -1,6 +1,6 @@
+import { isRunningInExpoGo } from 'expo'
 import Constants from 'expo-constants'
 import * as Device from 'expo-device'
-import * as Notifications from 'expo-notifications'
 import { Platform, Vibration } from 'react-native'
 import { colors } from '../theme/tokens'
 import { api } from './apiClient'
@@ -14,27 +14,53 @@ const OFFER_VIBRATION = [0, 400, 200, 400, 200, 400]
 const platform = Platform.OS === 'ios' ? 'ios' : 'android'
 let registeredToken = null
 
+/** Remote push was removed from Expo Go on Android; it needs a development build. */
+export const isExpoGo =
+  (typeof isRunningInExpoGo === 'function' && isRunningInExpoGo()) ||
+  Constants.executionEnvironment === 'storeClient'
+const isExpoGoAndroid = isExpoGo && Platform.OS === 'android'
+
+let notificationsMod = null
+let handlerConfigured = false
+
+function getNotifications() {
+  if (isExpoGoAndroid) return null
+  if (!notificationsMod) {
+    try {
+      notificationsMod = require('expo-notifications')
+    } catch {
+      return null
+    }
+  }
+  if (notificationsMod && !handlerConfigured) {
+    handlerConfigured = true
+    try {
+      // Show and sound a notification even when the app is open: an offer lasts 20
+      // seconds and the driver may be looking at another screen.
+      notificationsMod.setNotificationHandler({
+        handleNotification: async () => ({
+          shouldPlaySound: true,
+          shouldShowBanner: true,
+          shouldShowList: true,
+          shouldSetBadge: false,
+        }),
+      })
+    } catch {
+      // Ignore in environments where notification handler is unsupported.
+    }
+  }
+  return notificationsMod
+}
+
 async function register(token) {
   await api.devices.register(platform, String(token))
   registeredToken = String(token)
 }
 
-// Show and sound a notification even when the app is open: an offer lasts 20
-// seconds and the driver may be looking at another screen.
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldSetBadge: false,
-  }),
-})
-
-/** Remote push was removed from Expo Go on Android; it needs a development build. */
-export const isExpoGo = Constants.executionEnvironment === 'storeClient'
-
 export async function setupChannels() {
   if (Platform.OS !== 'android') return
+  const Notifications = getNotifications()
+  if (!Notifications) return
   await Notifications.setNotificationChannelAsync(OFFERS_CHANNEL, {
     name: 'Trip requests',
     description: 'New trip offers. These expire in 20 seconds.',
@@ -58,13 +84,16 @@ export async function setupChannels() {
  */
 export async function registerForPush() {
   try {
+    if (isExpoGoAndroid) return { ok: false, reason: 'expo-go' }
+    const Notifications = getNotifications()
+    if (!Notifications) return { ok: false, reason: 'unavailable' }
+
     await setupChannels()
     const current = await Notifications.getPermissionsAsync()
     const granted =
       current.granted || (current.canAskAgain && (await Notifications.requestPermissionsAsync()).granted)
     if (!granted) return { ok: false, reason: 'permission' }
     if (!Device.isDevice) return { ok: false, reason: 'simulator' }
-    if (isExpoGo && Platform.OS === 'android') return { ok: false, reason: 'expo-go' }
 
     const { data: token } = await Notifications.getDevicePushTokenAsync()
     await register(token)
@@ -76,10 +105,32 @@ export async function registerForPush() {
 
 /** The OS can replace the token at any time; the backend must hear about it. */
 export function onPushTokenChange() {
-  const sub = Notifications.addPushTokenListener(({ data: token }) => {
-    register(token).catch(() => undefined)
-  })
-  return () => sub.remove()
+  const Notifications = getNotifications()
+  if (!Notifications) return () => {}
+  try {
+    const sub = Notifications.addPushTokenListener(({ data: token }) => {
+      register(token).catch(() => undefined)
+    })
+    return () => sub.remove()
+  } catch {
+    return () => {}
+  }
+}
+
+/** Subscribe to incoming notifications and notification taps when supported. */
+export function onOfferPush(onPush) {
+  const Notifications = getNotifications()
+  if (!Notifications) return () => {}
+  try {
+    const received = Notifications.addNotificationReceivedListener(onPush)
+    const tapped = Notifications.addNotificationResponseReceivedListener((r) => onPush(r.notification))
+    return () => {
+      received.remove()
+      tapped.remove()
+    }
+  } catch {
+    return () => {}
+  }
 }
 
 /**
@@ -88,8 +139,10 @@ export function onPushTokenChange() {
  */
 export async function unregisterPush() {
   try {
+    const Notifications = getNotifications()
     const token =
-      registeredToken ?? (Device.isDevice ? String((await Notifications.getDevicePushTokenAsync()).data) : null)
+      registeredToken ??
+      (Device.isDevice && Notifications ? String((await Notifications.getDevicePushTokenAsync()).data) : null)
     if (token) await api.devices.unregister(token)
   } catch {
     // Offline, or no token was ever issued: nothing to remove.
@@ -107,6 +160,8 @@ export const isOfferPush = (notification) =>
 export async function alertNewOffer(offer) {
   Vibration.vibrate(OFFER_VIBRATION)
   try {
+    const Notifications = getNotifications()
+    if (!Notifications) return
     await Notifications.scheduleNotificationAsync({
       content: {
         title: 'New trip request',
@@ -147,6 +202,8 @@ export function daysUntil(dateOnly) {
  */
 export async function scheduleExpiryReminders(documents) {
   try {
+    const Notifications = getNotifications()
+    if (!Notifications) return
     const { granted } = await Notifications.getPermissionsAsync()
     if (!granted) return
     const scheduled = await Notifications.getAllScheduledNotificationsAsync()

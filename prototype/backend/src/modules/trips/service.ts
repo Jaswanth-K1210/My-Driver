@@ -9,8 +9,15 @@ import type { Role } from '../auth/otp.js'
 import { revokeLinksForEndedTrip } from '../guardian/service.js'
 import { captureForTrip, releaseForTrip } from '../payments/service.js'
 import { broadcastStateChange } from './broadcast.js'
-import { computeFare } from './fare.js'
-import { setAvailability } from './geo-index.js'
+import {
+  CITY_STOP_FEE,
+  computeFare,
+  estimateTripDistanceKm,
+  extractValidStopCoords,
+  INTERCITY_STOP_FEE,
+  PLATFORM_FEE,
+} from './fare.js'
+import { requireApprovedDriver, restoreAvailabilityAfterTrip } from './geo-index.js'
 import { mayHavePendingOffer } from './offer-hint.js'
 import { getRateCard } from './rate-cards.js'
 import { assertTransition, CANCELLABLE_FROM, type TripStatus } from './state-machine.js'
@@ -18,6 +25,7 @@ import { isNightPickupIST } from '../../lib/time.js'
 
 export const HANDSHAKE_OTP_DIGITS = 4
 export const HANDSHAKE_MAX_ATTEMPTS = 5
+export const MIN_TRACKED_DISTANCE_KM = 0.5
 
 export type BookingType = 'POINT_TO_POINT' | 'HOURLY'
 
@@ -49,6 +57,8 @@ export type TripView = {
   distance_km: number | null
   duration_min: number | null
   fare_amount: number | null
+  platform_fee?: number | null
+  night_fee?: number | null
   driver_earnings: number | null
   requested_at: string
   completed_at: string | null
@@ -79,6 +89,8 @@ const TRIP_SELECT = `
     t.distance_km::float8           AS distance_km,
     t.duration_min,
     t.fare_amount::float8           AS fare_amount,
+    t.platform_fee::float8          AS platform_fee,
+    t.night_fee::float8             AS night_fee,
     t.driver_earnings::float8       AS driver_earnings,
     t.requested_at, t.completed_at,
     t.stops, t.return_stops, t.vehicle_specs, t.vision_mode, t.flight_number, t.requirement, t.trip_type,
@@ -216,7 +228,15 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
   }
 
   const card = await getRateCard(input.requiredCertification)
-  const distanceKm = input.drop ? estimateRoadDistanceKm(input.pickup, input.drop) : 0
+  const { distanceKm, stopsFee } = estimateTripDistanceKm({
+    pickup: input.pickup,
+    drop: input.drop,
+    stops: input.stops,
+    returnStops: input.returnStops,
+    returnDrop: input.returnDrop,
+    tripType: input.tripType,
+    requirement: input.requirement,
+  })
   const fare = computeFare({
     bookingType: input.bookingType,
     distanceKm,
@@ -224,6 +244,7 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
     perKmRate: card.per_km_rate,
     hourlyRate: card.hourly_rate,
     pickupAt: new Date(),
+    stopsFee,
   })
 
   const otp = generateHandshakeOtp()
@@ -337,9 +358,14 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
     started_at: Date | null
     estimated_distance_km: string | null
     requested_at: Date
+    stops: unknown
+    return_stops: unknown
+    requirement: string | null
+    trip_type: string | null
   }>(
     `SELECT status, booking_type, hourly_package_hours, required_certification,
-            started_at, estimated_distance_km, requested_at
+            started_at, estimated_distance_km, requested_at,
+            stops, return_stops, requirement, trip_type
        FROM trips WHERE id = $1 AND driver_id = $2`,
     [tripId, driverId],
   )
@@ -352,10 +378,20 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
 
   const track = await readTripTrack(tripId)
   const trackedKm = polylineDistanceKm(track)
-  const distanceKm = trackedKm > 0 ? trackedKm : Number(trip.estimated_distance_km ?? 0)
+  const estimatedKm = Number(trip.estimated_distance_km ?? 0)
+  // Ignore sub-500m GPS jitter from stationary devices so test/short-GPS trips
+  // do not overwrite the quoted trip distance and fare with ~0 km.
+  const distanceKm = trackedKm >= MIN_TRACKED_DISTANCE_KM ? trackedKm : estimatedKm
 
   const startedAt = trip.started_at ?? trip.requested_at
   const durationMin = Math.max(1, Math.round((Date.now() - startedAt.getTime()) / 60_000))
+
+  const validOutboundStops = extractValidStopCoords(trip.stops)
+  const validReturnStops =
+    trip.trip_type === 'two_way' ? extractValidStopCoords(trip.return_stops) : []
+  const stopsFee =
+    (validOutboundStops.length + validReturnStops.length) *
+    (trip.requirement === 'inter_city' ? INTERCITY_STOP_FEE : CITY_STOP_FEE)
 
   const card = await getRateCard(trip.required_certification)
   const fare = computeFare({
@@ -365,6 +401,7 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
     perKmRate: card.per_km_rate,
     hourlyRate: card.hourly_rate,
     pickupAt: startedAt,
+    stopsFee,
   })
 
   const client = await pool.connect()
@@ -414,7 +451,7 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
     client.release()
   }
 
-  await setAvailability(driverId, 'ONLINE')
+  await restoreAvailabilityAfterTrip(driverId)
   await revokeLinksForEndedTrip(tripId).catch(() => undefined)
   // After commit and never fatal: the trip did happen. A failed capture
   // leaves the payment AUTHORIZED and visible to Finance for a retry.
@@ -463,7 +500,7 @@ export async function cancelTrip(
     client.release()
   }
 
-  if (trip.driver_id) await setAvailability(trip.driver_id, 'ONLINE')
+  if (trip.driver_id) await restoreAvailabilityAfterTrip(trip.driver_id)
   await revokeLinksForEndedTrip(tripId).catch(() => undefined)
   await releaseForTrip(tripId).catch(() => undefined)
   await broadcastStateChange(tripId, 'CANCELLED')
@@ -605,6 +642,11 @@ export type DriverSummary = {
   trips_today: number
   earnings_today: number
   availability: 'OFFLINE' | 'ONLINE' | 'ON_TRIP'
+  full_name: string | null
+  email: string | null
+  vehicle_model: string | null
+  vehicle_plate: string | null
+  profile_complete: boolean
 }
 
 export async function getDriverSummary(driverId: string): Promise<DriverSummary> {
@@ -614,9 +656,19 @@ export async function getDriverSummary(driverId: string): Promise<DriverSummary>
        p.rating::float8         AS rating,
        p.total_trips,
        p.availability,
+       u.full_name,
+       u.email,
+       p.vehicle_model,
+       p.vehicle_plate,
+       (
+         COALESCE(btrim(u.full_name), '') <> ''
+         AND COALESCE(btrim(p.vehicle_model), '') <> ''
+         AND COALESCE(btrim(p.vehicle_plate), '') <> ''
+       ) AS profile_complete,
        COALESCE(t.trips_today, 0)::int       AS trips_today,
        COALESCE(t.earnings_today, 0)::float8 AS earnings_today
      FROM driver_profiles p
+     JOIN users u ON u.id = p.user_id
      LEFT JOIN LATERAL (
        SELECT count(*) AS trips_today, sum(driver_earnings) AS earnings_today
          FROM trips
@@ -673,6 +725,7 @@ export type PendingOffer = {
  * first and only queries Postgres when an offer may exist (offer-hint.ts).
  */
 export async function listPendingOffers(driverId: string): Promise<PendingOffer[]> {
+  await requireApprovedDriver(driverId)
   if (!(await mayHavePendingOffer(driverId))) return []
 
   const { rows } = await pool.query(
@@ -725,9 +778,11 @@ export async function listPendingOffers(driverId: string): Promise<PendingOffer[
     flight_number: r.flight_number,
     requirement: r.requirement,
     trip_type: r.trip_type,
-    // The same 80% split computeFare() applies, so the driver sees take-home.
+    // Same platform fee deduction computeFare() applies, so the driver sees take-home.
     driver_earnings_estimate:
-      r.estimated_fare === null ? null : Math.round(r.estimated_fare * 0.8 * 100) / 100,
+      r.estimated_fare === null
+        ? null
+        : Math.max(0, Math.round((r.estimated_fare - PLATFORM_FEE) * 100) / 100),
     customer: { name: r.customer_name },
   }))
 }

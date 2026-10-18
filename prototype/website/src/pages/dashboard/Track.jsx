@@ -194,9 +194,61 @@ function TripComplete({ trip, summary, onSave, onRate }) {
   )
 }
 
+function NoDriversFound({ trip, onRetry, onChangeBooking }) {
+  const [retrying, setRetrying] = useState(false)
+  return (
+    <div className="mx-auto max-w-lg rounded-3xl border border-amber-200 bg-white p-8 text-center shadow-sm">
+      <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-amber-50 text-amber-600">
+        <CarFront className="h-8 w-8" aria-hidden="true" />
+      </span>
+      <h2 className="mt-6 text-2xl font-black tracking-tight text-slate-900">
+        No nearby driver available right now
+      </h2>
+      {trip?.from && (
+        <p className="mt-1.5 text-sm font-semibold text-slate-700">
+          {trip.from}{trip.to ? ` → ${trip.to}` : ''}
+        </p>
+      )}
+      <p className="mx-auto mt-3 max-w-md text-sm text-slate-600">
+        We searched for an online <span className="font-bold text-slate-900">{trip?.skill ?? 'certified'}</span> driver
+        near your pickup location, but none accepted within the dispatch window.
+      </p>
+      {trip?.fare > 0 && (
+        <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-xs font-semibold text-emerald-900">
+          Your refundable fare hold of <span className="font-black">{formatINR(trip.fare)}</span> has been automatically released.
+        </div>
+      )}
+      <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">
+        <button
+          type="button"
+          disabled={retrying}
+          onClick={async () => {
+            setRetrying(true)
+            try {
+              await onRetry()
+            } finally {
+              setRetrying(false)
+            }
+          }}
+          className="flex-1 rounded-2xl bg-brand-500 px-5 py-3.5 text-sm font-black text-white shadow-lg shadow-brand-500/25 transition-colors hover:bg-brand-600 disabled:opacity-60"
+        >
+          {retrying ? 'Requesting again…' : 'Try matching again'}
+        </button>
+        <button
+          type="button"
+          onClick={onChangeBooking}
+          className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-100"
+        >
+          Update pickup or tier
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function Track() {
   const {
-    phase, payment, openCheckout, trip, summary, driverPosition, alerts, maxSpeed, connection, cancelTrip, rateTrip, saveToVault,
+    phase, payment, openCheckout, trip, summary, driverPosition, alerts, maxSpeed, connection, startMatching, cancelTrip, rateTrip, saveToVault,
   } = useTrip()
   const { toast } = useToast()
   const navigate = useNavigate()
@@ -277,6 +329,25 @@ export default function Track() {
     return shell('Confirm the fare hold to send your request to drivers.', <PaymentStep payment={payment} trip={trip} onPay={openCheckout} onCancel={() => cancelTrip('Payment not completed')} />)
   }
   if (phase === 'matching') return shell('We are finding you a verified driver.', <Matching label={trip?.statusLabel} />)
+  if (phase === 'no_drivers') {
+    return shell(
+      'No nearby driver accepted your request within the dispatch window.',
+      <NoDriversFound
+        trip={trip}
+        onRetry={async () => {
+          try {
+            await startMatching()
+          } catch (err) {
+            toast(err?.message ?? 'Could not restart matching', 'warning')
+          }
+        }}
+        onChangeBooking={async () => {
+          await saveToVault()
+          navigate('/app/book')
+        }}
+      />,
+    )
+  }
   if (phase === 'complete' && trip) {
     return (
       <TripComplete

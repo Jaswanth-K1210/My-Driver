@@ -81,9 +81,15 @@ export function TripProvider({ children }) {
     if (!next) return setPhase('idle')
 
     if (next.status === 'REQUESTED' || next.status === 'MATCHED') setPhase('matching')
-    else if (next.status === 'HANDSHAKE_PENDING' || next.status === 'IN_TRIP') setPhase('live')
-    else if (next.status === 'COMPLETED') setPhase('complete')
-    else setPhase('idle') // CANCELLED / NO_DRIVERS_FOUND
+    else if (
+      next.status === 'HANDSHAKE_PENDING' ||
+      next.status === 'IN_TRIP' ||
+      next.status === 'ESCALATED'
+    ) {
+      setPhase('live')
+    } else if (next.status === 'COMPLETED') setPhase('complete')
+    else if (next.status === 'NO_DRIVERS_FOUND') setPhase('no_drivers')
+    else setPhase('idle')
   }, [])
 
   const ensureRealtime = useCallback(async () => {
@@ -215,7 +221,7 @@ export function TripProvider({ children }) {
       try {
         const { items } = await api.trips.list({ limit: 5 })
         const active = items.find((t) =>
-          ['REQUESTED', 'MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP'].includes(t.status),
+          ['REQUESTED', 'MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP', 'ESCALATED'].includes(t.status),
         )
         if (cancelled || !active) return
         if (active.status === 'REQUESTED') {
@@ -245,13 +251,32 @@ export function TripProvider({ children }) {
       try {
         const { payment: next } = await api.payments.forTrip(tripId)
         if (next) setPayment(next)
-        if (next?.status === 'AUTHORIZED') applyTrip(await api.trips.get(tripId))
+        if (next && !['CREATED', 'FAILED'].includes(next.status)) {
+          applyTrip(await api.trips.get(tripId))
+        }
       } catch {
         // Transient; the next tick retries.
       }
-    }, 2500)
+    }, 2000)
     return () => clearInterval(timer)
   }, [awaitingPayment, trip?.id, applyTrip])
+
+  // Resilient state sync while matching or live in case a WebSocket frame is missed.
+  useEffect(() => {
+    if ((phase !== 'matching' && phase !== 'live') || awaitingPayment || !trip?.id) {
+      return undefined
+    }
+    const tripId = trip.id
+    const timer = setInterval(async () => {
+      try {
+        const latest = await api.trips.get(tripId)
+        if (latest) applyTrip(latest)
+      } catch {
+        // Ignore transient network errors.
+      }
+    }, 3500)
+    return () => clearInterval(timer)
+  }, [phase, awaitingPayment, trip?.id, applyTrip])
 
   /** Must be called from a click: a tab opened after an await is popup-blocked. */
   const openCheckout = useCallback(() => {

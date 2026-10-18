@@ -48,6 +48,16 @@ export async function verifyPan(userId: string, rawPan: string, name: string): P
      result.registeredName, result.nameMatchScore, reason],
   )
   if (!ok) throw unprocessable('PAN_NOT_VERIFIED', reason!)
+
+  const verifiedName = (result.registeredName || name).trim()
+  if (verifiedName) {
+    await pool.query(
+      `UPDATE users SET full_name = $2, updated_at = now()
+        WHERE id = $1 AND COALESCE(btrim(full_name), '') = ''`,
+      [userId, verifiedName],
+    )
+  }
+
   return getKycStatus(userId)
 }
 
@@ -96,6 +106,13 @@ export async function verifyAadhaarOtp(userId: string, refId: string, otp: strin
       WHERE id = $1`,
     [pending.id, result.name],
   )
+  if (result.name?.trim()) {
+    await pool.query(
+      `UPDATE users SET full_name = $2, updated_at = now()
+        WHERE id = $1 AND COALESCE(btrim(full_name), '') = ''`,
+      [userId, result.name.trim()],
+    )
+  }
   return getKycStatus(userId)
 }
 

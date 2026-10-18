@@ -34,6 +34,16 @@ export function toViewTrip(trip) {
   if (!trip) return null
   const hourly = trip.booking_type === 'HOURLY'
 
+  const specs = trip.vehicle_specs && typeof trip.vehicle_specs === 'object' ? trip.vehicle_specs : null
+  const specVehicle = specs
+    ? [specs.company, specs.model].filter(Boolean).join(' ').trim() || null
+    : null
+  const specPlate = specs
+    ? (specs.plate && String(specs.plate).trim()) ||
+      [specs.transmission, specs.engineType].filter(Boolean).join(' · ').trim() ||
+      null
+    : null
+
   return {
     id: shortTripId(trip.id),
     serverId: trip.id,
@@ -57,10 +67,10 @@ export function toViewTrip(trip) {
     requestedAt: trip.requested_at,
     driver: trip.driver
       ? {
-          name: trip.driver.name ?? 'Your driver',
-          initials: trip.driver.initials ?? 'MD',
-          vehicle: trip.driver.vehicle_model ?? 'Vehicle details pending',
-          plate: trip.driver.vehicle_plate ?? '—',
+          name: trip.driver.name || 'Your driver',
+          initials: trip.driver.initials || 'MD',
+          vehicle: trip.driver.vehicle_model || specVehicle || 'Verified Chauffeur',
+          plate: trip.driver.vehicle_plate || specPlate || 'ID Verified',
           rating: trip.driver.rating ?? null,
           score: trip.driver.mydriver_score ?? null,
         }

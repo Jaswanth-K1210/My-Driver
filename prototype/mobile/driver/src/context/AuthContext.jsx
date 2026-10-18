@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
-import { api } from '../lib/apiClient'
+import { api, secureStorage } from '../lib/apiClient'
 import { APP_ROLE } from '../lib/config'
+import { classifyApiError, STORAGE_KEYS } from '../lib/onboardingGate'
 
 const AuthCtx = createContext(null)
 
@@ -10,25 +11,79 @@ export function useAuth() {
   return ctx
 }
 
+async function readCachedUser() {
+  try {
+    const raw = await secureStorage.get(STORAGE_KEYS.AUTH_USER)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed.id !== 'string' || parsed.role !== APP_ROLE) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
+async function writeCachedUser(me) {
+  if (!me || typeof me.id !== 'string') return
+  await secureStorage.set(
+    STORAGE_KEYS.AUTH_USER,
+    JSON.stringify({
+      id: me.id,
+      role: me.role ?? APP_ROLE,
+      phone_number: me.phone_number ?? null,
+      full_name: me.full_name ?? null,
+    }),
+  )
+}
+
+async function clearStoredSessionData() {
+  await Promise.all([
+    secureStorage.remove(STORAGE_KEYS.AUTH_USER),
+    secureStorage.remove(STORAGE_KEYS.VERIFIED_APPROVAL),
+    secureStorage.remove(STORAGE_KEYS.ACTIVE_TRIP),
+  ])
+}
+
 /**
  * Real session state backed by the MyDriver API.
  *
  * Tokens live in the device keychain, so the app resumes signed in. On start we
- * ask the server who we are rather than trusting a cached user — a revoked
- * session is then caught immediately instead of showing a stale identity.
+ * ask the server who we are. An explicit 401/403 revokes the session immediately,
+ * while a transient network failure during startup preserves a legitimate
+ * existing session so an offline driver mid-trip is never logged out.
  */
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
+  const signOut = useCallback(async () => {
+    await clearStoredSessionData()
+    await api.auth.logout()
+    setUser(null)
+  }, [])
+
   const refreshMe = useCallback(async () => {
     try {
       const me = await api.me.get()
       setUser(me)
+      await writeCachedUser(me)
       return me
-    } catch {
-      setUser(null)
-      return null
+    } catch (err) {
+      const kind = classifyApiError(err)
+      const hasTokens = await api.hasSession()
+      if (kind === 'AUTH_INVALID' || kind === 'FORBIDDEN' || !hasTokens) {
+        await clearStoredSessionData()
+        if (!hasTokens || kind === 'AUTH_INVALID') {
+          await api.auth.logout().catch(() => undefined)
+        }
+        setUser(null)
+        return null
+      }
+      // Transient network error while a valid session token exists: preserve
+      // current or cached user identity so offline active-trip continuity can work.
+      const cached = await readCachedUser()
+      setUser((prev) => prev ?? cached)
+      return cached
     }
   }, [])
 
@@ -70,11 +125,6 @@ export function AuthProvider({ children }) {
     },
     [refreshMe],
   )
-
-  const signOut = useCallback(async () => {
-    await api.auth.logout()
-    setUser(null)
-  }, [])
 
   const value = useMemo(
     () => ({

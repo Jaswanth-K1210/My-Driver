@@ -191,7 +191,205 @@ function RenewDocument({ doc, onDone }) {
   )
 }
 
-export default function ProfileScreen({ onLogout }) {
+const inputStyle = (invalid = false) => ({
+  borderWidth: 1,
+  borderColor: invalid ? colors.red : colors.border,
+  borderRadius: radius.md,
+  paddingHorizontal: space.md,
+  paddingVertical: 11,
+  fontSize: 15,
+  color: colors.text,
+  backgroundColor: colors.surface,
+})
+
+function DriverDetailsCard({ profile, setupMode, onSaved }) {
+  const { toast } = useToast()
+  const { updateDriverProfile } = useDriver()
+  const incomplete = !profile.profile_complete
+  const [editing, setEditing] = useState(Boolean(setupMode || incomplete))
+  const [fullName, setFullName] = useState(profile.full_name ?? '')
+  const [email, setEmail] = useState(profile.email ?? '')
+  const [vehicleModel, setVehicleModel] = useState(profile.vehicle_model ?? '')
+  const [vehiclePlate, setVehiclePlate] = useState(profile.vehicle_plate ?? '')
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    setFullName(profile.full_name ?? '')
+    setEmail(profile.email ?? '')
+    setVehicleModel(profile.vehicle_model ?? '')
+    setVehiclePlate(profile.vehicle_plate ?? '')
+    if (!profile.profile_complete || setupMode) {
+      setEditing(true)
+    }
+  }, [profile.full_name, profile.email, profile.vehicle_model, profile.vehicle_plate, profile.profile_complete, setupMode])
+
+  const canSave =
+    fullName.trim().length >= 2 &&
+    vehicleModel.trim().length >= 2 &&
+    vehiclePlate.trim().length >= 2 &&
+    !saving
+
+  const save = async () => {
+    if (!canSave) {
+      toast('Enter your full name, vehicle model, and registration/plate number.', 'warning')
+      return
+    }
+    setSaving(true)
+    try {
+      await updateDriverProfile({
+        full_name: fullName.trim(),
+        email: email.trim() || null,
+        vehicle_model: vehicleModel.trim(),
+        vehicle_plate: vehiclePlate.trim().toUpperCase(),
+      })
+      toast('Driver profile saved', 'success')
+      setEditing(false)
+      onSaved?.()
+    } catch (err) {
+      toast(err?.message ?? 'Could not save profile details', 'warning')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card tone={incomplete ? 'alert' : undefined} style={{ gap: space.sm }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flex: 1 }}>
+          <Text style={{ ...type.bodyBold, color: incomplete ? colors.redPressed : colors.text }}>
+            {incomplete ? 'Complete your driver profile' : 'Driver & vehicle details'}
+          </Text>
+          <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 2 }}>
+            {incomplete
+              ? 'Required before going online — shown to customers on the live trip screen.'
+              : 'Displayed to customers when you accept and start a trip.'}
+          </Text>
+        </View>
+        {!editing && (
+          <Button
+            label="Edit"
+            variant="outline"
+            onPress={() => setEditing(true)}
+            style={{ paddingVertical: 6, paddingHorizontal: 14 }}
+          />
+        )}
+      </View>
+
+      {!editing ? (
+        <View
+          style={{
+            gap: 6,
+            marginTop: space.xs,
+            paddingTop: space.sm,
+            borderTopWidth: 1,
+            borderTopColor: colors.border,
+          }}
+        >
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ ...type.tiny, color: colors.textMuted }}>Full name</Text>
+            <Text style={{ ...type.caption, color: colors.text, fontWeight: '600' }}>
+              {profile.full_name || '—'}
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ ...type.tiny, color: colors.textMuted }}>Email</Text>
+            <Text style={{ ...type.caption, color: colors.text }}>
+              {profile.email || 'Not set'}
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ ...type.tiny, color: colors.textMuted }}>Primary vehicle / class</Text>
+            <Text style={{ ...type.caption, color: colors.text, fontWeight: '600' }}>
+              {profile.vehicle_model || '—'}
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ ...type.tiny, color: colors.textMuted }}>Plate / licence ref</Text>
+            <Text style={{ ...type.caption, color: colors.text, fontWeight: '600' }}>
+              {profile.vehicle_plate || '—'}
+            </Text>
+          </View>
+        </View>
+      ) : (
+        <View style={{ gap: space.sm, marginTop: space.xs }}>
+          <View style={{ gap: 4 }}>
+            <Text style={{ ...type.micro, color: colors.textMuted }}>FULL NAME *</Text>
+            <TextInput
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="e.g. Ramesh Kumar"
+              placeholderTextColor={colors.textFaint}
+              autoCapitalize="words"
+              style={inputStyle(false)}
+            />
+          </View>
+
+          <View style={{ gap: 4 }}>
+            <Text style={{ ...type.micro, color: colors.textMuted }}>EMAIL (OPTIONAL)</Text>
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              placeholder="e.g. ramesh@mydriver.co.in"
+              placeholderTextColor={colors.textFaint}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              style={inputStyle(false)}
+            />
+          </View>
+
+          <View style={{ gap: 4 }}>
+            <Text style={{ ...type.micro, color: colors.textMuted }}>VEHICLE MODEL / DRIVING CLASS *</Text>
+            <TextInput
+              value={vehicleModel}
+              onChangeText={setVehicleModel}
+              placeholder="e.g. Maruti Suzuki Swift · Manual/Auto"
+              placeholderTextColor={colors.textFaint}
+              style={inputStyle(false)}
+            />
+          </View>
+
+          <View style={{ gap: 4 }}>
+            <Text style={{ ...type.micro, color: colors.textMuted }}>VEHICLE PLATE / LICENCE REF *</Text>
+            <TextInput
+              value={vehiclePlate}
+              onChangeText={(v) => setVehiclePlate(v.toUpperCase())}
+              placeholder="e.g. TS09 EZ 4412"
+              placeholderTextColor={colors.textFaint}
+              autoCapitalize="characters"
+              style={inputStyle(false)}
+            />
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.xs }}>
+            {!incomplete && !setupMode && (
+              <Button
+                label="Cancel"
+                variant="subtle"
+                disabled={saving}
+                onPress={() => {
+                  setFullName(profile.full_name ?? '')
+                  setEmail(profile.email ?? '')
+                  setVehicleModel(profile.vehicle_model ?? '')
+                  setVehiclePlate(profile.vehicle_plate ?? '')
+                  setEditing(false)
+                }}
+                style={{ flex: 1, paddingVertical: 10 }}
+              />
+            )}
+            <Button
+              label={saving ? 'Saving…' : incomplete ? 'Save & continue' : 'Save changes'}
+              disabled={!canSave}
+              onPress={save}
+              style={{ flex: 1, paddingVertical: 10 }}
+            />
+          </View>
+        </View>
+      )}
+    </Card>
+  )
+}
+
+export default function ProfileScreen({ onLogout, setupMode = false, onSetupDone }) {
   const { signOut } = useAuth()
   const { pushStatus, online, goOnline } = useDriver()
   const load = useLoad(fetchProfile)
@@ -203,7 +401,15 @@ export default function ProfileScreen({ onLogout }) {
   }, [documents])
 
   return (
-    <Screen title="Profile" load={load}>
+    <Screen
+      title={setupMode ? 'Set up your profile' : 'Profile'}
+      subtitle={
+        setupMode
+          ? 'Enter your name and vehicle details once before going online'
+          : undefined
+      }
+      load={load}
+    >
       {(p) => {
         const shield = SHIELD[p.night_shield.status] ?? SHIELD.NOT_QUALIFIED
         const urgent = p.documents.map((d) => ({ d, s: documentState(d) })).filter((x) => x.s.urgent)
@@ -229,6 +435,11 @@ export default function ProfileScreen({ onLogout }) {
                 {p.phone_number ? (
                   <Text style={{ ...type.tiny, color: colors.textMuted }}>{maskPhone(p.phone_number)}</Text>
                 ) : null}
+                {p.vehicle_model || p.vehicle_plate ? (
+                  <Text style={{ ...type.tiny, color: colors.text }}>
+                    {[p.vehicle_model, p.vehicle_plate].filter(Boolean).join(' · ')}
+                  </Text>
+                ) : null}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: space.xs }}>
                   <Star size={13} color={colors.red} />
                   <Text style={{ ...type.caption, color: colors.text }}>
@@ -242,6 +453,15 @@ export default function ProfileScreen({ onLogout }) {
                 </Text>
               </View>
             </Card>
+
+            <DriverDetailsCard
+              profile={p}
+              setupMode={setupMode}
+              onSaved={() => {
+                load.reload()
+                onSetupDone?.()
+              }}
+            />
 
             <SectionLabel>Night Shield</SectionLabel>
             <Card style={{ flexDirection: 'row', gap: space.md }}>

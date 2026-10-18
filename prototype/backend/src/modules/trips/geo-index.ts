@@ -1,23 +1,54 @@
+import type { PoolClient } from 'pg'
 import { env } from '../../config/env.js'
 import { pool } from '../../db/client.js'
+import { forbidden } from '../../lib/errors.js'
 import type { LatLng } from '../../lib/geo.js'
 import { redis } from '../../redis/client.js'
 import { ensureDriverProfile } from './rate-cards.js'
 
 export const GEO_KEY = 'drivers:online'
 export const GEO_REFRESH_SECONDS = 10
-// 5 km in a real city. Development searches 50 km so a laptop-located test
+// 5 km in a real city. Development searches 250 km so a laptop-located test
 // driver is found wherever the simulator or browser places the customer.
-export const SEARCH_RADIUS_KM = env.NODE_ENV === 'development' ? 50 : 5
+export const SEARCH_RADIUS_KM = env.NODE_ENV === 'development' ? 250 : 5
 
 export type Availability = 'OFFLINE' | 'ONLINE' | 'ON_TRIP'
+
+type Queryable = Pick<PoolClient, 'query'>
+
+/**
+ * Authoritative server-side check that a driver is currently APPROVED.
+ * Used by every endpoint that enables new driver activity (going ONLINE,
+ * fetching offers, accepting an offer, or starting a trip at handshake).
+ */
+export async function requireApprovedDriver(
+  userId: string,
+  db: Queryable = pool,
+): Promise<void> {
+  const { rows } = await db.query<{ onboarding_status: string }>(
+    `SELECT onboarding_status FROM driver_profiles WHERE user_id = $1`,
+    [userId],
+  )
+  const status = rows[0]?.onboarding_status ?? 'PENDING'
+  if (status !== 'APPROVED') {
+    throw forbidden(
+      'DRIVER_NOT_APPROVED',
+      `Driver approval is required for this action (current status: ${status})`,
+      { onboarding_status: status },
+    )
+  }
+}
 
 export async function setAvailability(
   userId: string,
   availability: Availability,
   at?: LatLng,
+  opts: { skipApprovalCheck?: boolean } = {},
 ): Promise<void> {
   await ensureDriverProfile(userId)
+  if (availability === 'ONLINE' && !opts.skipApprovalCheck) {
+    await requireApprovedDriver(userId)
+  }
   await pool.query(
     `UPDATE driver_profiles SET availability = $2, updated_at = now() WHERE user_id = $1`,
     [userId, availability],
@@ -37,6 +68,22 @@ export async function setAvailability(
   // Dispatch searches the geo index, so a driver going ONLINE without a
   // position would be invisible until their first telemetry frame.
   if (at) await upsertDriverLocation(userId, at, { force: true })
+}
+
+/**
+ * Called when an assigned trip ends (complete or cancel). Restores ONLINE only
+ * if the driver is still APPROVED; if the driver was suspended or unapproved
+ * mid-trip, forces them OFFLINE and removes them from the dispatch geo index.
+ */
+export async function restoreAvailabilityAfterTrip(userId: string): Promise<Availability> {
+  const { rows } = await pool.query<{ onboarding_status: string }>(
+    `SELECT onboarding_status FROM driver_profiles WHERE user_id = $1`,
+    [userId],
+  )
+  const approved = rows[0]?.onboarding_status === 'APPROVED'
+  const next: Availability = approved ? 'ONLINE' : 'OFFLINE'
+  await setAvailability(userId, next, undefined, { skipApprovalCheck: true })
+  return next
 }
 
 /**
@@ -87,7 +134,7 @@ export async function findNearbyDrivers(
     'km',
     'ASC',
     'COUNT',
-    limit * 4,
+    Math.max(100, limit * 4),
   )) as string[]
 
   if (nearby.length === 0) return []

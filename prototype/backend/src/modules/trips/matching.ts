@@ -4,7 +4,7 @@ import { conflict, notFound } from '../../lib/errors.js'
 import { getPushProvider } from '../../providers/push/index.js'
 import { releaseForTrip } from '../payments/service.js'
 import { broadcastOffer, broadcastStateChange } from './broadcast.js'
-import { findNearbyDrivers, SEARCH_RADIUS_KM, setAvailability } from './geo-index.js'
+import { findNearbyDrivers, requireApprovedDriver, SEARCH_RADIUS_KM, setAvailability } from './geo-index.js'
 import { flagPendingOffer } from './offer-hint.js'
 import {
   getTripById,
@@ -154,6 +154,10 @@ export async function respondToOffer(
     )
     if (!rows[0]) {
       throw notFound('OFFER_NOT_FOUND', 'No live offer for this driver on this trip')
+    }
+
+    if (accept) {
+      await requireApprovedDriver(driverId, client)
     }
 
     await client.query(`UPDATE trip_offers SET status = $2, responded_at = now() WHERE id = $1`, [

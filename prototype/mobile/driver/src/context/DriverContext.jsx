@@ -1,10 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import * as Location from 'expo-location'
-import * as Notifications from 'expo-notifications'
 import { AppState } from 'react-native'
-import { api } from '../lib/apiClient'
+import { api, secureStorage } from '../lib/apiClient'
 import { useToast } from '../components/Toast'
-import { alertNewOffer, isOfferPush, onPushTokenChange, registerForPush } from '../lib/push'
+import { alertNewOffer, isOfferPush, onOfferPush, onPushTokenChange, registerForPush } from '../lib/push'
+import {
+  classifyApiError,
+  createOnboardingController,
+  createSingleFlight,
+  isTrustedInProgressTrip,
+} from '../lib/onboardingGate'
 import * as telemetry from '../lib/telemetry'
 import { startTracking, stopTracking } from '../lib/tracking'
 import { useAuth } from './AuthContext'
@@ -69,35 +74,44 @@ function toOffer(pending) {
 }
 
 /** Adapts a server trip into the shape the driver screens already render. */
-function toRequest(trip) {
+function toRequest(trip, prevInspected = undefined) {
   if (!trip) return null
+  const serverId = trip.serverId ?? trip.id
   return {
-    id: shortId(trip.id),
-    serverId: trip.id,
+    id: shortId(serverId),
+    serverId,
+    driverId: trip.driver_id ?? trip.driverId ?? null,
     status: trip.status,
-    customer: trip.customer_name ?? 'Customer',
-    pickup: trip.pickup_address ?? 'Pickup point on map',
+    customer: trip.customer_name ?? trip.customer ?? 'Customer',
+    pickup: trip.pickup_address ?? trip.pickup ?? 'Pickup point on map',
     drop:
       trip.drop_address ??
+      trip.drop ??
       (trip.booking_type === 'HOURLY' ? `${trip.hourly_package_hours}-hour hire` : 'Destination on map'),
-    skill: trip.required_certification,
-    ceiling: trip.speed_ceiling_kmh,
-    distanceKm: Number(trip.distance_km ?? trip.estimated_distance_km ?? 0),
-    durationMin: trip.duration_min ?? null,
-    fare: Math.round(trip.fare_amount ?? trip.estimated_fare ?? 0),
-    earnings: trip.driver_earnings,
-    pickupCoords: trip.pickup,
-    dropCoords: trip.drop,
+    skill: trip.required_certification ?? trip.skill,
+    ceiling: trip.speed_ceiling_kmh ?? trip.ceiling,
+    distanceKm: Number(trip.distance_km ?? trip.estimated_distance_km ?? trip.distanceKm ?? 0),
+    durationMin: trip.duration_min ?? trip.durationMin ?? null,
+    fare: Math.round(trip.fare_amount ?? trip.estimated_fare ?? trip.fare ?? 0),
+    platformFee: trip.platform_fee ?? trip.platformFee ?? null,
+    nightFee: trip.night_fee ?? trip.nightFee ?? null,
+    earnings: trip.driver_earnings ?? trip.earnings,
+    requirement: trip.requirement ?? null,
+    tripType: trip.trip_type ?? trip.tripType ?? null,
+    pickupCoords: trip.pickupCoords ?? trip.pickup,
+    dropCoords: trip.dropCoords ?? trip.drop,
+    inspected: prevInspected !== undefined ? prevInspected : (trip.inspected ?? null),
   }
 }
 
 /**
  * Owns the driver side of the lifecycle against the real API:
- * availability, incoming offers (push, with polling as the fallback),
- * acceptance, the handshake, location tracking and completion.
+ * onboarding validation + active-trip continuity, availability, incoming offers
+ * (push, with polling as the fallback), acceptance, the handshake, location
+ * tracking and completion.
  */
 export function DriverProvider({ children }) {
-  const { isAuthenticated } = useAuth()
+  const { user, isAuthenticated, signOut, refreshMe } = useAuth()
   const { toast } = useToast()
 
   const [online, setOnline] = useState(false)
@@ -116,25 +130,81 @@ export function DriverProvider({ children }) {
   const tripIdRef = useRef(null)
   const alertedOfferRef = useRef(null)
 
+  const controllerRef = useRef(null)
+  if (!controllerRef.current) {
+    controllerRef.current = createOnboardingController({
+      api,
+      storage: secureStorage,
+      onAuthInvalid: () => signOut(),
+    })
+  }
+  const controller = controllerRef.current
+
+  const [onboardingGate, setOnboardingGate] = useState(() => controller.getSnapshot())
+
+  useEffect(() => controller.subscribe(setOnboardingGate), [controller])
+
+  const reloadOnboarding = useCallback(() => controller.validate(), [controller])
+
+  const updateTripInspected = useCallback(
+    async (inspected) => {
+      setTrip((prev) => {
+        if (!prev) return prev
+        const next = { ...prev, inspected }
+        void controller.setActiveTrip(next, { inspected })
+        return next
+      })
+    },
+    [controller],
+  )
+
   const refreshSummary = useCallback(async () => {
     try {
       const next = await api.driver.summary()
+      const isProfileReady =
+        typeof next.profile_complete === 'boolean'
+          ? next.profile_complete
+          : Boolean(
+              (next.full_name || '').trim() &&
+                (next.vehicle_model || '').trim() &&
+                (next.vehicle_plate || '').trim(),
+            )
+      if (!isProfileReady && next.availability === 'ONLINE') {
+        await api.driver.setAvailability('OFFLINE').catch(() => undefined)
+        const updated = { ...next, availability: 'OFFLINE' }
+        setSummary(updated)
+        setOnline(false)
+        setOffer(null)
+        return updated
+      }
       setSummary(next)
-      setOnline(next.availability !== 'OFFLINE')
+      const gate = controller.getSnapshot()
+      setOnline(gate.freshlyApproved && isProfileReady && next.availability !== 'OFFLINE')
       return next
-    } catch {
+    } catch (err) {
+      await controller.handleOperationError(err)
       return null
     }
-  }, [])
+  }, [controller])
 
   /**
    * Pending offers are fetched here whether the trigger was a push or the
    * poll — see the note on api.driver.offers(). An offer lives 20 seconds.
+   * Blocked whenever fresh approval validation has not succeeded.
    */
   const refreshOffers = useCallback(async () => {
     if (tripIdRef.current) return
+    const gate = controller.getSnapshot()
+    if (!gate.canStartOrAcceptNewRide) {
+      setOffer(null)
+      return
+    }
     try {
       const pending = await api.driver.offers()
+      if (!controller.getSnapshot().canStartOrAcceptNewRide) {
+        setOffer(null)
+        return
+      }
       setOffer((current) => {
         const next = pending[0]
         if (!next) return null
@@ -148,10 +218,14 @@ export function DriverProvider({ children }) {
         }
         return fresh
       })
-    } catch {
-      // A failed poll is not an error worth showing; the next tick retries.
+    } catch (err) {
+      const kind = await controller.handleOperationError(err)
+      if (kind === 'FORBIDDEN' || kind === 'AUTH_INVALID') {
+        setOffer(null)
+        setOnline(false)
+      }
     }
-  }, [])
+  }, [controller])
 
   /**
    * Re-reads the trip from the server. The customer or the Safety Desk can
@@ -165,25 +239,39 @@ export function DriverProvider({ children }) {
     try {
       next = await api.trips.get(id)
     } catch (err) {
-      // No longer this driver's trip (reassigned). Anything else: try again later.
+      const kind = classifyApiError(err)
+      if (kind === 'AUTH_INVALID') {
+        await controller.handleOperationError(err)
+        return
+      }
+      // No longer this driver's trip (reassigned). Anything else (network error):
+      // preserve the ongoing trip state and try again later.
       if (!['TRIP_NOT_FOUND', 'FORBIDDEN_TRIP'].includes(err?.code)) return
       next = null
     }
     if (tripIdRef.current !== id) return
-    if (next && MINE.includes(next.status)) {
-      setTrip(toRequest(next))
+    if (next && MINE.includes(next.status) && next.driver_id === user?.id) {
+      const adapted = toRequest(next, trip?.inspected)
+      setTrip(adapted)
+      const prevGate = controller.getSnapshot()
+      await controller.setActiveTrip(adapted)
+      if (prevGate.continuityActive || controller.getSnapshot().revalidationRequired) {
+        void controller.validate()
+      }
       return
     }
     tripIdRef.current = null
     setTrip(null)
+    await controller.setActiveTrip(null)
+    void controller.validate()
     realtimeRef.current?.unsubscribe(id)
     toast(
-      next?.status === 'CANCELLED' ? 'This trip was cancelled. You are back online.' : 'This trip is no longer assigned to you.',
+      next?.status === 'CANCELLED' ? 'This trip was cancelled.' : 'This trip is no longer assigned to you.',
       'warning',
       5000,
     )
     void refreshSummary()
-  }, [toast, refreshSummary])
+  }, [toast, refreshSummary, controller, user?.id, trip?.inspected])
 
   /* ── Socket: offers and trip state ───────────────────────────────────── */
   const ensureRealtime = useCallback(async () => {
@@ -193,10 +281,6 @@ export function DriverProvider({ children }) {
     realtimeRef.current = conn
     telemetry.setTransport(conn)
 
-    // Kept as a fast path only. In Phase 1 this frame does not actually reach
-    // the offered driver: TRIP_OFFER is published to the trip channel, and
-    // the gateway only lets trip participants subscribe — trips.driver_id is
-    // still NULL while the offer is pending. Polling below is what works.
     conn.on('TRIP_OFFER', () => {
       void refreshOffers()
     })
@@ -209,15 +293,91 @@ export function DriverProvider({ children }) {
     return conn
   }, [refreshOffers, syncTrip])
 
+  /* ── Hydrate onboarding + active-trip continuity & resume after restart ─ */
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !user?.id) {
       realtimeRef.current?.close()
       realtimeRef.current = null
-      return
+      tripIdRef.current = null
+      setTrip(null)
+      setOffer(null)
+      setOnline(false)
+      void controller.clearAllForLogout()
+      return undefined
     }
-    void ensureRealtime()
-    void refreshSummary()
-  }, [isAuthenticated, ensureRealtime, refreshSummary])
+
+    let cancelled = false
+    ;(async () => {
+      // 1. Hydrate stored historical approval & active IN_TRIP/ESCALATED snapshot
+      //    bound to `user.id` before network requests complete.
+      const hydrated = await controller.hydrateForUser(user.id)
+      if (cancelled) return
+
+      if (hydrated.activeTrip && isTrustedInProgressTrip(hydrated.activeTrip, user.id)) {
+        tripIdRef.current = hydrated.activeTrip.serverId
+        setTrip(hydrated.activeTrip)
+      }
+
+      // 2. Reconcile active trip with server and validate onboarding in parallel.
+      const tripCheck = (async () => {
+        try {
+          const { items } = await api.trips.list({ limit: 5 })
+          if (cancelled) return
+          const active = items.find(
+            (t) =>
+              t.driver_id === user.id &&
+              ['MATCHED', 'HANDSHAKE_PENDING', ...DRIVING].includes(t.status),
+          )
+          if (!active || !DRIVING.includes(active.status)) void stopTracking()
+          if (!active) {
+            tripIdRef.current = null
+            setTrip(null)
+            await controller.setActiveTrip(null)
+            return
+          }
+          const adapted = toRequest(
+            active,
+            hydrated.activeTrip?.serverId === active.id ? hydrated.activeTrip.inspected : null,
+          )
+          tripIdRef.current = active.id
+          setTrip(adapted)
+          await controller.setActiveTrip(adapted)
+          const conn = await ensureRealtime()
+          conn.subscribe(active.id)
+        } catch (err) {
+          if (cancelled) return
+          const kind = classifyApiError(err)
+          if (kind === 'AUTH_INVALID' || kind === 'FORBIDDEN') {
+            await controller.handleOperationError(err)
+            return
+          }
+          // Transient network failure on startup: keep the hydrated activeTrip ONLY
+          // if all trusted active-trip continuity criteria hold.
+          const snap = controller.getSnapshot()
+          if (!snap.canContinueActiveTrip) {
+            tripIdRef.current = null
+            setTrip(null)
+          }
+        }
+      })()
+
+      await Promise.all([controller.validate(), tripCheck])
+      if (cancelled) return
+
+      const postSnap = controller.getSnapshot()
+      if (!postSnap.canContinueActiveTrip && !postSnap.freshlyApproved) {
+        setOnline(false)
+        setOffer(null)
+      } else if (postSnap.freshlyApproved) {
+        void ensureRealtime()
+        void refreshSummary()
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isAuthenticated, user?.id, controller, ensureRealtime, refreshSummary])
 
   /* ── Push: register the device, and treat an offer push as "look now" ── */
   useEffect(() => {
@@ -227,33 +387,30 @@ export function DriverProvider({ children }) {
 
     const onPush = (notification) => {
       if (!isOfferPush(notification)) return
+      if (!controller.getSnapshot().canStartOrAcceptNewRide) return
       const data = notification.request.content.data
-      // `local` marks the alert this app raised itself for a polled offer.
       if (!data.local) {
         alertedOfferRef.current = data.trip_id ?? alertedOfferRef.current
         setPushDelivers(true)
       }
       void refreshOffers()
     }
-    const received = Notifications.addNotificationReceivedListener(onPush)
-    const tapped = Notifications.addNotificationResponseReceivedListener((r) => onPush(r.notification))
+    const offOfferPush = onOfferPush(onPush)
     return () => {
       offTokenChange()
-      received.remove()
-      tapped.remove()
+      offOfferPush()
     }
-  }, [isAuthenticated, refreshOffers])
+  }, [isAuthenticated, controller, refreshOffers])
 
-  /* ── Offer polling: the fallback, and the only path until push delivers ─ */
+  /* ── Offer polling: gated by fresh approval and no active trip ────────── */
   useEffect(() => {
-    if (!isAuthenticated || !online || trip) {
-      if (!online) setOffer(null)
+    if (!isAuthenticated || !online || trip || !onboardingGate.canStartOrAcceptNewRide) {
+      if (!online || !onboardingGate.canStartOrAcceptNewRide) setOffer(null)
       return undefined
     }
     void refreshOffers()
     const every = pushDelivers ? OFFER_POLL_WITH_PUSH_MS : OFFER_POLL_MS
     const timer = setInterval(() => void refreshOffers(), every)
-    // Timers stop while the app is in the background; catch up on return.
     const appState = AppState.addEventListener('change', (state) => {
       if (state === 'active') void refreshOffers()
     })
@@ -261,11 +418,11 @@ export function DriverProvider({ children }) {
       clearInterval(timer)
       appState.remove()
     }
-  }, [isAuthenticated, online, trip, pushDelivers, refreshOffers])
+  }, [isAuthenticated, online, trip, onboardingGate.canStartOrAcceptNewRide, pushDelivers, refreshOffers])
 
   /* ── Location tracking for the whole drive, screen on or off ──────────── */
   const driving = trip ? DRIVING.includes(trip.status) : false
-  const drivingTripId = driving ? trip.serverId : null
+  const drivingTripId = driving && onboardingGate.canContinueActiveTrip ? trip.serverId : null
   useEffect(() => {
     if (!drivingTripId) return undefined
     let cancelled = false
@@ -308,42 +465,35 @@ export function DriverProvider({ children }) {
     return () => clearTimeout(timer)
   }, [offer])
 
-  /* ── Resume an in-flight trip after a restart ────────────────────────── */
-  useEffect(() => {
-    if (!isAuthenticated) return
-    let cancelled = false
-    ;(async () => {
-      try {
-        const { items } = await api.trips.list({ limit: 5 })
-        const active = items.find((t) =>
-          ['MATCHED', 'HANDSHAKE_PENDING', ...DRIVING].includes(t.status),
-        )
-        if (cancelled) return
-        // The trip ended while the app was closed: the location service from
-        // that drive may still be running, and nothing else would stop it.
-        if (!active || !DRIVING.includes(active.status)) void stopTracking()
-        if (!active) return
-        tripIdRef.current = active.id
-        setTrip(toRequest(active))
-        const conn = await ensureRealtime()
-        conn.subscribe(active.id)
-      } catch {
-        // Nothing to resume.
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [isAuthenticated, ensureRealtime])
+  /* ── Actions (with single-flight duplicate protection & auth/approval gates) ── */
 
-  /* ── Actions ─────────────────────────────────────────────────────────── */
+  const profileComplete = useMemo(() => {
+    if (!summary) return true
+    if (typeof summary.profile_complete === 'boolean') return summary.profile_complete
+    return Boolean(
+      (summary.full_name || user?.full_name || '').trim() &&
+        (summary.vehicle_model || '').trim() &&
+        (summary.vehicle_plate || '').trim(),
+    )
+  }, [summary, user?.full_name])
 
-  /**
-   * Dispatch searches a geospatial index, so going online without a position
-   * would leave this driver undispatchable. The location is sent with it.
-   */
+  const updateDriverProfile = useCallback(
+    async (patch) => {
+      const updated = await api.driver.updateProfile(patch)
+      await Promise.all([refreshSummary(), refreshMe()])
+      return updated
+    },
+    [refreshSummary, refreshMe],
+  )
+
   const goOnline = useCallback(
     async (next) => {
+      if (next && !controller.getSnapshot().canStartOrAcceptNewRide) {
+        throw new Error('Verify your driver approval status before going online.')
+      }
+      if (next && summary && !profileComplete) {
+        throw new Error('Complete your driver profile (name & vehicle details) before going online.')
+      }
       setBusy(true)
       try {
         const at = next ? await currentPosition() : undefined
@@ -351,61 +501,105 @@ export function DriverProvider({ children }) {
         setOnline(next)
         await refreshSummary()
         if (next) await ensureRealtime()
+      } catch (err) {
+        const kind = await controller.handleOperationError(err)
+        if (kind === 'FORBIDDEN' || kind === 'AUTH_INVALID') {
+          setOnline(false)
+          setOffer(null)
+        }
+        throw err
       } finally {
         setBusy(false)
       }
     },
-    [refreshSummary, ensureRealtime],
+    [controller, summary, profileComplete, refreshSummary, ensureRealtime],
   )
 
-  const respondToOffer = useCallback(
-    async (accept) => {
-      const pending = offer
-      if (!pending) return null
+  const respondToOffer = useMemo(
+    () =>
+      createSingleFlight(async (accept) => {
+        const pending = offer
+        if (!pending) return null
+        if (accept && !controller.getSnapshot().canStartOrAcceptNewRide) {
+          setOffer(null)
+          throw new Error('Driver approval must be verified before accepting a trip.')
+        }
+        if (accept && summary && !profileComplete) {
+          throw new Error('Complete your driver profile before accepting a trip.')
+        }
 
-      setBusy(true)
-      try {
-        const accepted = await api.driver.respondToOffer(pending.serverId, accept)
-        setOffer(null)
-        if (!accept) return null
+        setBusy(true)
+        try {
+          const accepted = await api.driver.respondToOffer(pending.serverId, accept)
+          setOffer(null)
+          if (!accept) return null
 
-        tripIdRef.current = accepted.id
-        setTrip({
-          ...toRequest(accepted),
-          customer: pending.customer,
-          pickup: pending.pickup,
-          drop: pending.drop,
-        })
-        const conn = await ensureRealtime()
-        conn.subscribe(accepted.id)
-        return toRequest(accepted)
-      } finally {
-        setBusy(false)
-      }
-    },
-    [offer, ensureRealtime],
+          const adapted = {
+            ...toRequest(accepted),
+            driverId: accepted.driver_id ?? user?.id ?? null,
+            customer: pending.customer,
+            pickup: pending.pickup,
+            drop: pending.drop,
+          }
+          tripIdRef.current = accepted.id
+          setTrip(adapted)
+          await controller.setActiveTrip(adapted)
+          const conn = await ensureRealtime()
+          conn.subscribe(accepted.id)
+          return adapted
+        } catch (err) {
+          await controller.handleOperationError(err)
+          throw err
+        } finally {
+          setBusy(false)
+        }
+      }),
+    [offer, controller, summary, profileComplete, user?.id, ensureRealtime],
   )
 
-  const submitHandshake = useCallback(async (selfieBase64, otp) => {
-    const id = tripIdRef.current
-    if (!id) throw new Error('No active trip')
-    const res = await api.driver.handshake(id, selfieBase64, otp)
-    setTrip(toRequest(await api.trips.get(id)))
-    return res
-  }, [])
+  const submitHandshake = useMemo(
+    () =>
+      createSingleFlight(async (selfieBase64, otp) => {
+        const id = tripIdRef.current
+        if (!id) throw new Error('No active trip')
+        if (!controller.getSnapshot().freshlyApproved) {
+          throw new Error('Driver approval must be verified before starting a trip.')
+        }
+        try {
+          const res = await api.driver.handshake(id, selfieBase64, otp)
+          const fresh = await api.trips.get(id)
+          const adapted = toRequest(fresh, false)
+          setTrip(adapted)
+          await controller.setActiveTrip(adapted, { inspected: false })
+          return res
+        } catch (err) {
+          await controller.handleOperationError(err)
+          throw err
+        }
+      }),
+    [controller],
+  )
 
   /** Only possible before the drive starts; the server refuses it afterwards. */
-  const cancelTrip = useCallback(
-    async (reason) => {
-      const id = tripIdRef.current
-      if (!id) throw new Error('No active trip')
-      await api.trips.cancel(id, reason)
-      tripIdRef.current = null
-      setTrip(null)
-      realtimeRef.current?.unsubscribe(id)
-      await refreshSummary()
-    },
-    [refreshSummary],
+  const cancelTrip = useMemo(
+    () =>
+      createSingleFlight(async (reason) => {
+        const id = tripIdRef.current
+        if (!id) throw new Error('No active trip')
+        try {
+          await api.trips.cancel(id, reason)
+        } catch (err) {
+          await controller.handleOperationError(err)
+          throw err
+        }
+        tripIdRef.current = null
+        setTrip(null)
+        await controller.setActiveTrip(null)
+        void controller.validate()
+        realtimeRef.current?.unsubscribe(id)
+        await refreshSummary()
+      }),
+    [controller, refreshSummary],
   )
 
   const sendSos = useCallback(async () => {
@@ -414,34 +608,64 @@ export function DriverProvider({ children }) {
     return api.trips.sos(id, { silent: true })
   }, [])
 
-  const completeTrip = useCallback(async () => {
-    const id = tripIdRef.current
-    if (!id) throw new Error('No active trip')
-    // Send what is still buffered first: the fare uses the distance travelled.
-    await telemetry.flush(true)
-    const done = await api.driver.complete(id)
-    setTrip(toRequest(done))
-    await refreshSummary()
-    return toRequest(done)
-  }, [refreshSummary])
+  /**
+   * Completes the trip on the server.
+   * Never marks the trip completed locally if the server call fails.
+   * Once confirmed by the server, immediately invalidates the active-trip
+   * continuity exception and triggers fresh onboarding revalidation in parallel.
+   */
+  const completeTrip = useMemo(
+    () =>
+      createSingleFlight(async () => {
+        const id = tripIdRef.current
+        if (!id) throw new Error('No active trip')
+        try {
+          // Send what is still buffered first: the fare uses the distance travelled.
+          await telemetry.flush(true)
+          const done = await api.driver.complete(id)
+          const adapted = toRequest(done, true)
+          setTrip(adapted)
+          setOnline(false)
+          setOffer(null)
+          // Immediately invalidate active-trip continuity and require fresh validation.
+          await controller.setActiveTrip(adapted)
+          void controller.validate()
+          void refreshSummary()
+          return adapted
+        } catch (err) {
+          await controller.handleOperationError(err)
+          throw err
+        }
+      }),
+    [controller, refreshSummary],
+  )
 
   const clearTrip = useCallback(() => {
     tripIdRef.current = null
     setTrip(null)
     setOffer(null)
-  }, [])
+    void controller.setActiveTrip(null)
+    if (!controller.getSnapshot().freshlyApproved && !controller.getSnapshot().inFlight) {
+      void controller.validate()
+    }
+  }, [controller])
 
   const value = useMemo(
     () => ({
       online,
       busy,
       summary,
+      profileComplete,
       offer,
       trip,
       connection,
       tracking,
       queued,
       pushStatus,
+      onboardingGate,
+      reloadOnboarding,
+      updateTripInspected,
+      updateDriverProfile,
       goOnline,
       respondToOffer,
       submitHandshake,
@@ -453,7 +677,8 @@ export function DriverProvider({ children }) {
       refreshOffers,
     }),
     [
-      online, busy, summary, offer, trip, connection, tracking, queued, pushStatus,
+      online, busy, summary, profileComplete, offer, trip, connection, tracking, queued, pushStatus,
+      onboardingGate, reloadOnboarding, updateTripInspected, updateDriverProfile,
       goOnline, respondToOffer, submitHandshake, cancelTrip, sendSos, completeTrip, clearTrip,
       refreshSummary, refreshOffers,
     ],
