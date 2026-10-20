@@ -4,13 +4,15 @@ import { buildApp } from '../../src/app.js'
 import { pool } from '../../src/db/client.js'
 import { seed } from '../../src/db/seed.js'
 import { awaitDispatchIdle } from '../../src/modules/trips/dispatch-tracker.js'
+import { detectArrivals } from '../../src/modules/trips/arrival.js'
 import { expireStaleOffers } from '../../src/modules/trips/sweeper.js'
+import { redis } from '../../src/redis/client.js'
 import { ConsolePushProvider, setPushProvider } from '../../src/providers/push/index.js'
 import { bearer, loginAs } from '../helpers/auth.js'
 import { resetDb } from '../helpers/db.js'
 import { resetRedis } from '../helpers/redis.js'
 import {
-  BOOK_BODY, eventTypes, GACHIBOWLI, makeCustomer, makeOnlineDriver, SELFIE, tripStatus,
+  BOOK_BODY, eventTypes, GACHIBOWLI, HITEC_CITY, makeCustomer, makeOnlineDriver, SELFIE, tripStatus,
   type Actor,
 } from '../helpers/trips.js'
 
@@ -315,6 +317,58 @@ describe('trip lifecycle', () => {
       expect(body.duration_min).toBeGreaterThanOrEqual(1)
     })
 
+    /** Posts a route as a background batch, one fix a minute, ending now. */
+    async function sendRoute(tripId: string, route: { lat: number; lng: number }[]): Promise<void> {
+      // Back-date the start so the whole route falls inside the trip.
+      await pool.query(`UPDATE trips SET started_at = now() - interval '1 hour' WHERE id = $1`, [tripId])
+      const sentAt = Date.now()
+      const points = route.map((coords, i) => ({ timestamp: sentAt - (route.length - 1 - i) * 60_000, coords }))
+      const res = await app.inject({
+        method: 'POST', url: `/v1/trips/${tripId}/telemetry`,
+        headers: bearer(driver.accessToken), payload: { sent_at: sentAt, points },
+      })
+      expect(res.json().accepted).toBe(route.length)
+    }
+
+    it('caps a distance far past the quote and flags the trip for review', async () => {
+      const tripId = await toInTrip()
+      // A 10 km detour north on a ~1.9 km booking.
+      const detour = Array.from({ length: 11 }, (_, i) => ({ lat: HITEC_CITY.lat + i * 0.009, lng: HITEC_CITY.lng }))
+      await sendRoute(tripId, [...detour, GACHIBOWLI])
+      const body = (await complete(tripId)).json()
+
+      expect(body.distance_km).toBeCloseTo(body.estimated_distance_km * 1.5 + 2, 1)
+      const { rows } = await pool.query(`SELECT reason, details FROM anomalies WHERE trip_id = $1`, [tripId])
+      expect(rows).toHaveLength(1)
+      expect(rows[0].reason).toBe('FARE_DISTANCE_REVIEW')
+      expect(rows[0].details.tracked_km).toBeGreaterThan(10)
+    })
+
+    it('does not bill fixes from before the trip started', async () => {
+      const tripId = await toInTrip()
+      await sendRoute(tripId, [HITEC_CITY, { lat: 17.4441, lng: 78.3864 }, GACHIBOWLI])
+      // Move the start past the whole route: none of it was the trip.
+      await pool.query(`UPDATE trips SET started_at = now() + interval '1 second' WHERE id = $1`, [tripId])
+      const body = (await complete(tripId)).json()
+      expect(body.distance_km).toBeCloseTo(body.estimated_distance_km, 2)
+    })
+
+    it('keeps imprecise fixes out of the billed route', async () => {
+      const tripId = await toInTrip()
+      await pool.query(`UPDATE trips SET started_at = now() - interval '1 hour' WHERE id = $1`, [tripId])
+      const sentAt = Date.now()
+      const points = [HITEC_CITY, { lat: 17.4441, lng: 78.3864 }, GACHIBOWLI].map((c, i) => ({
+        timestamp: sentAt - (2 - i) * 60_000,
+        coords: { ...c, accuracy: 120 },
+      }))
+      await app.inject({
+        method: 'POST', url: `/v1/trips/${tripId}/telemetry`,
+        headers: bearer(driver.accessToken), payload: { sent_at: sentAt, points },
+      })
+      const body = (await complete(tripId)).json()
+      expect(body.distance_km).toBeCloseTo(body.estimated_distance_km, 2)
+    })
+
     it('falls back to the booking estimate when no telemetry was recorded', async () => {
       const tripId = await toInTrip()
       const body = (await complete(tripId)).json()
@@ -422,6 +476,41 @@ describe('trip lifecycle', () => {
         await bookAndDispatch()
         expect(toCustomer()).toEqual(['NO_DRIVERS_FOUND'])
       })
+
+      it('marks the driver arrived once, when they reach the pickup, and tells the customer', async () => {
+        const tripId = await bookAndDispatch()
+        await respond(tripId, true)
+        const lastFix = (lat: number, lng: number) =>
+          redis.set(`trip:{${tripId}}:last:driver`, JSON.stringify({ lat, lng, at: Date.now() }))
+
+        // About 2 km away: not arrived.
+        await lastFix(HITEC_CITY.lat + 0.02, HITEC_CITY.lng)
+        expect(await detectArrivals()).toBe(0)
+
+        await lastFix(HITEC_CITY.lat + 0.0005, HITEC_CITY.lng) // ~55 m
+        expect(await detectArrivals()).toBe(1)
+        expect(await detectArrivals()).toBe(0)
+        expect(toCustomer()).toEqual(['DRIVER_MATCHED', 'DRIVER_ARRIVED'])
+
+        const trip = (await app.inject({ method: 'GET', url: `/v1/trips/${tripId}`, headers: bearer(customer.accessToken) })).json()
+        expect(Date.parse(trip.arrived_at)).not.toBeNaN()
+        expect(trip.started_at).toBeNull()
+      })
+    })
+
+    it('returns when the trip started, for the driver app timer', async () => {
+      const tripId = await toInTrip()
+      const trip = (await app.inject({ method: 'GET', url: `/v1/trips/${tripId}`, headers: bearer(driver.accessToken) })).json()
+      expect(Math.abs(Date.now() - Date.parse(trip.started_at))).toBeLessThan(60_000)
+    })
+
+    it('refuses to reissue the pickup code once the trip is under way', async () => {
+      const tripId = await toInTrip()
+      const res = await app.inject({
+        method: 'POST', url: `/v1/trips/${tripId}/handshake-otp`, headers: bearer(customer.accessToken),
+      })
+      expect(res.statusCode).toBe(409)
+      expect(res.json().error.code).toBe('HANDSHAKE_NOT_PENDING')
     })
 
     it('refuses to cancel once the trip is under way', async () => {

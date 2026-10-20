@@ -5,6 +5,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { api } from '../../lib/apiClient.js'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
+import { useOpsFeed } from '../../components/admin/useOpsFeed.js'
 import { LevelBadge, StatusPill } from '../../components/admin/Indicators.jsx'
 import { SectionCard } from '../../components/app/Primitives.jsx'
 import DriverActivity from '../../components/admin/DriverActivity.jsx'
@@ -30,13 +31,14 @@ const LEGEND = [
 ]
 
 /**
- * Every online driver on a real map, refreshed every 4s.
- *
- * Polls rather than streams for the same reason the live board does: the
- * WebSocket gateway only serves the two parties on a trip.
+ * Every online driver on a real map. Positions arrive over the console feed
+ * every 3 s; while the feed is down the map polls every 4 s instead.
  */
 export default function LiveMap() {
-  const { data, error } = useAdminPoll(() => api.admin.liveDrivers(), 4000)
+  const [pushed, setPushed] = useState(null)
+  const live = useOpsFeed('map', (frame) => setPushed(frame.drivers))
+  const { data: polled, error } = useAdminPoll(() => api.admin.liveDrivers(), live ? 60_000 : 4000)
+  const data = live && pushed ? pushed : polled
   const el = useRef(null)
   const map = useRef(null)
   const layer = useRef(null)

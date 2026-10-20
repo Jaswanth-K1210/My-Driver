@@ -25,6 +25,8 @@ const b64url = (input: Buffer | string): string =>
  * POST /v1/me/devices. A token FCM rejects as UNREGISTERED is deleted, because
  * an app that was uninstalled will never come back on that token.
  */
+const SEND_TIMEOUT_MS = 5_000
+
 export class FcmPushProvider implements PushProvider {
   private readonly account: ServiceAccount
   private token: { value: string; expiresAt: number } | null = null
@@ -67,6 +69,7 @@ export class FcmPushProvider implements PushProvider {
 
     const res = await fetch(GOOGLE_TOKEN_URL, {
       method: 'POST',
+      signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
@@ -95,6 +98,9 @@ export class FcmPushProvider implements PushProvider {
     for (const { token } of rows) {
       const res = await fetch(url, {
         method: 'POST',
+        // Pushes run inside trip transitions (broadcastStateChange): a hung
+        // FCM call must not hang the driver's accept or the trip's end.
+        signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
         headers: {
           authorization: `Bearer ${accessToken}`,
           'content-type': 'application/json',

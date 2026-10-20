@@ -74,6 +74,15 @@ function Flow({ onLogout }) {
     setInspected(trip?.inspected ?? null)
   }, [tripId, trip?.inspected])
 
+  // refreshSummary swallows failures; without this a failed first load leaves
+  // the loading screen up for good.
+  const needsSummary = !trip && !summary && gate.freshlyApproved
+  useEffect(() => {
+    if (!needsSummary) return undefined
+    const timer = setInterval(() => void refreshSummary(), 5000)
+    return () => clearInterval(timer)
+  }, [needsSummary, refreshSummary])
+
   useEffect(() => {
     if (!tripId) {
       setInspected(null)

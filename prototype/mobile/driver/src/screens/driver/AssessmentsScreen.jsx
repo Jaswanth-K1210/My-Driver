@@ -18,6 +18,7 @@ const GROUPS = [
 
 const STATE = {
   NOT_STARTED: { label: 'Not taken', tone: 'neutral', icon: CircleDashed, color: colors.textMuted },
+  SCHEDULED: { label: 'Scheduled', tone: 'neutral', icon: Clock, color: colors.textMuted },
   IN_PROGRESS: { label: 'In progress', tone: 'neutral', icon: Clock, color: colors.textMuted },
   AWAITING_RESULT: { label: 'Awaiting result', tone: 'neutral', icon: Clock, color: colors.textMuted },
   PASSED: { label: 'Passed', tone: 'safe', icon: Check, color: colors.graphite },
@@ -30,6 +31,7 @@ const when = (iso) =>
 function detail(a) {
   if (a.state === 'PASSED') return a.last_score != null ? `Score ${a.last_score} · pass mark ${a.passing_score}` : 'Passed'
   if (a.state === 'AWAITING_RESULT') return `Submitted ${when(a.last_submitted_at)}. An examiner is grading it.`
+  if (a.state === 'SCHEDULED') return `Your practical test is on ${when(a.scheduled_at)}. Pass mark ${a.passing_score}.`
   if (a.state === 'IN_PROGRESS') return 'Started but not submitted yet.'
   if (a.state === 'FAILED') {
     const score = a.last_score != null ? `Score ${a.last_score}, pass mark ${a.passing_score}. ` : ''

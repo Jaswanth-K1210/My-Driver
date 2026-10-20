@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, Activity, Car, Radio, Timer } from 'lucide-react'
 import { api } from '../../lib/apiClient.js'
@@ -5,6 +6,7 @@ import PageHeader from '../../components/admin/PageHeader.jsx'
 import { reasonLabel } from '../../components/admin/format.js'
 import { StatCard, SectionCard } from '../../components/app/Primitives.jsx'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
+import { useOpsFeed } from '../../components/admin/useOpsFeed.js'
 import { Empty, LevelBadge, relative, SlaTimer } from '../../components/admin/Indicators.jsx'
 import { cn } from '../../lib/utils.js'
 
@@ -17,22 +19,38 @@ import { cn } from '../../lib/utils.js'
  * that needs coordinates in the API first.
  */
 const BOARD_POLL_MS = 10_000
+// With the live feed up, polling is only a backstop for a missed frame, and
+// for the SLA-breached count, which changes with time rather than an event.
+const BOARD_BACKSTOP_MS = 30_000
 
 export default function Board() {
   const navigate = useNavigate()
 
   // Agents work to a contact SLA measured in minutes, so 10 seconds is fresh
-  // enough and keeps three polls per open tab from loading the API.
-  const { data: stats } = useAdminPoll(() => api.admin.stats(), BOARD_POLL_MS)
-  const { data: queue } = useAdminPoll(() => api.admin.escalations(false), BOARD_POLL_MS)
-  const { data: trips, loading } = useAdminPoll(() => api.admin.activeTrips(), BOARD_POLL_MS)
+  // enough when the feed is down and keeps three polls per tab from loading the API.
+  const burst = useRef(null)
+  const refreshers = useRef([])
+  const live = useOpsFeed('board', () => {
+    // One trip change sends a few frames in a row; refetch once for the burst.
+    clearTimeout(burst.current)
+    burst.current = setTimeout(() => {
+      for (const refresh of refreshers.current) void refresh()
+    }, 300)
+  })
+  const every = live ? BOARD_BACKSTOP_MS : BOARD_POLL_MS
+  const { data: stats, refresh: refreshStats } = useAdminPoll(() => api.admin.stats(), every)
+  const { data: queue, refresh: refreshQueue } = useAdminPoll(() => api.admin.escalations(false), every)
+  const { data: trips, loading, refresh: refreshTrips } = useAdminPoll(() => api.admin.activeTrips(), every)
+  useEffect(() => {
+    refreshers.current = [refreshStats, refreshQueue, refreshTrips]
+  })
 
   const items = queue?.items ?? []
   const active = trips ?? []
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Live board" subtitle="Safety Desk · refreshes every 10 seconds">
+      <PageHeader title="Live board" subtitle={`Safety Desk · ${live ? 'live' : 'refreshes every 10 seconds'}`}>
         <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
           <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
           Monitoring

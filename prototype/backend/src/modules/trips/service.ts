@@ -1,11 +1,12 @@
 import { randomInt } from 'node:crypto'
 import type { PoolClient } from 'pg'
 import { pool } from '../../db/client.js'
-import { badRequest, conflict, forbidden, notFound } from '../../lib/errors.js'
-import { estimateRoadDistanceKm, polylineDistanceKm, type LatLng } from '../../lib/geo.js'
+import { AppError, badRequest, conflict, forbidden, notFound } from '../../lib/errors.js'
+import { estimateRoadDistanceKm, trackDistanceKm, type LatLng } from '../../lib/geo.js'
 import { peppered } from '../../lib/hash.js'
 import { getTelemetryWriter, readTripTrack } from '../../telemetry/batch-writer.js'
 import type { Role } from '../auth/otp.js'
+import { recordAnomaly } from '../escalation/service.js'
 import { revokeLinksForEndedTrip } from '../guardian/service.js'
 import { captureForTrip, releaseForTrip } from '../payments/service.js'
 import { broadcastStateChange } from './broadcast.js'
@@ -26,6 +27,9 @@ import { isNightPickupIST } from '../../lib/time.js'
 export const HANDSHAKE_OTP_DIGITS = 4
 export const HANDSHAKE_MAX_ATTEMPTS = 5
 export const MIN_TRACKED_DISTANCE_KM = 0.5
+/** Billed distance ceiling: estimate × this + the slack below. */
+export const MAX_DISTANCE_OVER_ESTIMATE = 1.5
+export const MAX_DISTANCE_SLACK_KM = 2
 
 export type BookingType = 'POINT_TO_POINT' | 'HOURLY'
 
@@ -61,6 +65,9 @@ export type TripView = {
   night_fee?: number | null
   driver_earnings: number | null
   requested_at: string
+  // When the driver reached the pickup, and when the handshake started the trip.
+  arrived_at: string | null
+  started_at: string | null
   completed_at: string | null
   driver: TripDriver | null
   stops?: any[] | null
@@ -92,7 +99,7 @@ const TRIP_SELECT = `
     t.platform_fee::float8          AS platform_fee,
     t.night_fee::float8             AS night_fee,
     t.driver_earnings::float8       AS driver_earnings,
-    t.requested_at, t.completed_at,
+    t.requested_at, t.arrived_at, t.started_at, t.completed_at,
     t.stops, t.return_stops, t.vehicle_specs, t.vision_mode, t.flight_number, t.requirement, t.trip_type,
     cu.full_name          AS customer_name,
     du.full_name          AS driver_name,
@@ -339,6 +346,10 @@ export async function issueHandshakeOtpForCustomer(
     [tripId, customerId],
   )
   if (!rows[0]) throw notFound('TRIP_NOT_FOUND', 'No such trip')
+  // Reissuing also resets the driver's attempt count, so only before pickup.
+  if (!['MATCHED', 'HANDSHAKE_PENDING'].includes(rows[0].status)) {
+    throw conflict('HANDSHAKE_NOT_PENDING', `A trip in ${rows[0].status} has no pickup code`)
+  }
 
   // The stored value is a one-way hash, so a fresh code is minted and swapped in.
   const otp = generateHandshakeOtp()
@@ -374,16 +385,22 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
 
   // Flush buffered telemetry first, or the final fixes are missing from the
   // distance calculation and the customer is under-charged.
+  // ponytail: flushes this process only; with several API instances the
+  // socket's instance may still hold the last fixes. Production runs one.
   await getTelemetryWriter().flush()
 
-  const track = await readTripTrack(tripId)
-  const trackedKm = polylineDistanceKm(track)
+  const startedAt = trip.started_at ?? trip.requested_at
+  const track = await readTripTrack(tripId, startedAt)
+  const { km: trackedKm, rejected: rejectedFixes } = trackDistanceKm(track)
   const estimatedKm = Number(trip.estimated_distance_km ?? 0)
   // Ignore sub-500m GPS jitter from stationary devices so test/short-GPS trips
   // do not overwrite the quoted trip distance and fare with ~0 km.
-  const distanceKm = trackedKm >= MIN_TRACKED_DISTANCE_KM ? trackedKm : estimatedKm
-
-  const startedAt = trip.started_at ?? trip.requested_at
+  let distanceKm = trackedKm >= MIN_TRACKED_DISTANCE_KM ? trackedKm : estimatedKm
+  // Far past the quote is a detour or bad GPS, and the customer cannot tell
+  // which: bill up to the ceiling and send the trip to the Safety Desk.
+  const ceilingKm = estimatedKm * MAX_DISTANCE_OVER_ESTIMATE + MAX_DISTANCE_SLACK_KM
+  const overCeiling = trip.booking_type === 'POINT_TO_POINT' && estimatedKm > 0 && distanceKm > ceilingKm
+  if (overCeiling) distanceKm = ceilingKm
   const durationMin = Math.max(1, Math.round((Date.now() - startedAt.getTime()) / 60_000))
 
   const validOutboundStops = extractValidStopCoords(trip.stops)
@@ -428,6 +445,8 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
       distance_km: distanceKm,
       duration_min: durationMin,
       fare: fare.total,
+      tracked_km: trackedKm,
+      rejected_fixes: rejectedFixes,
     })
 
     // Night Shield: a trip ending inside the 22:00-05:00 window earns a
@@ -452,6 +471,15 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
   }
 
   await restoreAvailabilityAfterTrip(driverId)
+  if (overCeiling) {
+    await recordAnomaly({
+      tripId,
+      reason: 'FARE_DISTANCE_REVIEW',
+      level: 'L1',
+      windowStart: startedAt,
+      details: { tracked_km: trackedKm, estimated_km: estimatedKm, billed_km: distanceKm },
+    }).catch((err) => console.error('fare review flag failed', tripId, err))
+  }
   await revokeLinksForEndedTrip(tripId).catch(() => undefined)
   // After commit and never fatal: the trip did happen. A failed capture
   // leaves the payment AUTHORIZED and visible to Finance for a retry.
@@ -461,6 +489,25 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
 }
 
 export async function cancelTrip(
+  tripId: string,
+  userId: string,
+  role: Role,
+  reason: string,
+): Promise<TripView> {
+  // Dispatch moves a trip on in the background (REQUESTED -> MATCHED). A cancel
+  // that read the old status loses the compare-and-swap; read again and retry
+  // once instead of failing a cancel that is still allowed.
+  try {
+    return await cancelTripOnce(tripId, userId, role, reason)
+  } catch (err) {
+    if (err instanceof AppError && err.code === 'TRIP_STATE_CHANGED') {
+      return cancelTripOnce(tripId, userId, role, reason)
+    }
+    throw err
+  }
+}
+
+async function cancelTripOnce(
   tripId: string,
   userId: string,
   role: Role,

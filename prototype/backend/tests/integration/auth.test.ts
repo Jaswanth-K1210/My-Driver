@@ -138,6 +138,21 @@ describe('authentication', () => {
       expect((await pool.query('SELECT attempts FROM otp_challenges')).rows[0].attempts).toBe(1)
     })
 
+    it('caps attempts even when guesses arrive in parallel', async () => {
+      const code = await sendOtp()
+      const wrong = code === '000000' ? '111111' : '000000'
+      const results = await Promise.all(
+        Array.from({ length: 20 }, () => verify({ phone_number: '+919876543210', otp: wrong, role: 'CUSTOMER' })),
+      )
+      expect(results.every((r) => r.statusCode === 401)).toBe(true)
+      // Only five guesses were ever compared against the code.
+      expect((await pool.query('SELECT attempts FROM otp_challenges')).rows[0].attempts).toBe(5)
+
+      // The right code no longer works: the challenge is spent.
+      const res = await verify({ phone_number: '+919876543210', otp: code, role: 'CUSTOMER' })
+      expect(res.statusCode).toBe(401)
+    })
+
     it('locks the challenge after 5 failed attempts', async () => {
       const code = await sendOtp()
       for (let i = 0; i < 5; i++) {
@@ -205,6 +220,18 @@ describe('authentication', () => {
         method: 'POST', url: '/v1/auth/refresh', payload: { refresh_token: second.refresh_token },
       })
       expect(after.statusCode).toBe(401)
+    })
+
+    it('lets only one of two simultaneous refreshes of the same token through', async () => {
+      const { refreshToken } = await loginAs(app, '+919876543210', 'CUSTOMER')
+      const refresh = () => app.inject({
+        method: 'POST', url: '/v1/auth/refresh', payload: { refresh_token: refreshToken },
+      })
+      const results = await Promise.all([refresh(), refresh()])
+      expect(results.map((r) => r.statusCode).sort()).toEqual([200, 401])
+      // No forked chain: at most one live token is left.
+      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM refresh_tokens WHERE revoked_at IS NULL`)
+      expect(rows[0].n).toBeLessThanOrEqual(1)
     })
 
     it('logout revokes the refresh token, and is a no-op for an unknown one', async () => {

@@ -7,6 +7,7 @@ import { getSmsProvider } from '../../providers/sms/index.js'
 import { getHub } from '../../realtime/hub.js'
 import { redis } from '../../redis/client.js'
 import type { Role } from '../auth/otp.js'
+import { opsChanged } from '../../realtime/ops-feed.js'
 import { invalidateTripCache } from '../trips/broadcast.js'
 import {
   assertPromotion,
@@ -151,6 +152,7 @@ export async function raiseEscalation(input: {
     await client.query('COMMIT')
     // The trip's status may have changed above; drop the gateway's cached copy.
     await invalidateTripCache(input.tripId).catch(() => undefined)
+    await opsChanged()
     counter(`mydriver_escalation_${escalation.level.toLowerCase()}_total`)
 
     // Side effects run after commit: an SMS cannot be rolled back.
@@ -271,6 +273,7 @@ export async function acknowledgeEscalation(
     }
     await recordEvent(client, id, 'ACKNOWLEDGED', agentId, role, {})
     await client.query('COMMIT')
+    await opsChanged()
 
     // Met or missed, the SLA outcome is recorded at the moment of contact.
     const met = escalation.sla_deadline
@@ -322,6 +325,7 @@ export async function promoteEscalation(
     await client.query('COMMIT')
     // The trip's status may have changed above; drop the gateway's cached copy.
     await invalidateTripCache(escalation.trip_id).catch(() => undefined)
+    await opsChanged()
 
     await announce(escalation).catch(() => undefined)
     await notifyGuardians(escalation).catch(() => undefined)
@@ -365,6 +369,7 @@ export async function resolveEscalation(
     await client.query('COMMIT')
     // The trip's status may have changed above; drop the gateway's cached copy.
     await invalidateTripCache(escalation.trip_id).catch(() => undefined)
+    await opsChanged()
     return escalation
   } catch (err) {
     await client.query('ROLLBACK')

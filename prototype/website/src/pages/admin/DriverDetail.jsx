@@ -9,6 +9,7 @@ import { Empty, relative, StatusPill } from '../../components/admin/Indicators.j
 import { hasRole, OPS_ROLES } from '../../components/admin/RequireRole.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { cn } from '../../lib/utils.js'
+import { dateTime } from '../../components/admin/format.js'
 import DriverActivity from '../../components/admin/DriverActivity.jsx'
 
 const BLOCKER_TEXT = {
@@ -24,15 +25,22 @@ export default function DriverDetail() {
   const { user } = useAuth()
   const [data, setData] = useState(null)
   const [badges, setBadges] = useState([])
+  const [practicals, setPracticals] = useState([])
+  const [practical, setPractical] = useState({ code: '', at: '' })
   const [busy, setBusy] = useState(false)
 
   const canAct = hasRole(user, OPS_ROLES)
 
   const load = useCallback(async () => {
     try {
-      const [driver, catalogue] = await Promise.all([api.admin.driver(id), api.admin.badges()])
+      const [driver, catalogue, tests] = await Promise.all([
+        api.admin.driver(id),
+        api.admin.badges(),
+        api.admin.assessments(),
+      ])
       setData(driver)
       setBadges(catalogue.items ?? [])
+      setPracticals((tests.items ?? []).filter((t) => t.kind === 'PRACTICAL'))
     } catch (err) {
       toast(err instanceof ApiError ? err.message : 'Could not load driver', 'error')
     }
@@ -257,6 +265,7 @@ export default function DriverDetail() {
                   <p className="mt-0.5 text-xs text-slate-500">
                     {attempt.kind} · attempt {attempt.attempt_no} · pass mark {attempt.passing_score}
                     {attempt.submitted_at && ` · ${relative(attempt.submitted_at)}`}
+                    {!attempt.submitted_at && attempt.scheduled_at && ` · scheduled for ${dateTime(attempt.scheduled_at)}`}
                   </p>
                 </div>
                 <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-black tabular-nums text-slate-700">
@@ -268,6 +277,50 @@ export default function DriverDetail() {
               </li>
             ))}
           </ul>
+        )}
+        {canAct && practicals.length > 0 && (
+          <form
+            className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const code = practical.code || practicals[0].code
+              void run('Practical test scheduled', () =>
+                api.admin.schedulePractical(id, code, new Date(practical.at).toISOString()),
+              )
+            }}
+          >
+            <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Practical test
+              <select
+                value={practical.code || practicals[0].code}
+                onChange={(e) => setPractical((p) => ({ ...p, code: e.target.value }))}
+                className="mt-1 block rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 outline-none focus:border-slate-400"
+              >
+                {practicals.map((t) => (
+                  <option key={t.code} value={t.code}>
+                    {t.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Date and time
+              <input
+                type="datetime-local"
+                required
+                value={practical.at}
+                onChange={(e) => setPractical((p) => ({ ...p, at: e.target.value }))}
+                className="mt-1 block rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 outline-none focus:border-slate-400"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={busy || !practical.at}
+              className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              Schedule
+            </button>
+          </form>
         )}
       </SectionCard>
 

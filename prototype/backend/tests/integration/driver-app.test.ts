@@ -7,6 +7,7 @@ import { awaitDispatchIdle } from '../../src/modules/trips/dispatch-tracker.js'
 import { bearer } from '../helpers/auth.js'
 import { resetDb } from '../helpers/db.js'
 import { resetRedis } from '../helpers/redis.js'
+import { loginAsRole } from '../helpers/safety.js'
 import { BOOK_BODY, makeCustomer, makeOnlineDriver, SELFIE, type Actor } from '../helpers/trips.js'
 
 describe('driver app: earnings, assessments, profile', () => {
@@ -85,6 +86,30 @@ describe('driver app: earnings, assessments, profile', () => {
   })
 
   describe('assessments', () => {
+    it('shows the practical test date Ops sets, moves it, and grades it', async () => {
+      const ops = await loginAsRole(app, '+919822200099', 'OPS_MANAGER')
+      const schedule = (when: string) =>
+        post(`/v1/admin/drivers/${driver.userId}/practical`, ops as Actor, { code: 'MD-PRACTICAL-V1', scheduled_at: when })
+      const practical = async () =>
+        (await get('/v1/driver/assessments')).json().find((a: { code: string }) => a.code === 'MD-PRACTICAL-V1')
+
+      expect((await schedule('2026-11-02T04:30:00.000Z')).statusCode).toBe(200)
+      expect((await schedule('2026-11-03T04:30:00.000Z')).statusCode).toBe(200)
+      const p = await practical()
+      expect(p).toMatchObject({ state: 'SCHEDULED', scheduled_at: '2026-11-03T04:30:00.000Z', attempts_used: 1 })
+
+      // A written test cannot be scheduled.
+      const bad = await post(`/v1/admin/drivers/${driver.userId}/practical`, ops as Actor, { code: 'MD-ROAD-RULES-V1', scheduled_at: '2026-11-03T04:30:00.000Z' })
+      expect(bad.statusCode).toBe(404)
+
+      const queue = (await get('/v1/admin/attempts/pending', ops as Actor)).json().items
+      const attempt = queue.find((a: { code: string }) => a.code === 'MD-PRACTICAL-V1')
+      expect(attempt).toBeTruthy()
+      expect((await post(`/v1/admin/attempts/${attempt.id}/grade`, ops as Actor, { score: 90 })).statusCode).toBe(200)
+      expect(await practical()).toMatchObject({ state: 'PASSED', scheduled_at: null })
+      expect((await schedule('2026-11-04T04:30:00.000Z')).statusCode).toBe(409)
+    })
+
     it('lists every active test as not started, without its questions', async () => {
       const res = await get('/v1/driver/assessments')
       expect(res.statusCode).toBe(200)

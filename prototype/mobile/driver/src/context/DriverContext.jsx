@@ -92,6 +92,8 @@ function toRequest(trip, prevInspected = undefined) {
     ceiling: trip.speed_ceiling_kmh ?? trip.ceiling,
     distanceKm: Number(trip.distance_km ?? trip.estimated_distance_km ?? trip.distanceKm ?? 0),
     durationMin: trip.duration_min ?? trip.durationMin ?? null,
+    // When the handshake started the trip (server clock), for the drive timer.
+    startedAt: trip.started_at ? Date.parse(trip.started_at) : (trip.startedAt ?? null),
     fare: Math.round(trip.fare_amount ?? trip.estimated_fare ?? trip.fare ?? 0),
     platformFee: trip.platform_fee ?? trip.platformFee ?? null,
     nightFee: trip.night_fee ?? trip.nightFee ?? null,
@@ -128,6 +130,9 @@ export function DriverProvider({ children }) {
 
   const realtimeRef = useRef(null)
   const tripIdRef = useRef(null)
+  // Socket handlers are bound once, so they read the latest trip from here.
+  const tripRef = useRef(null)
+  tripRef.current = trip
   const alertedOfferRef = useRef(null)
 
   const controllerRef = useRef(null)
@@ -251,7 +256,7 @@ export function DriverProvider({ children }) {
     }
     if (tripIdRef.current !== id) return
     if (next && MINE.includes(next.status) && next.driver_id === user?.id) {
-      const adapted = toRequest(next, trip?.inspected)
+      const adapted = toRequest(next, tripRef.current?.inspected)
       setTrip(adapted)
       const prevGate = controller.getSnapshot()
       await controller.setActiveTrip(adapted)
@@ -271,7 +276,7 @@ export function DriverProvider({ children }) {
       5000,
     )
     void refreshSummary()
-  }, [toast, refreshSummary, controller, user?.id, trip?.inspected])
+  }, [toast, refreshSummary, controller, user?.id])
 
   /* ── Socket: offers and trip state ───────────────────────────────────── */
   const ensureRealtime = useCallback(async () => {
@@ -622,15 +627,21 @@ export function DriverProvider({ children }) {
         try {
           // Send what is still buffered first: the fare uses the distance travelled.
           await telemetry.flush(true)
+          // Once the trip is closed the server refuses the backlog, so it would
+          // never reach the fare. The driver retries on a better connection.
+          if (telemetry.queuedCount() > 0) {
+            throw new Error('Some of the route has not uploaded yet. Check your connection and try again.')
+          }
           const done = await api.driver.complete(id)
           const adapted = toRequest(done, true)
           setTrip(adapted)
-          setOnline(false)
           setOffer(null)
           // Immediately invalidate active-trip continuity and require fresh validation.
+          // The server puts the driver back ONLINE; stay online here too unless the
+          // driver turns it off. The summary read waits for revalidation, else the
+          // gate is still REVALIDATION_REQUIRED and it would flip the toggle off.
           await controller.setActiveTrip(adapted)
-          void controller.validate()
-          void refreshSummary()
+          void controller.validate().then(() => refreshSummary())
           return adapted
         } catch (err) {
           await controller.handleOperationError(err)

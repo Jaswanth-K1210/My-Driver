@@ -31,10 +31,20 @@ export function setSensorSource(fn) {
 
 function handle(location) {
   const { coords, timestamp } = location
-  const kmh = Math.max(0, Math.round((coords.speed ?? 0) * 3.6))
+  // iOS reports -1 (Android null) when it does not know. Unknown is sent as
+  // absent, not 0: a 0 speed reads as "stopped" and a 0 heading as "north".
+  const known = (v) => v != null && v >= 0
   const point = {
     timestamp: Math.round(timestamp ?? Date.now()),
-    coords: { lat: coords.latitude, lng: coords.longitude, speed: kmh, heading: coords.heading ?? 0 },
+    coords: {
+      lat: coords.latitude,
+      lng: coords.longitude,
+      ...(known(coords.speed) ? { speed: Math.round(coords.speed * 3.6) } : {}),
+      ...(known(coords.heading) ? { heading: coords.heading } : {}),
+      // The server keeps imprecise and fake (Android mock-location) fixes out of the fare.
+      ...(coords.accuracy != null ? { accuracy: Math.round(coords.accuracy) } : {}),
+      ...(location.mocked ? { mocked: true } : {}),
+    },
     sensors: sensorSource?.(),
   }
   for (const l of fixListeners) l(point)

@@ -51,36 +51,6 @@ async function reverseGeocode(lat, lng) {
   }
 }
 
-async function searchNominatim(q) {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=in&limit=5&q=${encodeURIComponent(q)}`,
-      { headers: { Accept: 'application/json' } },
-    )
-    if (!res.ok) return []
-    const rows = await res.json()
-    if (!Array.isArray(rows)) return []
-    return rows
-      .map((r) => {
-        const lat = Number(r.lat)
-        const lng = Number(r.lon)
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
-        const parts = String(r.display_name || '').split(',').map((s) => s.trim()).filter(Boolean)
-        const name = r.name || parts.slice(0, 2).join(', ') || q
-        return {
-          id: `osm_${r.place_id}`,
-          name,
-          address: r.display_name || name,
-          lat,
-          lng,
-        }
-      })
-      .filter(Boolean)
-  } catch {
-    return []
-  }
-}
-
 // Cache the customer's detected GPS place across re-renders so we only prompt once automatically.
 let cachedCustomerGpsPlace = null
 let autoDetectAttempted = false
@@ -88,8 +58,8 @@ let autoDetectAttempted = false
 /**
  * Location field for the booking form. Closed, it shows the chosen place.
  * Open, it lists the suggested places, and typing two or more characters
- * searches the backend's cached place proxy + OpenStreetMap fallback, plus
- * allows selecting the customer's live GPS location or a custom location name.
+ * searches the backend's cached place proxy, plus allows selecting the
+ * customer's live GPS location or typed-in coordinates.
  */
 export default function PlacePicker({
   value,
@@ -169,8 +139,11 @@ export default function PlacePicker({
   )
 
   // Automatically use customer's current GPS location once on initial mount when enabled
+  // Once per mount: re-running on `value` would undo a deliberate pick of the default preset.
+  const autoAppliedRef = useRef(false)
   useEffect(() => {
-    if (!autoDetectCurrentLocation) return
+    if (!autoDetectCurrentLocation || autoAppliedRef.current) return
+    autoAppliedRef.current = true
     if (cachedCustomerGpsPlace) {
       if (value === 'start_hitec') {
         onChange(registerPlace(cachedCustomerGpsPlace))
@@ -184,7 +157,7 @@ export default function PlacePicker({
     }
   }, [autoDetectCurrentLocation, handleUseCurrentLocation, onChange, value])
 
-  // Debounced search: combines local preset matches, backend search, and OpenStreetMap geocoding.
+  // Debounced search: local preset matches plus the backend's place search.
   useEffect(() => {
     if (!searching) {
       setResults(null)
@@ -202,20 +175,17 @@ export default function PlacePicker({
             o.address?.toLowerCase().includes(lower),
         )
 
-        const [backendFound, osmFound] = await Promise.all([
-          isAuthenticated
-            ? api.locations
-                .search(trimmed, near)
-                .then((r) => r?.results ?? [])
-                .catch(() => [])
-            : Promise.resolve([]),
-          searchNominatim(trimmed),
-        ])
+        const backendFound = isAuthenticated
+          ? await api.locations
+              .search(trimmed, near)
+              .then((r) => r?.results ?? [])
+              .catch(() => [])
+          : []
 
         if (!cancelled) {
           const seen = new Set()
           const merged = []
-          for (const item of [...localMatches, ...backendFound, ...osmFound]) {
+          for (const item of [...localMatches, ...backendFound]) {
             if (!item || seen.has(item.id)) continue
             seen.add(item.id)
             merged.push(item)
@@ -245,36 +215,19 @@ export default function PlacePicker({
     return () => document.removeEventListener('mousedown', onDown)
   }, [open])
 
-  // Build custom location fallback so user can always pick whatever they typed
+  // Typed coordinates are the only free-text entry: a typed name has no
+  // coordinates of its own, and booking it at the pickup point collapses the fare.
   const parsedCoords = parseLatLngQuery(trimmed)
-  const fallbackAnchor =
-    cachedCustomerGpsPlace ??
-    near ??
-    selected ??
-    options[0] ?? { lat: 17.4504, lng: 78.3808 }
-
-  const customPlaceOption =
-    searching
-      ? parsedCoords
-        ? {
-            id: `custom_coords_${parsedCoords.lat}_${parsedCoords.lng}`,
-            name: `GPS Coordinates (${parsedCoords.lat.toFixed(4)}, ${parsedCoords.lng.toFixed(4)})`,
-            address: `${parsedCoords.lat}, ${parsedCoords.lng}`,
-            lat: parsedCoords.lat,
-            lng: parsedCoords.lng,
-            isCustom: true,
-          }
-        : {
-            id: `custom_${trimmed.toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
-            name: trimmed,
-            address: cachedCustomerGpsPlace
-              ? `${trimmed} (near your current location)`
-              : `${trimmed} (Custom location)`,
-            lat: fallbackAnchor.lat,
-            lng: fallbackAnchor.lng,
-            isCustom: true,
-          }
-      : null
+  const customPlaceOption = searching && parsedCoords
+    ? {
+        id: `custom_coords_${parsedCoords.lat}_${parsedCoords.lng}`,
+        name: `GPS Coordinates (${parsedCoords.lat.toFixed(4)}, ${parsedCoords.lng.toFixed(4)})`,
+        address: `${parsedCoords.lat}, ${parsedCoords.lng}`,
+        lat: parsedCoords.lat,
+        lng: parsedCoords.lng,
+        isCustom: true,
+      }
+    : null
 
   const baseItems = searching ? (results ?? []) : options
   const items =
@@ -398,10 +351,13 @@ export default function PlacePicker({
           )}
 
           <p className="px-2 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
-            {searching ? 'Search & custom locations' : 'Suggested'}
+            {searching ? 'Search results' : 'Suggested'}
           </p>
           <ul id={listId} role="listbox" className="max-h-64 overflow-y-auto">
             {error && <li className="px-3 py-2.5 text-xs font-medium text-brand-600">{error}</li>}
+            {searching && !loading && results && items.length === 0 && (
+              <li className="px-3 py-2.5 text-xs text-slate-500">No places found. Try another name or paste lat,lng.</li>
+            )}
             {items.map((place, i) => (
               <li
                 key={place.id}

@@ -3,6 +3,7 @@ import {
   CO_LOCATION_THRESHOLD_M,
   DEVIATION_GRACE_SECONDS,
   evaluate,
+  SPEEDING_GRACE_SECONDS,
   windowStart,
   type Fix,
 } from '../../src/modules/integrity/evaluator.js'
@@ -81,17 +82,38 @@ describe('dual-GPS integrity evaluation', () => {
     expect(res.verified).toBe(true)
   })
 
-  it('raises SPEED_CEILING_BREACH from the driver stream alone', () => {
+  it('raises SPEED_CEILING_BREACH from the driver stream alone, once sustained', () => {
     const res = evaluate({
       ...base,
       driver: fix(HITEC, { speedKmh: 88 }),
       customer: null,
       speedCeilingKmh: 70,
+      state: { separatedSince: null, speedingSince: NOW - SPEEDING_GRACE_SECONDS * 1000 },
     })
 
     const finding = res.findings.find((f) => f.reason === 'SPEED_CEILING_BREACH')
     expect(finding).toBeDefined()
     expect(finding!.details).toMatchObject({ speed_kmh: 88, ceiling_kmh: 70, over_by_kmh: 18 })
+  })
+
+  it('does not raise a breach on a single speed spike, but starts the clock', () => {
+    const res = evaluate({ ...base, driver: fix(HITEC, { speedKmh: 140 }), customer: null })
+    expect(res.findings).toHaveLength(0)
+    expect(res.state.speedingSince).toBe(NOW)
+
+    // Back under the ceiling: the clock resets.
+    const after = evaluate({ ...base, driver: fix(HITEC, { speedKmh: 40 }), customer: null, state: res.state })
+    expect(after.state.speedingSince).toBeNull()
+  })
+
+  it('ignores the speed on a stale fix', () => {
+    const res = evaluate({
+      ...base,
+      driver: fix(HITEC, { speedKmh: 140, at: NOW - 60_000 }),
+      customer: null,
+      state: { separatedSince: null, speedingSince: NOW - 60_000 },
+    })
+    expect(res.findings).toHaveLength(0)
   })
 
   it('does not treat driving exactly at the ceiling as a breach', () => {
@@ -125,7 +147,7 @@ describe('dual-GPS integrity evaluation', () => {
       ...base,
       driver: fix(HITEC, { speedKmh: 99 }),
       customer: fix(FAR),
-      state: { separatedSince: NOW - 120_000 },
+      state: { separatedSince: NOW - 120_000, speedingSince: NOW - 10_000 },
     })
     expect(res.findings.map((f) => f.reason).sort()).toEqual([
       'ROUTE_DEVIATION_EXCEEDED',

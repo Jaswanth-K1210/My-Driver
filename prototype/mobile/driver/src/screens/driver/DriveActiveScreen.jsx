@@ -77,16 +77,22 @@ export default function DriveActiveScreen({ request, onComplete }) {
   // Latest sensor sample, read by the GPS callback so each telemetry frame
   // carries the g-force at the moment of the fix.
   const motionRef = useRef({ brake: 0, swerve: 0 })
+  // Strongest reading since the last GPS fix. A fix is once a second and the
+  // sensor five times, so sampling only the latest would miss most hard stops.
+  const peakRef = useRef({ brake: 0, swerve: 0 })
 
-  // Counted from when tracking began, not from when this screen opened: the
-  // driver can come back from the drop-off inspection or reopen the app.
+  // Counted from when the server started the trip, falling back to when
+  // tracking began on this phone: the driver can come back from the drop-off
+  // inspection or reopen the app, even with its storage cleared.
+  const serverStart = request?.startedAt ?? null
   useEffect(() => {
     const mountedAt = Date.now()
-    const update = () => setElapsed(Math.max(0, Math.round((Date.now() - (tripStartedAt() ?? mountedAt)) / 1000)))
+    const update = () =>
+      setElapsed(Math.max(0, Math.round((Date.now() - (serverStart ?? tripStartedAt() ?? mountedAt)) / 1000)))
     update()
     const tick = setInterval(update, 1000)
     return () => clearInterval(tick)
-  }, [])
+  }, [serverStart])
 
   // Motion: DeviceMotion reports acceleration with gravity already removed.
   // ponytail: assumes a portrait dash mount (y = forward, x = lateral); add a
@@ -102,6 +108,10 @@ export default function DriveActiveScreen({ request, onComplete }) {
         const brake = Math.abs(acceleration.y ?? 0) / 9.81
         const swerve = Math.abs(acceleration.x ?? 0) / 9.81
         motionRef.current = { brake, swerve }
+        peakRef.current = {
+          brake: Math.max(peakRef.current.brake, brake),
+          swerve: Math.max(peakRef.current.swerve, swerve),
+        }
         setBrakeG(brake)
         setSwerveG(swerve)
 
@@ -125,11 +135,16 @@ export default function DriveActiveScreen({ request, onComplete }) {
   // Fixes come from lib/tracking.js, which keeps running with the screen
   // off. This screen only reads the speed and lends its g-force sample.
   useEffect(() => {
-    setSensorSource(() => ({
-      accel_z: Number(motionRef.current.brake.toFixed(3)),
-      gyro_z: Number(motionRef.current.swerve.toFixed(3)),
-    }))
+    // Stored as accel_z / gyro_z (the wire and column names): accel_z is the
+    // peak forward (braking) g and gyro_z the peak sideways (swerve) g since
+    // the previous fix, both from the accelerometer.
+    setSensorSource(() => {
+      const peak = peakRef.current
+      peakRef.current = { ...motionRef.current }
+      return { accel_z: Number(peak.brake.toFixed(3)), gyro_z: Number(peak.swerve.toFixed(3)) }
+    })
     const off = onFix(({ coords }) => {
+      if (coords.speed == null) return
       setSpeed(coords.speed)
       maxSpeedRef.current = Math.max(maxSpeedRef.current, coords.speed)
     })

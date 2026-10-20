@@ -1,5 +1,6 @@
 import type { LatLng } from '../../lib/geo.js'
 import { getHub } from '../../realtime/hub.js'
+import { opsChanged } from '../../realtime/ops-feed.js'
 import { redis } from '../../redis/client.js'
 import { notifyCustomer } from './customer-push.js'
 import type { TripStatus } from './state-machine.js'
@@ -19,6 +20,7 @@ export async function broadcastStateChange(
 ): Promise<void> {
   await invalidateTripCache(tripId)
   await getHub().publish(tripId, { type: 'TRIP_STATE_CHANGED', trip_id: tripId, status })
+  await opsChanged()
   // The frame above only reaches an open app; the push reaches a closed one.
   await notifyCustomer(tripId, status)
 }

@@ -7,13 +7,22 @@ const CHANNEL = 'trips'
 
 type Row = { customer_id: string; cancelled_by: string | null; amount_due: number }
 
-function messageFor(status: TripStatus, row: Row): Omit<PushPayload, 'data' | 'channel'> & { type: string } | null {
+/** A status change, or DRIVER_ARRIVED, which happens inside HANDSHAKE_PENDING. */
+export type CustomerEvent = TripStatus | 'DRIVER_ARRIVED'
+
+function messageFor(status: CustomerEvent, row: Row): Omit<PushPayload, 'data' | 'channel'> & { type: string } | null {
   switch (status) {
     case 'HANDSHAKE_PENDING':
       return {
         type: 'DRIVER_MATCHED',
         title: 'Your driver is on the way',
         body: 'A driver has accepted your trip. Open MyDriver to see them and your pickup code.',
+      }
+    case 'DRIVER_ARRIVED':
+      return {
+        type: 'DRIVER_ARRIVED',
+        title: 'Your driver has arrived',
+        body: 'Your driver is at the pickup. Share your pickup code when you meet them.',
       }
     case 'IN_TRIP':
       return { type: 'TRIP_STARTED', title: 'Trip started', body: 'Your trip is under way. Follow it live in MyDriver.' }
@@ -48,8 +57,8 @@ function messageFor(status: TripStatus, row: Row): Omit<PushPayload, 'data' | 'c
  * and its WebSocket is not connected. Best effort: a push that fails must
  * never fail the transition that caused it.
  */
-export async function notifyCustomer(tripId: string, status: TripStatus): Promise<void> {
-  if (!['HANDSHAKE_PENDING', 'IN_TRIP', 'COMPLETED', 'NO_DRIVERS_FOUND', 'CANCELLED'].includes(status)) return
+export async function notifyCustomer(tripId: string, status: CustomerEvent): Promise<void> {
+  if (!['HANDSHAKE_PENDING', 'DRIVER_ARRIVED', 'IN_TRIP', 'COMPLETED', 'NO_DRIVERS_FOUND', 'CANCELLED'].includes(status)) return
   try {
     const { rows } = await pool.query<Row>(
       `SELECT t.customer_id, t.cancelled_by, COALESCE(p.amount_due, 0)::float8 AS amount_due

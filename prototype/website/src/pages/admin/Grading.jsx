@@ -7,6 +7,7 @@ import { SectionCard } from '../../components/app/Primitives.jsx'
 import { useToast } from '../../context/toastStore.js'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
 import { Empty, relative } from '../../components/admin/Indicators.jsx'
+import { dateTime } from '../../components/admin/format.js'
 
 /**
  * The grading queue: assessments a driver has submitted that nobody has scored.
@@ -61,7 +62,8 @@ export default function Grading() {
                   <p className="truncate text-sm font-bold text-slate-900">{attempt.full_name}</p>
                   <p className="mt-0.5 truncate text-xs text-slate-500">
                     {attempt.title} · {attempt.kind} · attempt {attempt.attempt_no} · pass mark{' '}
-                    {attempt.passing_score} · {relative(attempt.submitted_at)}
+                    {attempt.passing_score} ·{' '}
+                    {attempt.submitted_at ? relative(attempt.submitted_at) : `scheduled for ${dateTime(attempt.scheduled_at)}`}
                   </p>
                 </div>
                 <input

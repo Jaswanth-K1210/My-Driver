@@ -4,7 +4,7 @@ import { buildApp } from '../../src/app.js'
 import { pool } from '../../src/db/client.js'
 import { seed } from '../../src/db/seed.js'
 import { IntegrityEngine } from '../../src/modules/integrity/engine.js'
-import { DEVIATION_GRACE_SECONDS } from '../../src/modules/integrity/evaluator.js'
+import { DEVIATION_GRACE_SECONDS, SPEEDING_GRACE_SECONDS } from '../../src/modules/integrity/evaluator.js'
 import { ConsoleSmsProvider, setSmsProvider } from '../../src/providers/sms/index.js'
 import { bearer } from '../helpers/auth.js'
 import { resetDb } from '../helpers/db.js'
@@ -98,11 +98,19 @@ describe('dual-GPS integrity engine', () => {
     expect(rows[0].details.deviation_distance_meters).toBeGreaterThan(150)
   })
 
+  /** Pretends the driver has been over the ceiling long enough to count. */
+  const rewindSpeeding = (id: string, on: IntegrityEngine = engine) =>
+    (on as unknown as { state: Map<string, { separatedSince: number | null; speedingSince?: number | null }> })
+      .state.set(id, { separatedSince: null, speedingSince: Date.now() - (SPEEDING_GRACE_SECONDS + 1) * 1000 })
+
   it('raises an L1 speed-ceiling breach from the driver stream alone', async () => {
     // BOOK_BODY sets a 60 km/h ceiling.
     await setLastFix(tripId, 'driver', HITEC_CITY, 88)
     await setLastFix(tripId, 'customer', HITEC_CITY)
 
+    // A single over-limit fix only starts the clock.
+    expect(await engine.tick()).toBe(0)
+    rewindSpeeding(tripId)
     expect(await engine.tick()).toBe(1)
     expect(await liveEscalation(tripId)).toMatchObject({
       level: 'L1', reason: 'SPEED_CEILING_BREACH',
@@ -118,6 +126,7 @@ describe('dual-GPS integrity engine', () => {
 
     await setLastFix(tripId, 'driver', HITEC_CITY, 95)
     await setLastFix(tripId, 'customer', HITEC_CITY)
+    rewindSpeeding(tripId)
     await engine.tick()
 
     expect(sms.sent).toHaveLength(1)
@@ -129,6 +138,7 @@ describe('dual-GPS integrity engine', () => {
     await setLastFix(tripId, 'driver', HITEC_CITY, 88)
     await setLastFix(tripId, 'customer', HITEC_CITY)
 
+    rewindSpeeding(tripId)
     await engine.tick()
     await engine.tick()
     await engine.tick()
@@ -142,6 +152,8 @@ describe('dual-GPS integrity engine', () => {
     await setLastFix(tripId, 'customer', HITEC_CITY)
 
     const other = new IntegrityEngine()
+    rewindSpeeding(tripId)
+    rewindSpeeding(tripId, other)
     const [a, b] = await Promise.all([engine.tick(), other.tick()])
 
     // Exactly one of the two instances wins the Redis claim.

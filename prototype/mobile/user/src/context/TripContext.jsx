@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { AppState } from 'react-native'
+import * as Location from 'expo-location'
 import * as WebBrowser from 'expo-web-browser'
 import { api } from '../lib/apiClient'
 import { bookingPayloadFor, carDetailsFrom, DEFAULT_CONFIG, getRecommendedSkillId } from '../lib/booking'
@@ -238,6 +239,42 @@ export function TripProvider({ children }) {
     realtimeRef.current = null
   }, [isAuthenticated])
 
+  /* ── Customer position during the drive ──────────────────────────────── */
+  // The integrity engine compares it with the driver's to tell whether the
+  // customer is still in the car. Only while the trip runs and the app is
+  // open; declining the permission just leaves that check off.
+  const sharingTripId = trip && ['IN_TRIP', 'ESCALATED'].includes(trip.status) ? trip.id : null
+  useEffect(() => {
+    if (!sharingTripId) return undefined
+    let watch = null
+    let stopped = false
+    void (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync()
+        if (status !== 'granted' || stopped) return
+        watch = await Location.watchPositionAsync(
+          // The server marks a stream stale after 30 s; every 5 s is plenty.
+          { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 0 },
+          ({ coords, mocked }) => {
+            realtimeRef.current?.sendCustomerTelemetry(sharingTripId, {
+              lat: coords.latitude,
+              lng: coords.longitude,
+              ...(coords.accuracy != null ? { accuracy: Math.round(coords.accuracy) } : {}),
+              ...(mocked ? { mocked: true } : {}),
+            })
+          },
+        )
+        if (stopped) watch.remove()
+      } catch {
+        // No location services on this device: the check stays off.
+      }
+    })()
+    return () => {
+      stopped = true
+      watch?.remove()
+    }
+  }, [sharingTripId])
+
   /* ── Actions ─────────────────────────────────────────────────────────── */
   const startMatching = useCallback(
     async (nextConfig) => {
@@ -281,8 +318,9 @@ export function TripProvider({ children }) {
           }
           if (!current || ACTIVE_STATUSES.includes(current.status)) {
             if (current) applyTrip(current)
+            const started = current && ['IN_TRIP', 'ESCALATED'].includes(current.status)
             throw new Error(
-              current
+              started
                 ? 'This trip has already started and cannot be cancelled here. Use SOS if you need help.'
                 : (err?.message ?? 'Could not cancel. Check your connection and try again.'),
             )

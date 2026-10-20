@@ -78,6 +78,45 @@ describe('payments: authorize at booking, capture at completion', () => {
     expect(mock.captured).toHaveLength(1)
   })
 
+  it('collects an amount due with a second order, captured once', async () => {
+    const trip = await book()
+    await approve(trip.payment.id)
+    await awaitDispatchIdle()
+    await app.inject({ method: 'POST', url: `/v1/trips/${trip.id}/offer/respond`, headers: bearer(driver.accessToken), payload: { accept: true } })
+    const otp = await app.inject({ method: 'POST', url: `/v1/trips/${trip.id}/handshake-otp`, headers: bearer(customer.accessToken) })
+    await app.inject({ method: 'POST', url: `/v1/trips/${trip.id}/handshake`, headers: bearer(driver.accessToken), payload: { driver_selfie_base64: SELFIE, otp: otp.json().otp } })
+    await app.inject({ method: 'POST', url: `/v1/trips/${trip.id}/complete`, headers: bearer(driver.accessToken) })
+    // The fare ran over the hold.
+    await pool.query(`UPDATE payments SET amount_due = 123.45 WHERE trip_id = $1`, [trip.id])
+
+    const page = await app.inject({ method: 'GET', url: `/v1/payments/${trip.payment.id}/checkout` })
+    expect(page.body).toContain('Pay the amount due')
+    expect(page.body).toContain('123.45')
+    const dueOrder = (await paymentRow(trip.id)).due_order_id
+    expect(dueOrder).toBeTruthy()
+    // Reloading the page reuses the order.
+    await app.inject({ method: 'GET', url: `/v1/payments/${trip.payment.id}/checkout` })
+    expect((await paymentRow(trip.id)).due_order_id).toBe(dueOrder)
+
+    const paid = await approve(trip.payment.id)
+    expect(paid.statusCode).toBe(200)
+    expect(paid.json().status).toBe('DUE_PAID')
+    const p = await paymentRow(trip.id)
+    expect(Number(p.amount_due)).toBe(0)
+    expect(Number(p.amount_due_paid)).toBe(123.45)
+    expect(mock.captured.at(-1)).toMatchObject({ paymentId: p.due_payment_id, amountPaise: 12345 })
+
+    // The webhook for the same order arriving later captures nothing more.
+    const body = JSON.stringify({ event: 'payment.authorized', payload: { payment: { entity: { id: p.due_payment_id, order_id: dueOrder } } } })
+    const hook = await app.inject({
+      method: 'POST', url: '/v1/payments/webhook', payload: body,
+      headers: { 'content-type': 'application/json', 'x-razorpay-signature': hmacHex(MOCK_SECRET, body) },
+    })
+    expect(hook.statusCode).toBe(200)
+    expect(mock.captured).toHaveLength(2)
+    expect((await app.inject({ method: 'GET', url: `/v1/payments/${trip.payment.id}/checkout` })).body).not.toContain('Pay the amount due')
+  })
+
   it('releases the hold when the customer cancels', async () => {
     const trip = await book()
     await approve(trip.payment.id)

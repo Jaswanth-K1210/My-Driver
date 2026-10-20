@@ -4,10 +4,13 @@ import type { WebSocket } from 'ws'
 import { pool } from '../db/client.js'
 import { counter } from '../lib/metrics.js'
 import type { Role } from '../modules/auth/otp.js'
+import { DESK_ROLES } from '../modules/auth/roles.js'
+import { auditView } from '../modules/safety-desk/service.js'
 import { acceptsTelemetry } from '../modules/trips/state-machine.js'
 import { redis } from '../redis/client.js'
 import { ingestTelemetry } from '../telemetry/ingest.js'
 import { getHub } from './hub.js'
+import { OPS_AUDIT_ACTION, OPS_ROOMS, type OpsView } from './ops-feed.js'
 import { parseClientFrame, type ServerFrame } from './protocol.js'
 import { consumeTicket } from './ticket.js'
 
@@ -18,6 +21,12 @@ export const openSocketCount = (): number => openSockets
 export const HEARTBEAT_INTERVAL_MS = 30_000
 export const MAX_MISSED_PONGS = 2
 export const MAX_FRAMES_PER_SECOND = 1
+// A phone fixing once a second delivers some fixes 950 ms apart on a jittery
+// network; a strict 1000 ms gap would drop them.
+const FRAME_GAP_TOLERANCE = 0.8
+// Frames that may arrive while the ticket is checked. A client sends a
+// SUBSCRIBE or two there; more is a flood, and the socket is closed.
+export const MAX_PENDING_FRAMES = 10
 
 type Conn = {
   userId: string
@@ -80,6 +89,10 @@ export async function registerRealtimeGateway(app: FastifyInstance): Promise<voi
     socket.on('message', (raw: Buffer) => {
       const text = raw.toString()
       if (!conn) {
+        if (pendingFrames.length >= MAX_PENDING_FRAMES) {
+          socket.close(4429, 'Too many frames before sign-in')
+          return
+        }
         pendingFrames.push(text)
         return
       }
@@ -112,6 +125,22 @@ export async function registerRealtimeGateway(app: FastifyInstance): Promise<voi
       if (frame.type === 'PONG') {
         conn.missedPongs = 0
         return
+      }
+
+      if (frame.type === 'SUBSCRIBE_OPS' || frame.type === 'UNSUBSCRIBE_OPS') {
+        if (!(DESK_ROLES as readonly string[]).includes(conn.role)) {
+          return fail(socket, 'FORBIDDEN_OPS', 'The live console feed is for the Safety Desk')
+        }
+        const room = OPS_ROOMS[frame.view]
+        if (frame.type === 'UNSUBSCRIBE_OPS') {
+          await hub.unregister(room, socket)
+          conn.subscriptions.delete(room)
+          return send(socket, { type: 'OPS_UNSUBSCRIBED', view: frame.view })
+        }
+        await auditView(conn.userId, conn.role, OPS_AUDIT_ACTION[frame.view])
+        await hub.register(room, socket)
+        conn.subscriptions.add(room)
+        return send(socket, { type: 'OPS_SUBSCRIBED', view: frame.view })
       }
 
       const trip = await loadTripRoles(frame.trip_id)
@@ -148,16 +177,17 @@ export async function registerRealtimeGateway(app: FastifyInstance): Promise<voi
       // Drop excess frames silently rather than queue them or disconnect.
       const now = Date.now()
       const last = conn.lastFrameAt.get(frame.trip_id) ?? 0
-      if (now - last < 1000 / MAX_FRAMES_PER_SECOND) {
+      if (now - last < (1000 / MAX_FRAMES_PER_SECOND) * FRAME_GAP_TOLERANCE) {
         counter('mydriver_telemetry_throttled_total')
         return
       }
       conn.lastFrameAt.set(frame.trip_id, now)
 
-      // The live stream's fix is the freshest there is, so it uses arrival
-      // time for staleness, exactly as before the shared ingest existed.
+      // The live stream's fix is the freshest there is, so it is stored and
+      // judged at arrival time. The phone's clock can be minutes off, and the
+      // fare only counts fixes after the server-recorded trip start.
       await ingestTelemetry(frame.trip_id, conn.userId, isDriverFrame ? 'DRIVER' : 'CUSTOMER', {
-        timestamp: frame.timestamp,
+        timestamp: now,
         coords: frame.coords,
         sensors: frame.type === 'DRIVER_TELEMETRY' ? frame.sensors : undefined,
       })
@@ -188,6 +218,13 @@ export async function registerRealtimeGateway(app: FastifyInstance): Promise<voi
         }
         conn.missedPongs++
         send(socket, { type: 'PING' })
+        // A console screen left open for hours is still being watched: keep
+        // its view audit going, once per window as the polled endpoints do.
+        for (const [view, room] of Object.entries(OPS_ROOMS)) {
+          if (conn.subscriptions.has(room)) {
+            void auditView(conn.userId, conn.role, OPS_AUDIT_ACTION[view as OpsView]).catch(() => undefined)
+          }
+        }
       }, HEARTBEAT_INTERVAL_MS)
       heartbeat.unref()
 

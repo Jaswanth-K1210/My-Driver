@@ -89,7 +89,7 @@ export async function getDriverEarnings(driverId: string) {
   }
 }
 
-export type AssessmentState = 'NOT_STARTED' | 'IN_PROGRESS' | 'AWAITING_RESULT' | 'PASSED' | 'FAILED'
+export type AssessmentState = 'NOT_STARTED' | 'SCHEDULED' | 'IN_PROGRESS' | 'AWAITING_RESULT' | 'PASSED' | 'FAILED'
 
 /**
  * Every active test with where this driver stands on it. Questions are never
@@ -101,19 +101,19 @@ export async function getDriverAssessments(driverId: string) {
     kind: 'WRITTEN' | 'PRACTICAL' | 'LIVENESS' | 'REACTION' | 'DOCUMENT_REVIEW'
     cooldown_hours: number; attempts_used: number; ever_passed: boolean
     score: number | null; passed: boolean | null; started_at: Date | null; submitted_at: Date | null
-    notes: string | null
+    scheduled_at: Date | null; notes: string | null
   }>(
     `SELECT a.code, a.title, a.kind, a.passing_score, a.max_attempts, a.cooldown_hours,
             COALESCE(n.attempts_used, 0)::int AS attempts_used,
             COALESCE(n.ever_passed, false)    AS ever_passed,
-            l.score, l.passed, l.started_at, l.submitted_at, l.notes
+            l.score, l.passed, l.started_at, l.submitted_at, l.scheduled_at, l.notes
        FROM assessments a
        LEFT JOIN LATERAL (
          SELECT count(*) AS attempts_used, bool_or(passed) AS ever_passed
            FROM assessment_attempts WHERE driver_id = $1 AND assessment_id = a.id
        ) n ON true
        LEFT JOIN LATERAL (
-         SELECT score, passed, started_at, submitted_at, notes
+         SELECT score, passed, started_at, submitted_at, scheduled_at, notes
            FROM assessment_attempts WHERE driver_id = $1 AND assessment_id = a.id
           ORDER BY attempt_no DESC LIMIT 1
        ) l ON true
@@ -126,7 +126,7 @@ export async function getDriverAssessments(driverId: string) {
     const state: AssessmentState =
       r.ever_passed ? 'PASSED'
         : r.attempts_used === 0 ? 'NOT_STARTED'
-          : r.submitted_at === null ? 'IN_PROGRESS'
+          : r.submitted_at === null && r.passed === null ? (r.scheduled_at ? 'SCHEDULED' : 'IN_PROGRESS')
             : r.passed === null ? 'AWAITING_RESULT'
               : 'FAILED'
     const attemptsLeft = Math.max(0, r.max_attempts - r.attempts_used)
@@ -145,6 +145,8 @@ export async function getDriverAssessments(driverId: string) {
       attempts_left: attemptsLeft,
       last_score: r.score,
       last_submitted_at: r.submitted_at ? r.submitted_at.toISOString() : null,
+      // The practical test's date while it is still to happen.
+      scheduled_at: state === 'SCHEDULED' && r.scheduled_at ? r.scheduled_at.toISOString() : null,
       retry_at: retryAt,
       examiner_notes: r.notes,
     }

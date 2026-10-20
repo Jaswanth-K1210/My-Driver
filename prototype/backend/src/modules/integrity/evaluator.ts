@@ -10,6 +10,8 @@ import { haversineMeters, type LatLng } from '../../lib/geo.js'
 export const EVALUATION_INTERVAL_MS = 3_000
 export const CO_LOCATION_THRESHOLD_M = 150
 export const DEVIATION_GRACE_SECONDS = 60
+/** Over the ceiling this long before it counts: one GPS speed spike is not speeding. */
+export const SPEEDING_GRACE_SECONDS = 5
 
 export type IntegrityReason =
   | 'ROUTE_DEVIATION_EXCEEDED'
@@ -21,6 +23,8 @@ export type Fix = { coords: LatLng; speedKmh?: number | undefined; at: number }
 export type IntegrityState = {
   /** When the two devices first went further apart than the threshold. */
   separatedSince: number | null
+  /** When the driver's speed first went over the ceiling. */
+  speedingSince?: number | null
 }
 
 export type IntegrityFinding = {
@@ -52,37 +56,40 @@ export function evaluate(input: EvaluationInput): EvaluationResult {
   const findings: IntegrityFinding[] = []
   let state = { ...input.state }
 
+  const driverFresh = driver != null && now - driver.at <= FIX_STALE_AFTER_MS
+  const customerFresh = customer != null && now - customer.at <= FIX_STALE_AFTER_MS
+
   // Speed is judged from the driver's own stream and needs no second party,
   // so it is checked before the co-location rules.
-  if (driver && driver.speedKmh != null && driver.speedKmh > speedCeilingKmh) {
+  const speeding = driverFresh && driver!.speedKmh != null && driver!.speedKmh > speedCeilingKmh
+  const speedingSince = speeding ? (state.speedingSince ?? now) : null
+  if (speeding && (now - speedingSince!) / 1000 >= SPEEDING_GRACE_SECONDS) {
     findings.push({
       reason: 'SPEED_CEILING_BREACH',
       details: {
-        speed_kmh: Math.round(driver.speedKmh),
+        speed_kmh: Math.round(driver!.speedKmh!),
         ceiling_kmh: speedCeilingKmh,
-        over_by_kmh: Math.round(driver.speedKmh - speedCeilingKmh),
+        over_by_kmh: Math.round(driver!.speedKmh! - speedCeilingKmh),
+        over_for_seconds: Math.round((now - speedingSince!) / 1000),
       },
     })
   }
-
-  const driverFresh = driver != null && now - driver.at <= FIX_STALE_AFTER_MS
-  const customerFresh = customer != null && now - customer.at <= FIX_STALE_AFTER_MS
 
   // Co-location needs both streams. A missing customer stream is not a
   // deviation — the passenger may simply have a dead phone — so separation is
   // left unevaluated rather than assumed bad.
   if (!driverFresh || !customerFresh) {
-    return { state: { separatedSince: null }, findings, separationMeters: null, verified: false }
+    return { state: { separatedSince: null, speedingSince }, findings, separationMeters: null, verified: false }
   }
 
   const separationMeters = haversineMeters(driver!.coords, customer!.coords)
 
   if (separationMeters <= CO_LOCATION_THRESHOLD_M) {
-    return { state: { separatedSince: null }, findings, separationMeters, verified: true }
+    return { state: { separatedSince: null, speedingSince }, findings, separationMeters, verified: true }
   }
 
   const separatedSince = state.separatedSince ?? now
-  state = { separatedSince }
+  state = { separatedSince, speedingSince }
 
   const separatedForSeconds = (now - separatedSince) / 1000
   if (separatedForSeconds > DEVIATION_GRACE_SECONDS) {

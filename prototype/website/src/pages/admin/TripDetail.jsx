@@ -49,7 +49,7 @@ export default function TripDetail() {
   if (error) return <Empty icon={MapPin} title="Trip not available" hint={error} />
   if (!data) return <p className="py-12 text-center text-sm text-slate-500">Loading trip…</p>
 
-  const { trip, events, payment, escalations, rating, inspections, guardian, checkin } = data
+  const { trip, events, payment, escalations, rating, inspections, guardian, checkin, anomalies = [] } = data
 
   return (
     <div className="space-y-6">
@@ -127,6 +127,25 @@ export default function TripDetail() {
                       <span className="text-xs text-slate-500">{dateTime(e.opened_at)}</span>
                     </Link>
                     {e.resolution && <p className="mt-1 px-3 text-xs text-slate-500">Resolution: {e.resolution}</p>}
+                  </li>
+                ))}
+              </ul>
+            </SectionCard>
+          )}
+
+          {anomalies.length > 0 && (
+            <SectionCard title="Automated flags" icon={ShieldAlert}>
+              <ul className="space-y-2">
+                {anomalies.map((a) => (
+                  <li key={`${a.reason}-${a.created_at}`} className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 p-3">
+                    <LevelBadge level={a.level} />
+                    <span className="flex-1 text-sm font-semibold text-slate-900">{reasonLabel(a.reason)}</span>
+                    {a.reason === 'FARE_DISTANCE_REVIEW' && (
+                      <span className="text-xs text-slate-500">
+                        tracked {Number(a.details.tracked_km).toFixed(1)} km · billed {Number(a.details.billed_km).toFixed(1)} km
+                      </span>
+                    )}
+                    <span className="text-xs text-slate-500">{dateTime(a.created_at)}</span>
                   </li>
                 ))}
               </ul>

@@ -23,10 +23,16 @@
         "monochromeImage": "./assets/adaptive-icon-monochrome.png",
         "backgroundColor": "#FFFFFF"
       },
-      "permissions": ["POST_NOTIFICATIONS", "VIBRATE"]
+      "permissions": ["POST_NOTIFICATIONS", "VIBRATE", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
     },
     "plugins": [
       "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "During a trip MyDriver compares your location with your driver's, so the Safety Desk can step in if the car goes somewhere you are not. Location is only shared while a trip is in progress."
+        }
+      ],
       [
         "expo-notifications",
         {

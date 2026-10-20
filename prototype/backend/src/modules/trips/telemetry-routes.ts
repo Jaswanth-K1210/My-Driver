@@ -22,6 +22,9 @@ const Point = z
         lng: z.number().min(-180).max(180),
         speed: z.number().min(0).max(400).optional(),
         heading: z.number().min(0).max(360).optional(),
+        // Metres, as the phone reports it; and Android's mock-location flag.
+        accuracy: z.number().min(0).optional(),
+        mocked: z.boolean().optional(),
       })
       .strict(),
     sensors: z.object({ accel_z: z.number().optional(), gyro_z: z.number().optional() }).strict().optional(),

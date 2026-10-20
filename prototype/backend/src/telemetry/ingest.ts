@@ -1,3 +1,4 @@
+import { claimAnomaly, raiseEscalation, recordAnomaly } from '../modules/escalation/service.js'
 import { upsertDriverLocation } from '../modules/trips/geo-index.js'
 import { getHub } from '../realtime/hub.js'
 import { redis } from '../redis/client.js'
@@ -5,7 +6,14 @@ import { getTelemetryWriter } from './batch-writer.js'
 
 export type TelemetryPoint = {
   timestamp: number
-  coords: { lat: number; lng: number; speed?: number | undefined; heading?: number | undefined }
+  coords: {
+    lat: number
+    lng: number
+    speed?: number | undefined
+    heading?: number | undefined
+    accuracy?: number | undefined
+    mocked?: boolean | undefined
+  }
   sensors?: { accel_z?: number | undefined; gyro_z?: number | undefined } | undefined
 }
 
@@ -15,6 +23,10 @@ export type TelemetryPoint = {
  * only that one moves the last-known position, the geo index and the
  * customer's map, so a late-arriving batch never drags the car backwards.
  */
+/** A fix worse than this (metres) is kept out of the stored track and so the fare. */
+export const MAX_BILLABLE_ACCURACY_M = 50
+const MOCK_FLAG_WINDOW_SECONDS = 600
+
 export async function ingestTelemetry(
   tripId: string,
   userId: string,
@@ -25,7 +37,27 @@ export async function ingestTelemetry(
   // clock: a phone whose clock is a minute off must not look offline.
   seenAt = Date.now(),
 ): Promise<void> {
-  getTelemetryWriter().enqueue({
+  // A fake-GPS fix is not a position at all: it never reaches the track, the
+  // map or the fare. The trip goes on the Safety Desk board, once per window,
+  // the same way the integrity engine raises its L1 findings.
+  if (point.coords.mocked) {
+    if (await claimAnomaly(tripId, 'MOCK_LOCATION', MOCK_FLAG_WINDOW_SECONDS)) {
+      const details = { source, lat: point.coords.lat, lng: point.coords.lng }
+      const inserted = await recordAnomaly({
+        tripId,
+        reason: 'MOCK_LOCATION',
+        level: 'L1',
+        windowStart: new Date(Math.floor(seenAt / (MOCK_FLAG_WINDOW_SECONDS * 1000)) * MOCK_FLAG_WINDOW_SECONDS * 1000),
+        details,
+      })
+      if (inserted) await raiseEscalation({ tripId, level: 'L1', reason: 'MOCK_LOCATION', details })
+    }
+    return
+  }
+
+  // Too imprecise to bill on, still good enough to show where the car is.
+  const billable = point.coords.accuracy == null || point.coords.accuracy <= MAX_BILLABLE_ACCURACY_M
+  if (billable) getTelemetryWriter().enqueue({
     time: new Date(point.timestamp),
     tripId,
     source,

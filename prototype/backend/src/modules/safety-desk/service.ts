@@ -44,6 +44,13 @@ export async function auditView(actorId: string, actorRole: Role, action: string
   await audit(actorId, actorRole, action, null, { window_seconds: VIEW_AUDIT_WINDOW_SECONDS })
 }
 
+/**
+ * The plate to look for on the road during a trip. MyDriver drives the
+ * customer's car, so that is the car's plate from the booking; the driver's
+ * own profile plate is only a fallback for bookings made without one.
+ */
+const TRIP_PLATE = `COALESCE(NULLIF(t.vehicle_specs->>'plate', ''), dp.vehicle_plate)`
+
 export type LiveTrip = {
   trip_id: string
   status: string
@@ -63,7 +70,7 @@ export async function activeTrips(): Promise<LiveTrip[]> {
             t.status,
             cu.full_name AS customer_name,
             du.full_name AS driver_name,
-            dp.vehicle_plate,
+            ${TRIP_PLATE} AS vehicle_plate,
             t.speed_ceiling_kmh,
             t.started_at,
             e.level AS escalation_level,
@@ -134,7 +141,7 @@ async function readLiveDrivers(): Promise<LiveDriver[]> {
     `SELECT dp.user_id AS driver_id,
             u.full_name AS name,
             -- A plate only matters while a trip is live; free drivers don't expose one.
-            CASE WHEN t.id IS NOT NULL THEN dp.vehicle_plate END AS vehicle_plate,
+            CASE WHEN t.id IS NOT NULL THEN ${TRIP_PLATE} END AS vehicle_plate,
             dp.availability,
             dp.night_shield_certified,
             dp.mydriver_score::float8 AS mydriver_score,

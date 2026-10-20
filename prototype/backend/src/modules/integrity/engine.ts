@@ -2,6 +2,7 @@ import { pool } from '../../db/client.js'
 import { counter } from '../../lib/metrics.js'
 import { redis } from '../../redis/client.js'
 import { claimAnomaly, raiseEscalation, recordAnomaly } from '../escalation/service.js'
+import { detectArrivals } from '../trips/arrival.js'
 import {
   ANOMALY_WINDOW_SECONDS,
   EVALUATION_INTERVAL_MS,
@@ -77,6 +78,8 @@ export class IntegrityEngine {
       for (const trip of rows) {
         raised += await this.evaluateTrip(trip.id, trip.speed_ceiling_kmh)
       }
+      // Not an integrity check, but it reads the same positions on the same beat.
+      await detectArrivals().catch((err) => console.error('arrival detection failed', err))
       return raised
     } finally {
       this.evaluating = false

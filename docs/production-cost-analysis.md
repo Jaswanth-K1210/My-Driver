@@ -103,7 +103,7 @@ Counted from the code, per unit of activity.
 
 | Store | Operations |
 |---|---|
-| Postgres | 3,600 telemetry rows, written as batched multi-row `INSERT`s (flush at 100 rows or every 2 s); 720 `SELECT`s to refresh the 5-second trip-roles cache |
+| Postgres | 3,600 telemetry rows, written as batched multi-row `INSERT`s (flush at 100 rows or every 2 s); 60 `SELECT`s to refresh the 60-second trip-roles cache |
 | Redis | about 18,000 commands; 360 `GEOADD`s (throttled to one per 10 s) |
 
 **Per trip, whole lifecycle**
@@ -162,9 +162,9 @@ second arrive as about 15 batched inserts per second.
 1. **Stop polling for driver offers.** Offers are already pushed (FCM and the
    WebSocket). Dropping the 2.5-second poll removes the largest steady query
    load: 1,000 idle online drivers generate about 400 queries per second.
-2. **Lengthen the trip-roles cache from 5 s to 60 s.** `broadcast.ts` already
-   deletes the key on every status change, so the short TTL buys little. This
-   cuts 720 lookups per trip-hour to 60.
+2. ~~**Lengthen the trip-roles cache from 5 s to 60 s.**~~ Done:
+   `TRIP_ROLES_TTL_SECONDS = 60` in `realtime/gateway.ts`; `broadcast.ts`
+   deletes the key on every status change. 720 lookups per trip-hour became 60.
 3. **Sample location less often.** One fix every 2–3 seconds, or skipping
    fixes while stationary (`distanceInterval`), halves or thirds telemetry
    rows, Redis commands and phone battery use. Check the integrity engine's
@@ -216,9 +216,9 @@ lakh at C, for a workload a Rs 1,500-a-month node handles.
 **Ways to save**
 
 1. **Self-host or use a fixed-price node**, never per-command billing.
-2. **Set `maxmemory` with `volatile-lru`.** The production compose file sets
-   neither; an unbounded place cache can exhaust host memory. `volatile-lru`
-   evicts only expiring keys, so the driver geo index is never evicted.
+2. ~~**Set `maxmemory` with `volatile-lru`.**~~ Done in
+   `deploy/docker-compose.prod.yml`. `volatile-lru` evicts only expiring keys,
+   so the driver geo index is never evicted.
 3. **Pipeline the per-frame commands.** The three or four sequential round
    trips per telemetry frame can be one, which is CPU saved on both sides.
 4. **Cache place results longer.** 24 hours is conservative; a longer TTL
@@ -360,10 +360,10 @@ where the as-built total is about Rs 10.3 lakh.
    estimated at about a tenth of that; confirm on Google's pricing page.
 3. **Resize inspection photos and add an S3 lifecycle rule** (2.6).
 4. **Negotiate Razorpay.** It offers custom pricing above Rs 5 lakh a month.
-5. **Remove driver offer polling, lengthen the roles cache, sample location
-   less often** (2.3). These do not reduce the bill today; they delay the
+5. **Remove driver offer polling, sample location less often** (2.3; the
+   roles cache is already 60 s). These do not reduce the bill today; they delay the
    point at which a bigger database server is needed.
-6. **Set a Redis memory limit** (2.4). This is protection, not a saving.
+6. ~~**Set a Redis memory limit** (2.4).~~ Done.
 
 ## Part 6. Confirm before budgeting
 

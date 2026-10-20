@@ -153,7 +153,7 @@ export async function getDriver(driverId: string) {
       [driverId],
     ),
     pool.query(
-      `SELECT aa.id, aa.attempt_no, aa.score, aa.passed, aa.submitted_at, aa.notes,
+      `SELECT aa.id, aa.attempt_no, aa.score, aa.passed, aa.submitted_at, aa.scheduled_at, aa.notes,
               a.code, a.title, a.kind, a.passing_score
          FROM assessment_attempts aa
          JOIN assessments a ON a.id = aa.assessment_id
@@ -406,16 +406,17 @@ export async function listAssessments() {
 }
 
 export async function gradingQueue(limit: number) {
+  // Submitted tests, plus practical tests with a date set (graded after the drive).
   const { rows } = await pool.query(
     `SELECT aa.id, aa.driver_id, u.full_name, aa.attempt_no, aa.answers,
-            aa.started_at, aa.submitted_at,
+            aa.started_at, aa.submitted_at, aa.scheduled_at,
             a.code, a.title, a.kind, a.passing_score
        FROM assessment_attempts aa
        JOIN assessments a ON a.id = aa.assessment_id
        JOIN users u ON u.id = aa.driver_id
-      WHERE aa.submitted_at IS NOT NULL AND aa.passed IS NULL
+      WHERE (aa.submitted_at IS NOT NULL OR aa.scheduled_at IS NOT NULL) AND aa.passed IS NULL
         ${hideDemo('u.is_demo')}
-      ORDER BY aa.submitted_at
+      ORDER BY COALESCE(aa.submitted_at, aa.scheduled_at)
       LIMIT $1`,
     [limit],
   )
@@ -451,6 +452,65 @@ export async function gradeAttempt(
     passed: attempt.passed,
   })
   return attempt
+}
+
+/**
+ * Sets the date of a driver's practical test. An open scheduled attempt is
+ * moved rather than duplicated; otherwise a new attempt is opened, within the
+ * test's attempt limit. Graded later with gradeAttempt like any other.
+ */
+export async function schedulePracticalTest(
+  driverId: string,
+  code: string,
+  scheduledAt: Date,
+  actorId: string,
+  actorRole: Role,
+) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rows: tests } = await client.query<{ id: string; max_attempts: number }>(
+      `SELECT id, max_attempts FROM assessments WHERE code = $1 AND kind = 'PRACTICAL' AND active`,
+      [code],
+    )
+    const test = tests[0]
+    if (!test) throw notFound('ASSESSMENT_NOT_FOUND', 'No active practical test with that code')
+
+    // Locks this driver's attempts at the test, so two schedulers cannot both insert.
+    const { rows: past } = await client.query<{ id: string; attempt_no: number; passed: boolean | null; scheduled_at: Date | null; submitted_at: Date | null }>(
+      `SELECT id, attempt_no, passed, scheduled_at, submitted_at FROM assessment_attempts
+        WHERE driver_id = $1 AND assessment_id = $2 ORDER BY attempt_no FOR UPDATE`,
+      [driverId, test.id],
+    )
+    if (past.some((a) => a.passed)) throw conflict('ALREADY_PASSED', 'This driver has already passed that test')
+
+    const open = past.find((a) => a.passed === null && a.submitted_at === null && a.scheduled_at !== null)
+    let attemptId: string
+    if (open) {
+      await client.query(`UPDATE assessment_attempts SET scheduled_at = $2 WHERE id = $1`, [open.id, scheduledAt])
+      attemptId = open.id
+    } else {
+      if (past.length >= test.max_attempts) throw conflict('NO_ATTEMPTS_LEFT', 'This driver has used every attempt')
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO assessment_attempts (driver_id, assessment_id, attempt_no, scheduled_at)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [driverId, test.id, (past.at(-1)?.attempt_no ?? 0) + 1, scheduledAt],
+      )
+      attemptId = rows[0]!.id
+    }
+    await client.query('COMMIT')
+    await audit(actorId, actorRole, 'PRACTICAL_SCHEDULED', driverId, {
+      attempt_id: attemptId,
+      code,
+      scheduled_at: scheduledAt.toISOString(),
+    })
+    return { attempt_id: attemptId, code, scheduled_at: scheduledAt.toISOString() }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 export async function listBadges() {

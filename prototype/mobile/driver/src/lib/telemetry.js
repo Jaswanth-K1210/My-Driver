@@ -16,8 +16,9 @@ import { api } from './apiClient'
 const STORE_KEY = 'mydriver.telemetry.v1'
 // The server takes 300 points a batch and thins to one a second.
 const BATCH_POINTS = 300
-// Two hours at one fix a second. Past this the oldest fixes are dropped: a
-// single storage row has to stay well under Android's 2 MB row limit.
+// Two hours at one fix a second; a single storage row has to stay well under
+// Android's 2 MB row limit. Past this the older half is thinned rather than
+// dropped, so a long offline drive keeps its whole route for the fare.
 const MAX_QUEUED = 7200
 const FLUSH_EVERY_MS = 10_000
 const PERSIST_EVERY_MS = 5_000
@@ -26,22 +27,34 @@ let tripId = null
 let startedAt = null
 let queue = []
 let loaded = false
-let flushing = false
+let inFlight = null
 let lastFlushAt = 0
 let lastPersistAt = 0
 let transport = null
 const listeners = new Set()
 
-/** Compact on disk: [timestamp, lat, lng, speed, heading, accel_z, gyro_z]. */
+/** Compact on disk: [timestamp, lat, lng, speed, heading, accel_z, gyro_z, accuracy, mocked]. */
 const pack = (p) => [
   p.timestamp, p.coords.lat, p.coords.lng, p.coords.speed ?? null, p.coords.heading ?? null,
-  p.sensors?.accel_z ?? null, p.sensors?.gyro_z ?? null,
+  p.sensors?.accel_z ?? null, p.sensors?.gyro_z ?? null, p.coords.accuracy ?? null, p.coords.mocked ? 1 : 0,
 ]
-const unpack = ([timestamp, lat, lng, speed, heading, az, gz]) => ({
+const unpack = ([timestamp, lat, lng, speed, heading, az, gz, accuracy, mocked]) => ({
   timestamp,
-  coords: { lat, lng, ...(speed != null ? { speed } : {}), ...(heading != null ? { heading } : {}) },
+  coords: {
+    lat, lng,
+    ...(speed != null ? { speed } : {}),
+    ...(heading != null ? { heading } : {}),
+    ...(accuracy != null ? { accuracy } : {}),
+    ...(mocked ? { mocked: true } : {}),
+  },
   ...(az != null || gz != null ? { sensors: { ...(az != null ? { accel_z: az } : {}), ...(gz != null ? { gyro_z: gz } : {}) } } : {}),
 })
+
+/** Drops every other fix from the older half. Ends stay, so the route does too. */
+export function thin(points) {
+  const half = Math.floor(points.length / 2)
+  return [...points.slice(0, half).filter((_, i) => i % 2 === 0), ...points.slice(half)]
+}
 
 async function load() {
   if (loaded) return
@@ -132,24 +145,40 @@ export async function record(point) {
   await load()
   if (!tripId) return
 
-  if (transport?.isOpen && queue.length === 0 && !flushing) {
+  if (transport?.isOpen && queue.length === 0 && !inFlight) {
     transport.sendDriverTelemetry(tripId, point.coords, point.sensors)
     return
   }
 
   queue.push(pack(point))
-  if (queue.length > MAX_QUEUED) queue.splice(0, queue.length - MAX_QUEUED)
+  if (queue.length > MAX_QUEUED) queue = thin(queue)
   notify()
   void persist()
   if (Date.now() - lastFlushAt >= FLUSH_EVERY_MS) void flush()
 }
 
-/** Replays the backlog. Stops at the first network failure and keeps the rest. */
+/**
+ * Replays the backlog. Stops at the first network failure and keeps the rest.
+ * `force` (trip end) waits out a replay already running and then sends what is
+ * left: the server prices the trip on what it has, and rejects fixes after.
+ */
 export async function flush(force = false) {
   await load()
-  if (flushing || !tripId || queue.length === 0) return
+  while (inFlight) {
+    if (!force) return
+    await inFlight
+  }
+  if (!tripId || queue.length === 0) return
   if (!force && Date.now() - lastFlushAt < 1000) return
-  flushing = true
+  inFlight = replay()
+  try {
+    await inFlight
+  } finally {
+    inFlight = null
+  }
+}
+
+async function replay() {
   lastFlushAt = Date.now()
   const id = tripId
   try {
@@ -174,7 +203,6 @@ export async function flush(force = false) {
       notify()
     }
   } finally {
-    flushing = false
     await persist(true)
     notify()
   }

@@ -3,7 +3,7 @@
 Owners: **Sanath** (user app) · **Umesh** (driver app) · **Jaswanth** (backend, website,
 operations console, infrastructure).
 
-Completed tasks are ~~struck through~~. Status as of 11 Oct 2026, branch `production-p1`.
+Completed tasks are ~~struck through~~. Status as of 12 Oct 2026, branch `production-p1`.
 Sanath's and Jaswanth's to-do lists were annotated by Umesh on 11 Oct 2026 with work he did in
 their areas; that work is pushed to `production-p1` but unreviewed.
 
@@ -49,8 +49,8 @@ bundles. Details in `progress.md`; phone checks in `docs/user-app-testing.md`.
 - [ ] Garage management in Profile: add, edit, delete and set a default car
       — **Written.** Needs a phone check.
 - [ ] Pay an outstanding amount due after a trip that ran over its hold
-      — **Not built.** The amount is shown on the completion screen and the receipt. Charging
-      it needs backend payment work (see Jaswanth's list).
+      — **Written** (Jaswanth, 12 Oct): "Pay ₹X" on the completion screen opens the same
+      checkout page, which now collects the amount due. Needs a phone check.
 - [ ] Trip history list with receipts (and email a receipt once the backend supports it)
       — **Written**, with sharing as text. Email waits on the backend.
 - [ ] Empty, error and offline states on every screen; retry when the network drops mid-trip
@@ -150,30 +150,31 @@ a trip escalated by an SOS dropped the customer out of the live screen.
 - [x] ~~GitHub Actions CI (backend tests, website lint and builds)~~
 - [x] ~~Merge `main` and `validation` into `production-p1`~~
 
+### Done 12 Oct 2026 (not yet committed)
+- [x] ~~Console plate during a trip: the customer's car from the booking (the car being
+      driven), falling back to the driver's profile plate~~
+- [x] ~~Console live map and live board over WebSocket (`SUBSCRIBE_OPS`; 60 s backstop poll,
+      4/10 s polling while the feed is down)~~
+- [x] ~~Review Umesh's backend changes. Fixed: FCM calls had no timeout and run inside trip
+      transitions. Left as is: `minio` image unpinned (`latest`), and FCM deletes a token on
+      any `INVALID_ARGUMENT` (an iOS APNs token is deleted on its first send)~~
+- [x] ~~Charge an amount due: a second order from the same checkout page, captured on payment,
+      idempotent across checkout callback and webhook (migration `0018`)~~
+- [x] ~~"Driver arrived": set when the driver's position is within 150 m of the pickup during
+      `HANDSHAKE_PENDING`; WebSocket frame `DRIVER_ARRIVED` and a customer push~~
+- [x] ~~Trip API returns `started_at` and `arrived_at`; the driver app's timer uses `started_at`~~
+- [x] ~~Practical test date: `assessment_attempts.scheduled_at`, set from the console driver
+      page; shown in the driver app's Tests tab and the grading queue~~
+- [x] ~~`[BOOK-01]` made deterministic; a cancel that races dispatch now retries once~~
+
 ### To do
-- [ ] Decide which plate the console shows during a trip: the customer's car (being driven)
-      or the driver's profile plate
-- [ ] Console live map and live board over WebSocket instead of 4 s polling
 - [ ] Send push notifications from the backend for offers and trip events (FCM/APNs keys)
-      — Offer pushes (driver) and trip-event pushes (customer) are **written by Umesh, pushed,
-      not reviewed**. Still to do: the FCM service account on the server with
+      — Code reviewed. Still to do: the FCM service account on the server with
       `PUSH_PROVIDER=fcm`, and iOS (FCM cannot use the raw APNs token the apps register).
-- [ ] Review Umesh's pushed backend changes (list in `progress.md`): polling fixes,
-      telemetry accepted during `ESCALATED`, `src/modules/driver-app/` (earnings, assessments,
-      profile), `DELETE /v1/me/devices`, `trips/customer-push.ts`, the MinIO image swap in the
-      dev compose file, and the additive methods in `prototype/shared/api-client.js`
+- [ ] Amount due against Razorpay test mode (only the mock provider has been run)
 - [ ] Firebase project with Android apps for `com.mydriver.driver` and `com.mydriver.user`
       (each with `.preview` and `.dev`); send `google-services.json` for both apps
 - [ ] Maps SDK for Android key that allows those six package names
-- [ ] Charge an amount due: `captureForTrip` records `amount_due` when the final fare is above
-      the hold but nothing collects it. Needs a second order, a migration, and changes to the
-      checkout page, verify route and webhook. The user app shows the amount and waits on this.
-- [ ] "Driver arrived" event, if the customer should be notified of it (no such state today)
-- [ ] Return the trip's start time in the trip API (the driver app's timer counts from when
-      tracking began on the phone instead)
-- [ ] A database field for the practical test date (the driver app's Tests tab cannot show one)
-- [ ] Smoke test `[BOOK-01]` depends on timing: it cancels without waiting for dispatch, and
-      failed once in two full runs. Probably needs `awaitDispatchIdle()`.
 - [ ] Switch providers from mock/console to live: Razorpay, Cashfree, SMS (Twilio/MSG91),
       voice (Exotel/Twilio), liveness, Google Maps, S3; store keys in the server secrets
 - [ ] Safety Desk one-click call and SMS to driver, customer and guardians, end to end with

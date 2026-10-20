@@ -17,6 +17,8 @@ const REASONS = {
   ROUTE_DEVIATION: 'Route deviation',
   ROUTE_DEVIATION_EXCEEDED: 'Route deviation',
   TELEMETRY_LOST: 'Lost contact with phone',
+  MOCK_LOCATION: 'Fake GPS detected',
+  FARE_DISTANCE_REVIEW: 'Fare distance capped for review',
   UNUSUAL_STOP: 'Unusual stop',
   GPS_MISMATCH: 'Driver and customer GPS disagree',
   SOS: 'SOS raised',

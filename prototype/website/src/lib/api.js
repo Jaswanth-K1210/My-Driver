@@ -121,7 +121,7 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
     await loadTokens()
 
     const send = async () => {
-      const headers = { ...(options.headers ?? {}) }
+      const headers = { ...options.headers }
       if (options.body !== undefined) headers['content-type'] = 'application/json'
       if (options.auth !== false && accessToken) headers.authorization = `Bearer ${accessToken}`
 
@@ -174,6 +174,7 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
     let closedByCaller = false
     let attempt = 0
     const subscriptions = new Set()
+    const opsViews = new Set()
     const handlers = new Map()
 
     const emit = (frame) => {
@@ -200,6 +201,7 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
           attempt = 0
           onState?.('open')
           for (const id of subscriptions) send({ type: 'SUBSCRIBE', trip_id: id })
+          for (const view of opsViews) send({ type: 'SUBSCRIBE_OPS', view })
           resolve()
         }
         ws.onerror = () => reject(new Error('WebSocket failed to open'))
@@ -243,6 +245,19 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
       unsubscribe(tripId) {
         subscriptions.delete(tripId)
         send({ type: 'UNSUBSCRIBE', trip_id: tripId })
+      },
+      /**
+       * Operations console only (Safety Desk roles). 'board' sends OPS_CHANGED
+       * when the live board should be refetched; 'map' sends DRIVERS_LIVE with
+       * every online driver every few seconds.
+       */
+      subscribeOps(view) {
+        opsViews.add(view)
+        send({ type: 'SUBSCRIBE_OPS', view })
+      },
+      unsubscribeOps(view) {
+        opsViews.delete(view)
+        send({ type: 'UNSUBSCRIBE_OPS', view })
       },
       sendDriverTelemetry(tripId, coords, sensors) {
         send({
@@ -443,6 +458,13 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
       assessments: () => request('/v1/admin/assessments'),
 
       pendingAttempts: (params = {}) => request(`/v1/admin/attempts/pending${qs(params)}`),
+
+      /** Set or move a driver's practical test date (ISO string). */
+      schedulePractical: (driverId, code, scheduledAt) =>
+        request(`/v1/admin/drivers/${driverId}/practical`, {
+          method: 'POST',
+          body: { code, scheduled_at: scheduledAt },
+        }),
 
       gradeAttempt: (id, score, notes) =>
         request(`/v1/admin/attempts/${id}/grade`, {

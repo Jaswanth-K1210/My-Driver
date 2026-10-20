@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Archive, Check, Star } from 'lucide-react-native'
+import * as WebBrowser from 'expo-web-browser'
+import { Archive, Check, CreditCard, Star } from 'lucide-react-native'
 import TripMap from '../../components/TripMap'
 import Button from '../../components/Button'
 import Card from '../../components/Card'
@@ -28,6 +29,20 @@ export default function TripCompleteScreen({ trip, summary, onSave }) {
     }
   }, [trip.serverId])
   const due = payment?.amount_due > 0 ? payment.amount_due : 0
+
+  // The same hosted checkout page; with money owed it collects the difference.
+  const payDue = async () => {
+    await WebBrowser.openBrowserAsync(api.payments.checkoutUrl(payment), {
+      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      controlsColor: colors.red,
+    })
+    try {
+      const { payment: next } = await api.payments.forTrip(trip.serverId)
+      setPayment(next ?? null)
+    } catch {
+      // Offline: the card stays and the receipt shows what is owed.
+    }
+  }
 
   // Fare, distance, duration and the limit are the server's frozen record of
   // the trip. Top speed and breaches are what this phone saw on the live
@@ -116,9 +131,11 @@ export default function TripCompleteScreen({ trip, summary, onSave }) {
           <Card tone="alert">
             <Text style={{ ...type.bodyBold, color: colors.redPressed }}>{formatINR(due)} still to pay</Text>
             <Text style={{ ...type.caption, color: colors.text, marginTop: 4, lineHeight: 18 }}>
-              The final fare was more than the amount held at booking. Paying the difference in the app is not
-              available yet. It is shown on this trip's receipt.
+              The final fare was more than the amount held at booking. Pay the difference to settle this trip.
             </Text>
+            <View style={{ marginTop: space.sm }}>
+              <Button label={`Pay ${formatINR(due)}`} icon={CreditCard} onPress={payDue} />
+            </View>
           </Card>
         ) : null}
 

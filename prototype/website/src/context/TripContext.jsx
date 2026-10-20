@@ -250,9 +250,11 @@ export function TripProvider({ children }) {
     const timer = setInterval(async () => {
       try {
         const { payment: next } = await api.payments.forTrip(tripId)
+        if (tripIdRef.current !== tripId) return
         if (next) setPayment(next)
         if (next && !['CREATED', 'FAILED'].includes(next.status)) {
-          applyTrip(await api.trips.get(tripId))
+          const latest = await api.trips.get(tripId)
+          if (tripIdRef.current === tripId) applyTrip(latest)
         }
       } catch {
         // Transient; the next tick retries.
@@ -270,7 +272,8 @@ export function TripProvider({ children }) {
     const timer = setInterval(async () => {
       try {
         const latest = await api.trips.get(tripId)
-        if (latest) applyTrip(latest)
+        // Cancelled or dismissed while the request was in flight: do not revive it.
+        if (latest && tripIdRef.current === tripId) applyTrip(latest)
       } catch {
         // Ignore transient network errors.
       }

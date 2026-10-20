@@ -124,7 +124,7 @@ export async function getTripDetail(tripId: string, actorId: string, actorRole: 
   delete trip.pickup_handshake_otp_hash
   delete trip.idempotency_key
 
-  const [events, payment, escalations, rating, inspections, links, checkin] = await Promise.all([
+  const [events, payment, escalations, rating, inspections, links, checkin, anomalies] = await Promise.all([
     pool.query(
       `SELECT e.type, e.created_at, e.actor_role, e.payload, u.full_name AS actor_name
          FROM trip_events e LEFT JOIN users u ON u.id = e.actor_id
@@ -156,6 +156,12 @@ export async function getTripDetail(tripId: string, actorId: string, actorRole: 
       [tripId],
     ),
     pool.query(`SELECT due_at, called_at, outcome, notes FROM post_trip_checkins WHERE trip_id = $1`, [tripId]),
+    // Every automated flag, including the ones that never open an incident
+    // (a fare capped for review).
+    pool.query(
+      `SELECT reason, level, details, created_at FROM anomalies WHERE trip_id = $1 ORDER BY created_at`,
+      [tripId],
+    ),
   ])
 
   await audit(actorId, actorRole, 'VIEW_TRIP', tripId)
@@ -168,6 +174,7 @@ export async function getTripDetail(tripId: string, actorId: string, actorRole: 
     inspections: inspections.rows,
     guardian: links.rows[0],
     checkin: checkin.rows[0] ?? null,
+    anomalies: anomalies.rows,
   }
 }
 

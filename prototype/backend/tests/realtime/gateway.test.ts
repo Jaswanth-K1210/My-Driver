@@ -12,6 +12,8 @@ import {
   BOOK_BODY, GACHIBOWLI, HITEC_CITY, makeCustomer, makeOnlineDriver, SELFIE, type Actor,
 } from '../helpers/trips.js'
 import { awaitDispatchIdle } from '../../src/modules/trips/dispatch-tracker.js'
+import { publishLiveDrivers } from '../../src/realtime/ops-feed.js'
+import { loginAsRole } from '../helpers/safety.js'
 import { closeWs, connectWs, expectWsRejected, nextFrame, sendFrame, waitForFrame } from '../helpers/ws.js'
 
 describe('realtime gateway', () => {
@@ -269,17 +271,24 @@ describe('realtime gateway', () => {
   })
 
   describe('end to end with real telemetry', () => {
-    it('computes the completed distance from the streamed route', async () => {
+    it('computes the completed distance from the recorded route', async () => {
       await startTrip()
-      const ws = await open(driver)
+      // Back-date the start so the route below falls inside the trip.
+      await pool.query(`UPDATE trips SET started_at = now() - interval '10 minutes' WHERE id = $1`, [tripId])
 
-      // Three fixes, one second apart, along the HITEC City -> Gachibowli line.
+      // Three fixes a minute apart along the HITEC City -> Gachibowli line,
+      // as a phone that was offline replays them.
       const mid = { lat: 17.4441, lng: 78.3864 }
-      for (const point of [HITEC_CITY, mid, GACHIBOWLI]) {
-        sendFrame(ws, telemetry(point))
-        await new Promise((r) => setTimeout(r, 1050))
-      }
-      await getTelemetryWriter().flush()
+      const sentAt = Date.now()
+      const points = [HITEC_CITY, mid, GACHIBOWLI].map((coords, i) => ({
+        timestamp: sentAt - (2 - i) * 60_000,
+        coords: { ...coords, speed: 40 },
+      }))
+      const batch = await app.inject({
+        method: 'POST', url: `/v1/trips/${tripId}/telemetry`,
+        headers: bearer(driver.accessToken), payload: { sent_at: sentAt, points },
+      })
+      expect(batch.json().accepted).toBe(3)
 
       const res = await app.inject({
         method: 'POST', url: `/v1/trips/${tripId}/complete`, headers: bearer(driver.accessToken),
@@ -287,11 +296,67 @@ describe('realtime gateway', () => {
       expect(res.statusCode).toBe(200)
 
       const body = res.json()
-      // Travelled distance is the raw polyline (~1.43 km), not the 1.35x estimate.
+      // Travelled distance is the recorded route (~1.43 km), not the 1.35x estimate.
       expect(body.distance_km).toBeGreaterThan(1.35)
       expect(body.distance_km).toBeLessThan(2.0)
       expect(body.distance_km).toBeLessThan(body.estimated_distance_km)
       expect(body.driver_earnings).toBeCloseTo(body.fare_amount - 19, 2)
+    })
+
+    it('keeps fake-GPS fixes off the track and flags the trip', async () => {
+      await startTrip()
+      const ws = await open(driver)
+      const frame = telemetry(HITEC_CITY)
+      sendFrame(ws, { ...frame, coords: { ...frame.coords, mocked: true } })
+
+      let reasons: string[] = []
+      for (let i = 0; i < 40 && reasons.length === 0; i++) {
+        await new Promise((r) => setTimeout(r, 50))
+        const { rows } = await pool.query(`SELECT reason FROM anomalies WHERE trip_id = $1`, [tripId])
+        reasons = rows.map((r) => r.reason as string)
+      }
+      expect(reasons).toEqual(['MOCK_LOCATION'])
+
+      await getTelemetryWriter().flush()
+      const { rows } = await pool.query(`SELECT count(*)::int AS n FROM telematics_logs WHERE trip_id = $1`, [tripId])
+      expect(rows[0].n).toBe(0)
+    })
+  })
+
+  describe('operations console feed', () => {
+    it('refuses the console feed to a customer', async () => {
+      const ws = await open(customer)
+      sendFrame(ws, { type: 'SUBSCRIBE_OPS', view: 'board' })
+      expect(await nextFrame(ws)).toMatchObject({ type: 'ERROR', code: 'FORBIDDEN_OPS' })
+    })
+
+    it('signals the board on a trip change and pushes driver positions to the map, audited once', async () => {
+      const agent = await loginAsRole(app, '+919800000077', 'SAFETY_DESK_AGENT')
+      const ws = await open(agent as Actor)
+      sendFrame(ws, { type: 'SUBSCRIBE_OPS', view: 'board' })
+      expect(await nextFrame(ws)).toEqual({ type: 'OPS_SUBSCRIBED', view: 'board' })
+      sendFrame(ws, { type: 'SUBSCRIBE_OPS', view: 'map' })
+      expect(await nextFrame(ws)).toEqual({ type: 'OPS_SUBSCRIBED', view: 'map' })
+
+      // Listen first: the frame can arrive before inject() resolves.
+      const changed = waitForFrame(ws, 'OPS_CHANGED')
+      await app.inject({
+        method: 'POST', url: `/v1/trips/${tripId}/offer/respond`,
+        headers: bearer(driver.accessToken), payload: { accept: true },
+      })
+      await changed
+
+      const live = waitForFrame(ws, 'DRIVERS_LIVE')
+      expect(await publishLiveDrivers()).toBe(true)
+      // A second beat inside the interval is skipped: one publisher per beat.
+      expect(await publishLiveDrivers()).toBe(false)
+      const frame = (await live) as { drivers: Array<{ driver_id: string; trip_id: string | null }> }
+      expect(frame.drivers.find((d) => d.driver_id === driver.userId)?.trip_id).toBe(tripId)
+
+      const { rows } = await pool.query(
+        `SELECT action FROM audit_log WHERE actor_id = $1 ORDER BY action`, [agent.userId],
+      )
+      expect(rows.map((r) => r.action)).toEqual(['VIEW_DRIVER_MAP', 'VIEW_LIVE_BOARD'])
     })
   })
 })
