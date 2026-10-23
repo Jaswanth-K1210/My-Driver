@@ -1,6 +1,6 @@
 # Driver app: how to test the Phase 1 to-do items on a real phone
 
-Written 2026-10-10, sections 12 and 13 added 2026-10-11. Everything below was built and bundled on a laptop; **none of
+Written 2026-10-10, sections 12 and 13 added 2026-10-11, section 14 added 2026-10-24. Everything below was built and bundled on a laptop; **none of
 it has been run on a phone yet**. Each section says what to do and what you
 should see.
 
@@ -29,6 +29,10 @@ Backend on the laptop: `npm run infra:up; npm run db:migrate; npm run dev` in
 
 You also need a customer to book trips: the user app on a second phone, or the
 website.
+
+Since 2026-10-18 an approved driver must also fill in their name, vehicle model
+and plate before Home appears (section 14), and the app checks approval with
+the server before going online or taking a trip.
 
 ## 1. Push notifications for offers
 
@@ -98,7 +102,9 @@ Open the three new tabs with no trip in progress.
   paid out" should all rise by your share, and the trip should be listed. A
   payout only appears after Finance generates one in the console.
 - Tests: every active test with its status. To see other states, have an ops
-  user grade an attempt in the console.
+  user grade an attempt in the console. To see a practical test date, set one
+  on the driver's page in the console: the practical test shows "Scheduled"
+  and "Your practical test is on <date>".
 - Profile: score, rating, Night Shield, badges, documents. To test expiry
   reminders, set a licence expiry 20 days out in the database, reopen Profile:
   a red "document needs attention" card should appear, and reminders are
@@ -158,7 +164,9 @@ variables before a production build.
    customer's app should show the trip as cancelled.
 3. Restart mid-drive: on the drive screen, force-stop the app and reopen it.
    It should return to the drive screen, not the pre-trip inspection, and the
-   timer should show the time since the trip began, not 00:00.
+   timer should show the time since the trip began, not 00:00. Since
+   2026-10-21 the timer uses the server's `started_at`, so it is right even
+   after clearing the app's storage.
 4. Restart during an SOS: press SOS, force-stop, reopen. The drive screen with
    the "Safety Desk alerted" card should appear.
 5. End trip by mistake: tap End trip, then the back arrow on the drop-off
@@ -187,6 +195,32 @@ variables before a production build.
 6. In the console, open the driver: the new licence is listed for review.
    Verify it, pull to refresh Profile: the row shows "Verified".
 
+## 14. Approval gate, profile setup, trip end (added 2026-10-24)
+
+From `bd0d854` and `52c609f`. Not yet run on a phone.
+
+1. Profile setup: sign in as an approved driver with no vehicle details. The
+   app opens Profile in setup mode; Home appears only after saving a name (2+
+   characters), a vehicle model and a plate. The plate is saved in capitals.
+2. Not approved: set the driver's `onboarding_status` to `UNDER_REVIEW` in the
+   database, reopen the app: the onboarding checklist shows, not Home.
+3. Offline start, no trip: aeroplane mode, force-stop, reopen. "Could not
+   verify your driver status" with Try again; going online is not possible.
+4. Offline start mid-drive: start a drive, aeroplane mode, force-stop, reopen.
+   The drive screen returns (the trip continues), and the location queue
+   grows. Go online again: the queue drains.
+5. Ending with a backlog: on the drive screen go offline for a minute, turn
+   the network on and at once tap End trip and seal the drop-off photos. If
+   fixes are still queued the app says "Some of the route has not uploaded
+   yet"; try again once the count reaches zero.
+6. After the trip: the summary shows the fare breakdown; tapping Done shows
+   "Revalidating your driver status" briefly, then Home, still online.
+7. Missed offers: go online, let two offers expire without answering. The
+   server takes the driver offline and the app says "You are offline after
+   missing trip requests".
+8. Fake GPS: with a mock-location app on Android, drive a trip. The fixes are
+   dropped and the Safety Desk shows an L1 `MOCK_LOCATION` flag.
+
 ## Needs from Jaswanth
 
 1. A Firebase project with Android apps for `com.mydriver.driver`,
@@ -196,7 +230,8 @@ variables before a production build.
    with `PUSH_PROVIDER=fcm`.
 3. A Maps SDK for Android key.
 4. A decision for iOS push. The backend sends through FCM, but the app
-   registers the raw APNs token on iOS, which FCM cannot use. Either the
-   backend sends to APNs directly, or the iOS app adds the Firebase SDK.
-5. Practical test dates: the database has no field for a scheduled date, so
-   the Tests tab says "MyDriver will contact you with a date".
+   registers the raw APNs token on iOS, which FCM cannot use (and deletes it
+   on the first send). Either the backend sends to APNs directly, or the iOS
+   app adds the Firebase SDK.
+
+Practical test dates were added on 2026-10-21 (`assessment_attempts.scheduled_at`).

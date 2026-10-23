@@ -1,6 +1,7 @@
 # User app: how to test the Phase 1 to-do items on a real phone
 
-Written 2026-10-11. Everything below was built, linted and bundled on a laptop;
+Written 2026-10-11, updated 2026-10-24 for the amount-due payment, "driver
+arrived", customer location and the arrival cancellation fee. Everything below was built, linted and bundled on a laptop;
 **none of it has been run on a phone or an emulator yet**. Each section says
 what to do and what you should see.
 
@@ -75,6 +76,7 @@ log, which is still enough to check the wording and timing.
 2. Book a trip, then press the home button. Each of these should arrive as a
    notification:
    - the driver accepts: "Your driver is on the way"
+   - the driver comes within 150 m of the pickup: "Your driver has arrived"
    - the handshake completes: "Trip started"
    - the driver ends the trip: "Trip ended"
 3. Tap a notification: the app opens on that trip's current screen.
@@ -89,7 +91,8 @@ log, which is still enough to check the wording and timing.
    must not get notifications.
    `SELECT count(*) FROM device_tokens WHERE user_id = '<customer id>';` is 0.
 
-There is no "driver arrived" notification: the backend has no arrival event.
+"Driver arrived" was added to the backend on 2026-10-21. It is detected from
+the driver's position, so the driver's phone has to be near the pickup.
 
 ## 4. Pickup code and silent SOS
 
@@ -115,6 +118,17 @@ There is no "driver arrived" notification: the backend has no arrival event.
    with the screen off or the app in the background, and a press is not seen
    when the volume is already at its highest or lowest.
 
+6. Customer location (added 2026-10-21): when the trip starts the app asks for
+   location "while using the app". Allow it: the server compares the
+   customer's position with the driver's. Deny it: the trip goes on normally.
+   This uses `expo-location`, a native module, so it needs the development
+   build.
+7. Cancelling after arrival (added 2026-10-24): once the driver has arrived,
+   tap X. The confirmation says the driver is already at the pickup and shows
+   the cancellation fee (set in the console's Pricing page). Confirm: the
+   fee is taken from the hold and the rest is released. Before arrival the
+   confirmation says cancelling is free.
+
 ## 5. Garage
 
 1. Profile > My garage > Add a car. Pick a make and model, add a registration
@@ -131,12 +145,19 @@ There is no "driver arrived" notification: the backend has no arrival event.
 
 ## 6. Amount due after a trip
 
-Paying the difference in the app is **not built**: the backend records the
-amount but has no way to charge it (see `progress.md`). What to check:
+Built by Jaswanth on 2026-10-21: a second order on the same checkout page.
+Only run against the mock payment provider so far.
 
-1. Run a trip that ends above its hold. The completion screen shows a red
-   "₹N still to pay" card.
-2. Trips tab, open that trip: the receipt has a red "Still to pay" line.
+1. Run a trip that ends above its hold (a long detour, or a low hold set in
+   the database). The completion screen shows a red "₹N still to pay" card
+   with a "Pay ₹N" button.
+2. Tap it. The checkout page says "Pay the amount due" with the amount. With
+   the mock provider, approve the test payment and close the page: the card
+   disappears.
+3. Trips tab, open that trip: before paying, the receipt has a red "Still to
+   pay" line. There is no Pay button there yet (open gap).
+4. In the database, `SELECT amount_due, amount_due_paid FROM payments WHERE trip_id = '<id>';`
+   shows 0 and the amount paid.
 
 ## 7. Trip history and receipts
 
@@ -209,6 +230,10 @@ variables before a production build. No build has been run.
    `com.mydriver.user.preview` and `com.mydriver.user.dev`, and the
    `google-services.json` that covers them.
 2. A Maps SDK for Android key that allows those three package names.
-3. A decision on charging an amount due (section 6).
-4. The same iOS push decision as the driver app: the backend sends through
+3. The same iOS push decision as the driver app: the backend sends through
    FCM, which cannot use the raw APNs token the iOS app registers.
+
+Since 2026-10-24 the website lets the server choose the driver tier from the
+car. The user app still shows its tier picker and sends the chosen tier,
+which the server still accepts. Whether the app should follow the website is
+an open question.

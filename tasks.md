@@ -3,9 +3,9 @@
 Owners: **Sanath** (user app) · **Umesh** (driver app) · **Jaswanth** (backend, website,
 operations console, infrastructure).
 
-Completed tasks are ~~struck through~~. Status as of 12 Oct 2026, branch `production-p1`.
-Sanath's and Jaswanth's to-do lists were annotated by Umesh on 11 Oct 2026 with work he did in
-their areas; that work is pushed to `production-p1` but unreviewed.
+Completed tasks are ~~struck through~~. Status as of 24 Oct 2026, branch `production-p1` after
+`cd9de9c`. Sanath's and Jaswanth's to-do lists were annotated by Umesh on 11 Oct 2026 with work he
+did in their areas. Jaswanth reviewed the backend part of it on 21 Oct (`52c609f`).
 
 ---
 
@@ -41,8 +41,9 @@ bundles. Details in `progress.md`; phone checks in `docs/user-app-testing.md`.
       — **Written.** Needs a Maps SDK for Android key and a phone check.
 - [ ] Push notifications: register the device (`api.devices.register`) and handle driver
       matched, driver arrived, trip started/ended, and payment due
-      — **Written**, app and backend, except "driver arrived" (the backend has no arrival
-      event). Needs `google-services.json` and a phone check.
+      — **Written**, app and backend. "Driver arrived" is now sent by the backend (Jaswanth,
+      21 Oct); the app shows it as a notification but the live screen does not yet use
+      `arrived_at` or the `DRIVER_ARRIVED` frame. Needs `google-services.json` and a phone check.
 - [ ] Silent SOS on triple volume-button press
       — **Written**, behind a switch in Profile, off by default. Works only with the trip
       screen open. Adds the native module `react-native-volume-manager`, not yet built.
@@ -50,7 +51,9 @@ bundles. Details in `progress.md`; phone checks in `docs/user-app-testing.md`.
       — **Written.** Needs a phone check.
 - [ ] Pay an outstanding amount due after a trip that ran over its hold
       — **Written** (Jaswanth, 12 Oct): "Pay ₹X" on the completion screen opens the same
-      checkout page, which now collects the amount due. Needs a phone check.
+      checkout page, which now collects the amount due. Needs a phone check. Gap: the Trips
+      tab receipt shows "Still to pay" with no Pay button, so a customer who leaves the
+      completion screen has no way back to it.
 - [ ] Trip history list with receipts (and email a receipt once the backend supports it)
       — **Written**, with sharing as text. Email waits on the backend.
 - [ ] Empty, error and offline states on every screen; retry when the network drops mid-trip
@@ -103,6 +106,15 @@ a trip escalated by an SOS dropped the customer out of the live screen.
       failed uploads
 - [ ] Profile: documents with expiry reminders, badges, Night Shield status, score and rating
 - [ ] Battery and data usage check during a 2-hour trip
+- [ ] Follow-ups from the 24 Oct review of `bd0d854` and `52c609f` (details in `progress.md`):
+      user app shows "Verified Chauffeur" / "ID Verified" when a car has no model or plate;
+      hardcoded ₹19 platform-fee fallbacks in the driver Home and Trip summary screens (fees
+      are console-editable since `cd9de9c`); decide whether drivers must enter their own
+      vehicle and plate before going online
+- [ ] User app follow-ups from `cd9de9c`: tier picker vs the server choosing the tier from the
+      car (the website already does); settings for the new safety defaults (speed limit,
+      share with guardians, female driver preference); tell the customer on the live screen
+      when the driver has arrived
 - [ ] App icons, splash screen, store listing text and screenshots
 - [ ] EAS build profiles and production `.env`; internal TestFlight and Play testing builds
 
@@ -172,6 +184,11 @@ a trip escalated by an SOS dropped the customer out of the live screen.
       — Code reviewed. Still to do: the FCM service account on the server with
       `PUSH_PROVIDER=fcm`, and iOS (FCM cannot use the raw APNs token the apps register).
 - [ ] Amount due against Razorpay test mode (only the mock provider has been run)
+- [ ] Offer poll load (raised by Umesh, 24 Oct): `listPendingOffers` now runs
+      `requireApprovedDriver` (a Postgres query) before the Redis offer hint, so every 2.5 s
+      poll from every online driver hits the database again, which the polling fixes had removed.
+      Checking approval only when the hint says an offer may exist would keep the fix
+      (accepting an offer checks approval anyway)
 - [ ] Firebase project with Android apps for `com.mydriver.driver` and `com.mydriver.user`
       (each with `.preview` and `.dev`); send `google-services.json` for both apps
 - [ ] Maps SDK for Android key that allows those six package names

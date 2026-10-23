@@ -3,6 +3,135 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-24: review of the pushed commits `bd0d854`, `52c609f` and `cd9de9c`
+
+Three commits landed on `production-p1` after 2026-10-11. `bd0d854` and
+`52c609f` were reviewed in full and checked on the laptop; `cd9de9c` arrived
+during the session and was read for its effect on the apps only (see below).
+This session changed only docs (`progress.md`, `tasks.md`, the two testing
+guides), committed and pushed on top of `cd9de9c`.
+
+The local `prototype/backend/package-lock.json` change was identical to the
+one in `52c609f`, so it is now committed upstream and there is nothing left
+to keep out. It was stashed (`stash@{0}`), not discarded; the stash can be
+dropped with `git stash drop`.
+
+**`bd0d854` (Umesh, 18 Oct): onboarding gate, active-trip continuity, booking
+and earnings fixes.**
+
+- Driver app: new `src/lib/onboardingGate.js` (11 unit tests, `npm test`).
+  The app no longer treats an offline onboarding check as approved. A trip
+  already past the handshake (`IN_TRIP`/`ESCALATED`) carries on through a
+  network failure if this driver was approved before; going online, offers
+  and new trips wait for a fresh server check. The approval and active trip
+  are stored in SecureStore per driver; the auth context keeps a cached user
+  on a network failure at start-up.
+- Driver app: mandatory profile setup (name, vehicle model, plate) before
+  going online; `PATCH /v1/driver/profile`; Home shows net earnings; Trip
+  summary has an earnings breakdown; Earnings tab per-trip detail; push loads
+  `expo-notifications` lazily so Expo Go on Android does not crash.
+- Backend: server-side approval checks on going online, offers, accept and
+  handshake (`requireApprovedDriver`); stop fees and multi-stop/round-trip
+  distance in quote, booking and completion (`fare.ts`); driver earnings
+  estimate is fare less the platform fee (was 80%); KYC fills an empty name;
+  seed rate card for `MD-Auto` is now 18/km, 260/h ("Auto Spec.").
+- Website: place picker, booking fields, multi-stop pricing, Track page.
+
+**`52c609f` (Jaswanth, 21 Oct): telemetry accuracy, auth races, review fixes,
+ops feed.** Jaswanth reviewed the 10–11 Oct backend work. He did:
+
+- Amount due charged with a second order on the same checkout page
+  (migration `0018`); the user app's completion screen has "Pay ₹X".
+- "Driver arrived" (150 m of pickup during `HANDSHAKE_PENDING`): `arrived_at`,
+  a `DRIVER_ARRIVED` frame and a customer push.
+- `started_at` in the trip API; the driver timer now uses it.
+- Practical test date (`assessment_attempts.scheduled_at`), shown in Tests.
+- `[BOOK-01]` made deterministic; a cancel that races dispatch retries once.
+- Billing distance from a filtered track (jitter, impossible speeds, accuracy
+  worse than 50 m, fixes before `started_at`); capped at estimate × 1.5 + 2 km
+  with a Safety Desk flag. Mock locations dropped and flagged L1. The driver
+  app refuses to end a trip while fixes are still queued, and thins the
+  offline queue instead of dropping the oldest fixes.
+- User app sends the customer's position during the trip (adds
+  `expo-location`, a native module: needs the development build).
+- FCM calls time out after 5 s. Left as is: FCM deletes a token on any
+  `INVALID_ARGUMENT`, so an iOS APNs token is deleted on its first send.
+- Console live board and map over WebSocket (`SUBSCRIBE_OPS`).
+
+**`cd9de9c` (Jaswanth, 24 Oct): car-based tiers, editable fees, safety
+defaults, map picker, arrival cancellation fee.** What matters for the apps:
+
+- The server can pick the driver tier from the car (`trips/tier.ts`);
+  `required_certification` is now optional. The website uses this. The user
+  app still has its tier picker and sends a tier, which the server still
+  honours. Whether the app should follow the website is an open question.
+- Platform, night, stop and arrival-cancellation fees are editable in the
+  console (`pricing_fees`, migrations `0019`, `0020`). This makes the
+  hardcoded ₹19 in the driver app (finding 3) wrong whenever ops change it.
+- Cancelling after the driver arrives charges a fee paid to the driver. The
+  user app's live screen now warns about it, using `arrived_at` and the fee
+  from `catalogue.tripConfig()`.
+- A driver who lets two offers expire in a row is taken offline; the driver
+  app shows "You are offline after missing trip requests" (`DRIVER_OFFLINE`).
+- Customer safety defaults (speed limit, share with guardians, female driver
+  preference) exist on the backend and website; the user app has no
+  settings for them yet.
+- Hourly hire now has a 2-hour minimum on the server (the user app already
+  had it).
+
+### Checked on the laptop after the fast-forward to `52c609f`
+
+`cd9de9c` was not run through these checks: its app changes are small (the
+driver context and the user app's live screen), but the backend suite
+should be run again on it.
+
+| Check | Result |
+|---|---|
+| Driver app unit tests (`npm test`) | 11 pass |
+| Driver app lint (oxlint) | Clean |
+| Driver app Android bundle | Bundled |
+| User app `npm ci`, lint | Two old warnings in `RoutePlannerCard.jsx` |
+| User app Android bundle | Bundled |
+| Backend typecheck | Passed |
+| Backend suite (after migration `0018`) | 382 tests in 33 files pass, including `[BOOK-01]` (28 min on this machine) |
+
+Vendored API clients match `prototype/shared/api-client.js`.
+
+### Review findings (not fixed; nothing was changed in code)
+
+1. **User app shows invented vehicle text.** `src/lib/tripView.js` falls back
+   to "Verified Chauffeur" for the vehicle and "ID Verified" (or the
+   gearbox and fuel type) for the plate. This breaks the no-invented-data
+   rule and puts a claim in the plate field. It should show nothing, or the
+   customer's own car from `vehicle_specs`. Came in with `bd0d854`.
+2. **Offer poll hits Postgres again.** `listPendingOffers` calls
+   `requireApprovedDriver` before the Redis hint, so every poll is a query
+   (about 400/s at 1,000 online drivers). Jaswanth's area; added to his list.
+3. **Hardcoded ₹19** platform fee as a fallback in `DriverHomeScreen.jsx`
+   (offer card) and `TripSummaryScreen.jsx`. The server sends the figure, and
+   since `cd9de9c` ops can change it.
+4. **Mandatory driver vehicle and plate.** A driver cannot go online without
+   their own vehicle model and plate, but MyDriver drivers drive the
+   customer's car. Product decision for the team.
+5. **Amount due only payable from the completion screen.** The Trips tab
+   receipt has no Pay button.
+6. **"Driver arrived" barely used in the user app's live screen.** Since
+   `cd9de9c` the cancel confirmation uses `arrived_at`, but the screen does
+   not tell the customer the driver is waiting, and the `DRIVER_ARRIVED`
+   frame is not handled (the screen learns of it only on the next trip read).
+7. Any 403 from the operations the driver gate watches (go online, offers,
+   accept, handshake, cancel, complete) puts the app on the "Driver access
+   restricted" screen and drops the stored approval. Today every such 403 is
+   a real approval failure, so this is correct, but a future 403 for another
+   reason on `complete` would stop tracking mid-trip.
+
+The website and console changes were not reviewed in depth (Jaswanth's area).
+Nothing in either commit has run on a phone.
+
+Machine note: Docker Desktop left open with the backend's containers stopped;
+the local database has migration `0018`. `npm ci` was run in the user app
+for `expo-location`.
+
 ## 2026-10-11 (second session): user app to-do list
 
 Umesh took over Sanath's to-do list for `prototype/mobile/user`.
@@ -300,60 +429,81 @@ I have taken over the user app's to-do list, prototype/mobile/user (it was
 Sanath's). Both are Expo SDK 57, RN 0.86, JS. Jaswanth owns the backend,
 website, console and infra.
 
-Start by reading progress.md, tasks.md, docs/driver-app-testing.md and
-docs/user-app-testing.md, then run git status and git log -8. Do not re-do
-work those files describe.
+Start by reading progress.md (the 2026-10-24 section first), tasks.md,
+docs/driver-app-testing.md and docs/user-app-testing.md, then run git fetch,
+git status and git log -8. If origin has commits newer than the docs
+describe, read what they change in the two apps before anything else. Do not
+re-do work those files describe.
 
-Where things stand (end of 2026-10-11): everything is committed and pushed to
-production-p1. Jaswanth and Sanath have NOT reviewed it yet; I sent them
-messages. Checked on the laptop only: both apps lint and bundle for Android,
-backend typecheck, backend suite (359 tests in 32 files). Nothing has run on
-a phone or emulator and no EAS build has ever been made.
+Where things stand (end of 2026-10-24): production-p1 has my docs commit on
+top of Jaswanth's cd9de9c. Jaswanth reviewed my backend work (52c609f) and
+built the amount-due charge, "driver arrived", started_at in the trip API,
+the practical test date and a fix for [BOOK-01]. Then (cd9de9c) car-based
+tiers, console-editable fees, customer safety defaults, an arrival
+cancellation fee and taking a driver offline after missed offers. My commit
+bd0d854 added the driver app's approval gate, active-trip continuity and
+mandatory profile setup. Sanath has not reviewed the user app.
 
-Driver app: to-do items 1 to 8, 10 and 11 are written and an audit closed
-eleven gaps in the trip flows.
-User app: to-do items 1 to 5 and 7 to 11 are written, plus a backend module
-that sends the customer trip notifications (trips/customer-push.ts).
+Checked on the laptop at 52c609f: driver unit tests (11), both apps lint and
+bundle for Android, backend typecheck, backend suite (382 tests in 33 files).
+cd9de9c has NOT been checked: run the backend suite and both apps' lint on it
+first. Nothing has run on a phone or emulator and no EAS build has been made.
 
-Still open:
+Open review findings (details in progress.md, 2026-10-24), all unfixed:
+1. User app tripView.js shows "Verified Chauffeur" / "ID Verified" as the car
+   and plate when there are none (made-up data).
+2. Offer poll queries Postgres on every poll again: listPendingOffers runs
+   requireApprovedDriver before the Redis hint (Jaswanth's code).
+3. Hardcoded Rs 19 platform-fee fallbacks in the driver Home offer card and
+   Trip summary; fees are now editable in the console.
+4. Drivers must enter their own vehicle and plate to go online, though they
+   drive the customer's car: a product decision for the team.
+5. The amount due can only be paid from the trip-complete screen; the Trips
+   tab receipt has no Pay button.
+6. The user app's live screen does not tell the customer the driver has
+   arrived (only the cancel warning uses arrived_at; DRIVER_ARRIVED frame
+   not handled).
+7. Any 403 on the driver's complete call would stop tracking mid-trip (fine
+   today, every such 403 is an approval failure).
+Also open: the user app still has its tier picker while the website lets the
+server pick the tier from the car; the user app has no settings for the new
+safety defaults.
+
+Still open from before:
 - Two deletions I have to approve or run myself (the tool was blocked):
     git rm -r prototype/mobile/user/android   (generated for SDK 54, the app is
       SDK 57; while it exists EAS ignores app.json's icon, permissions and
       plugins, so no user-app build will be right until it is gone; then add
       android/ and ios/ to prototype/mobile/user/.gitignore)
     git rm -r prototype/mobile/proto          (nothing references it)
-- Phone work for both apps: the two testing docs, the driver app's item 9
-  (battery and data over 2 hours), font scaling and small screens in the user
-  app, store screenshots, EAS builds. These need a phone, an Expo login,
-  google-services.json for both apps and a Maps SDK for Android key.
-- User app item 6, charging an amount due: not built. The backend records
-  amount_due and nothing collects it. Needs a second Razorpay order, a
-  migration, and changes to the checkout page, verify route and webhook.
-  Waiting on Jaswanth's decision on who writes it.
+- Phone work for both apps: the two testing docs (driver section 14 and the
+  user app's amount-due, arrival and location checks are new), the driver
+  app's item 9 (battery and data over 2 hours), font scaling and small
+  screens in the user app, store screenshots, EAS builds. These need a phone,
+  an Expo login, google-services.json for both apps and a Maps SDK for
+  Android key.
+- Amount due: only run against the mock payment provider, not Razorpay test mode.
 - iOS push, both apps: the backend sends through FCM, which cannot use the raw
-  APNs token the apps register. Needs an Apple Developer account to test.
-- Waiting on the backend: a trip start time in the trip API (driver timer), a
-  field for the practical test date (driver Tests tab), a "driver arrived"
-  event (customer push).
-- react-native-volume-manager in the user app is a native module that has
-  never been built with it. If the development build fails on it, remove the
-  package; the app then says the feature is unavailable.
-- Backend smoke test [BOOK-01] depends on timing and failed once in two full
-  runs.
+  APNs token the apps register, and deletes it on the first send. Needs an
+  Apple Developer account to test.
+- react-native-volume-manager and expo-location in the user app are native
+  modules that have never been built. If the development build fails on the
+  volume manager, remove it; the app then says the feature is unavailable.
+- stash@{0} holds an old copy of the backend lockfile change, now committed
+  upstream; it can be dropped.
 
 Rules for this repo:
 - The API client is vendored. Edit only prototype/shared/api-client.js, then
   run prototype/shared/sync.sh. Never edit src/lib/api.js in an app directly.
 - Design tokens are red, white and neutral only. No green, amber or blue, no
   hardcoded hex colours.
-- No mock or simulated data on screens. Prices come from the server.
-- prototype/backend/package-lock.json has an unrelated local change. Leave it
-  out of every commit.
+- No mock or simulated data on screens. Prices and fees come from the server.
 - Commit or push only when I ask. Before pushing, fetch and rebase on
   origin/production-p1.
 - This machine is short on memory. Run one heavy command at a time, never the
   test suite and a lint together, and stop Docker's containers when you are
-  done with them.
+  done with them. The backend suite takes about 30 minutes here; run it in
+  the background.
 - The backend and website belong to Jaswanth. If an app needs a change there,
   make it yourself rather than wait, keep it small and additive, add a test,
   and list it in your report and in progress.md. Do not write payment code
@@ -365,10 +515,11 @@ a) google-services.json and a Maps key: wire them into both apps and walk me
 b) Results or bugs from phone testing: fix them one at a time.
 c) Review comments from Jaswanth or Sanath: apply them, re-run the affected
    tests, report.
-d) A go-ahead on the two deletions, or on charging an amount due.
-e) More implementation: iOS push, or anything else I name.
+d) A go-ahead on the two deletions.
+e) Fix the open review findings (1, 3, 5, 6 are in the apps), iOS push, or
+   anything else I name.
 
 Work one item at a time, tell me how to test each on a real phone, and say
-plainly what you could not verify yourself. Update progress.md and tasks.md
-at the end.
+plainly what you could not verify yourself. Update progress.md, tasks.md and
+the testing docs at the end.
 ```
