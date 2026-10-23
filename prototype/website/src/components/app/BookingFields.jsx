@@ -35,7 +35,7 @@ import {
 import { getLocationById, getMinDurationForConfig, getRecommendedSkillId, getRouteLegTelemetry } from '../../lib/booking.js'
 import { clamp, cn } from '../../lib/utils.js'
 import PlacePicker from './PlacePicker.jsx'
-import { GarageChips } from './Garage.jsx'
+import { SavedCarSelect } from './Garage.jsx'
 import { requirementEnabled, vehicleEnabled } from '../../lib/features.js'
 
 /* ── 1. Vehicle Type Selector ───────────────────────────────────────────── */
@@ -147,9 +147,12 @@ export function CarSpecPicker({ carDetails, onChange, onAutoMatchSkill }) {
   }
 
   return (
-    <div className="space-y-4">
-      <GarageChips carDetails={carDetails} onPick={pickSaved} />
-      {/* Manual / Custom Car Specs Details */}
+    <SavedCarSelect
+      carDetails={carDetails}
+      onPick={pickSaved}
+      onAddNew={() => onChange({ ...carDetails, savedVehicleId: null, plate: '' })}
+    >
+      {/* A new car's details; a saved car needs none of these. */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* Company Selector */}
@@ -256,8 +259,23 @@ export function CarSpecPicker({ carDetails, onChange, onAutoMatchSkill }) {
             </div>
           </div>
         </div>
+
+        <div>
+          <label htmlFor="booking-plate" className="mb-1.5 block text-xs font-bold text-slate-700">
+            Number plate <span className="font-medium text-slate-400">(optional, helps your driver find the car)</span>
+          </label>
+          <input
+            id="booking-plate"
+            type="text"
+            value={carDetails.plate ?? ''}
+            maxLength={16}
+            placeholder="TS 09 EA 4120"
+            onChange={(e) => onChange({ ...carDetails, plate: e.target.value.toUpperCase(), savedVehicleId: null })}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold uppercase text-slate-900 hover:border-slate-300 focus:border-brand-500 focus:outline-none"
+          />
+        </div>
       </div>
-    </div>
+    </SavedCarSelect>
   )
 }
 
@@ -797,7 +815,7 @@ export function TripDetailsForm({ config, setConfig }) {
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="grid flex-1 grid-cols-4 gap-2">
-                {[1, 2, 4, 8].map((h) => {
+                {[2, 4, 8, 12].map((h) => {
                   const isBelowMin = h < minDur.minHours
                   return (
                     <button

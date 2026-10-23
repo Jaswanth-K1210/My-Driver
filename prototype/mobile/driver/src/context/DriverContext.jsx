@@ -224,13 +224,20 @@ export function DriverProvider({ children }) {
         return fresh
       })
     } catch (err) {
+      // The server took this driver offline (missed offers, or ops): match it.
+      if (err?.code === 'DRIVER_OFFLINE') {
+        setOffer(null)
+        setOnline(false)
+        toast('You are offline after missing trip requests. Go online when you are ready.', 'warning', 6000)
+        return
+      }
       const kind = await controller.handleOperationError(err)
       if (kind === 'FORBIDDEN' || kind === 'AUTH_INVALID') {
         setOffer(null)
         setOnline(false)
       }
     }
-  }, [controller])
+  }, [controller, toast])
 
   /**
    * Re-reads the trip from the server. The customer or the Safety Desk can

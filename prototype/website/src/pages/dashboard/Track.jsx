@@ -87,10 +87,11 @@ function PaymentStep({ payment, trip, onPay, onCancel }) {
       <p className="mt-6 text-4xl font-black tracking-tight text-slate-900">
         ₹{payment.amount_authorized.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
       </p>
-      <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Refundable hold</p>
+      <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Hold only · nothing is charged now</p>
       <p className="mx-auto mt-5 max-w-sm text-sm text-slate-600">
-        We hold the quoted fare now and charge the final fare when your trip ends. If you cancel, or no
-        driver is available, the hold is released.
+        Your bank reserves this amount; it is not taken from your account. When the trip ends we charge only
+        the final fare and release the rest. If no driver is found, or you cancel before the driver arrives,
+        the whole hold is released.
       </p>
       {failed && (
         <p className="mt-5 rounded-xl bg-brand-50 px-4 py-3 text-sm font-semibold text-brand-700">
@@ -211,11 +212,11 @@ function NoDriversFound({ trip, onRetry, onChangeBooking }) {
       )}
       <p className="mx-auto mt-3 max-w-md text-sm text-slate-600">
         We searched for an online <span className="font-bold text-slate-900">{trip?.skill ?? 'certified'}</span> driver
-        near your pickup location, but none accepted within the dispatch window.
+        for your car near your pickup, but none accepted in time.
       </p>
       {trip?.fare > 0 && (
         <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-xs font-semibold text-emerald-900">
-          Your refundable fare hold of <span className="font-black">{formatINR(trip.fare)}</span> has been automatically released.
+          You were not charged. The <span className="font-black">{formatINR(trip.fare)}</span> hold on your card has been released.
         </div>
       )}
       <div className="mt-6 flex flex-col gap-2.5 sm:flex-row">
@@ -239,7 +240,7 @@ function NoDriversFound({ trip, onRetry, onChangeBooking }) {
           onClick={onChangeBooking}
           className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3.5 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-100"
         >
-          Update pickup or tier
+          Change pickup or trip
         </button>
       </div>
     </div>
@@ -258,6 +259,14 @@ export default function Track() {
   const [shared, setShared] = useState(null)
   const [sharing, setSharing] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  // After the driver arrives, cancelling (or turning them away) costs a fee
+  // that pays the driver for the trip to you. The amount is the admin's.
+  const arrived = trip?.status === 'HANDSHAKE_PENDING' && Boolean(trip?.arrivedAt)
+  const [arrivalFee, setArrivalFee] = useState(null)
+  useEffect(() => {
+    if (!arrived || arrivalFee !== null) return
+    api.catalogue.tripConfig().then((c) => setArrivalFee(c?.fees?.arrival_cancellation_fee ?? null)).catch(() => undefined)
+  }, [arrived, arrivalFee])
   const [handshakeOtp, setHandshakeOtp] = useState(null)
   const [sosStage, setSosStage] = useState('idle')
   const [countdown, setCountdown] = useState(SOS_COUNTDOWN_S)
@@ -402,13 +411,22 @@ export default function Track() {
           className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:border-brand-300 hover:text-brand-700"
         >
           <X className="h-4 w-4" aria-hidden="true" />
-          Cancel trip
+          {arrived ? 'Cancel or reject driver' : 'Cancel trip'}
         </button>
       </PageHeader>
 
       {confirmCancel && (
         <div className="rise-in flex flex-wrap items-center gap-4 rounded-2xl border border-brand-200 bg-brand-50 p-4">
-          <p className="flex-1 text-sm font-bold text-brand-900">Cancel this trip?</p>
+          <div className="flex-1">
+            <p className="text-sm font-bold text-brand-900">
+              {arrived ? 'Your driver is already at the pickup. Cancel anyway?' : 'Cancel this trip?'}
+            </p>
+            <p className="mt-0.5 text-xs text-brand-800">
+              {arrived
+                ? `A cancellation fee${arrivalFee != null ? ` of ${formatINR(arrivalFee)}` : ''} is charged from your hold and paid to the driver for coming to you. The rest of the hold is released.`
+                : 'Free until your driver arrives. The hold on your card is released.'}
+            </p>
+          </div>
           <div className="flex gap-2">
             <button type="button" onClick={() => setConfirmCancel(false)} className="rounded-xl bg-white px-4 py-2 text-xs font-bold text-slate-900">
               Keep trip
@@ -419,14 +437,14 @@ export default function Track() {
                 setConfirmCancel(false)
                 try {
                   await cancelTrip()
-                  toast('Trip cancelled', 'info')
+                  toast(arrived && arrivalFee ? `Trip cancelled. A ${formatINR(arrivalFee)} cancellation fee was charged.` : 'Trip cancelled', 'info')
                 } catch (err) {
                   toast(err?.message ?? 'Could not cancel the trip', 'warning')
                 }
               }}
               className="rounded-xl bg-brand-500 px-4 py-2 text-xs font-black text-white"
             >
-              Cancel trip
+              {arrived ? `Cancel${arrivalFee != null ? ` and pay ${formatINR(arrivalFee)}` : ''}` : 'Cancel trip'}
             </button>
           </div>
         </div>

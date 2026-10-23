@@ -3,6 +3,7 @@ import { AppError, conflict, forbidden, notFound, unauthorized } from '../../lib
 import { pepperedEquals } from '../../lib/hash.js'
 import { getLivenessProvider } from '../../providers/liveness/index.js'
 import { getStorageProvider } from '../../providers/storage/index.js'
+import { shareGuardianLink } from '../guardian/service.js'
 import { broadcastStateChange } from './broadcast.js'
 import { HANDSHAKE_MAX_ATTEMPTS, recordEvent, transitionTrip } from './service.js'
 import type { TripStatus } from './state-machine.js'
@@ -102,5 +103,21 @@ export async function performHandshake(input: {
   }
 
   await broadcastStateChange(input.tripId, 'IN_TRIP')
+  await shareWithGuardiansIfAsked(input.tripId)
   return { status: 'HANDSHAKE_PASSED', trip_state: 'IN_TRIP' }
+}
+
+/**
+ * The customer's "share every trip with my guardians" choice, acted on when
+ * the trip actually starts. Best effort: a failed SMS must not undo a pickup.
+ */
+async function shareWithGuardiansIfAsked(tripId: string): Promise<void> {
+  const { rows } = await pool.query<{ customer_id: string }>(
+    `SELECT customer_id FROM trips WHERE id = $1 AND share_with_guardians`,
+    [tripId],
+  )
+  if (!rows[0]) return
+  await shareGuardianLink(tripId, rows[0].customer_id).catch((err) =>
+    console.error('auto-share with guardians failed', tripId, err),
+  )
 }

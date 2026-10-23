@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Award, ArrowLeft, Eye, FileText, Fingerprint, Moon, ShieldCheck } from 'lucide-react'
+import { Award, ArrowLeft, Eye, FileText, Fingerprint, Moon, ShieldCheck, Users } from 'lucide-react'
 import { api, ApiError } from '../../lib/apiClient.js'
 import { ask } from '../../components/admin/PromptDialog.jsx'
 import { SectionCard } from '../../components/app/Primitives.jsx'
@@ -163,6 +163,29 @@ export default function DriverDetail() {
           )}
         </SectionCard>
       )}
+
+      <SectionCard title="Gender" icon={Users}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="max-w-md text-xs text-slate-500">
+            Used only to honour a customer&apos;s preference for a female driver, who is then offered nearby trips first.
+            Never shown to customers.
+          </p>
+          <select
+            value={profile.gender ?? ''}
+            disabled={!canAct || busy}
+            onChange={(e) =>
+              run('Gender saved', () => api.admin.setDriverGender(id, e.target.value || null))
+            }
+            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 disabled:bg-slate-50"
+            aria-label="Driver gender"
+          >
+            <option value="">Not recorded</option>
+            <option value="FEMALE">Female</option>
+            <option value="MALE">Male</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+      </SectionCard>
 
       <SectionCard title="Identity verification" icon={Fingerprint}>
         <div className="grid gap-3 sm:grid-cols-2">

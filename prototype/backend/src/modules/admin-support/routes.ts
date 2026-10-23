@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from 'fastify-type-provider-zod'
 import { z } from 'zod'
 import { demoVisible } from '../../lib/demo.js'
 import { requireAuth, requireRole } from '../auth/rbac.js'
+import { getFees, updateFees } from '../trips/fees.js'
 import {
   getCustomer,
   getTripDetail,
@@ -81,6 +82,29 @@ export function registerAdminSupportRoutes(app: FastifyInstance): void {
       schema: { querystring: z.object({ days: z.coerce.number().int().refine((d) => [7, 30, 90].includes(d), 'days must be 7, 30 or 90').default(30) }) },
     },
     async (request) => overview(request.query.days),
+  )
+
+  r.get('/v1/admin/pricing/fees', { onRequest: [requireAuth, requireRole(...MANAGERS)] }, async () => getFees())
+
+  r.patch(
+    '/v1/admin/pricing/fees',
+    {
+      onRequest: [requireAuth, requireRole(...PRICING_EDIT)],
+      schema: {
+        body: z
+          .object({
+            // Same idea as the rate-card bounds: a stray zero must not reach customers.
+            platform_fee: z.number().min(0).max(1_000).optional(),
+            night_fee: z.number().min(0).max(1_000).optional(),
+            city_stop_fee: z.number().min(0).max(1_000).optional(),
+            intercity_stop_fee: z.number().min(0).max(2_000).optional(),
+            arrival_cancellation_fee: z.number().min(0).max(2_000).optional(),
+            reason: z.string().trim().max(300).optional(),
+          })
+          .strict(),
+      },
+    },
+    async (request) => updateFees(request.body, request.auth!.userId, request.auth!.role),
   )
 
   r.get('/v1/admin/rate-cards', { onRequest: [requireAuth, requireRole(...MANAGERS)] }, async () => ({

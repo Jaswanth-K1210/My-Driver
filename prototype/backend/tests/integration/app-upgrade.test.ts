@@ -81,7 +81,7 @@ describe('user app upgrade APIs', () => {
       expect(res.statusCode).toBe(200)
       const body = res.json()
       expect(body.requirements.map((r: { id: string }) => r.id)).toEqual(['within_city', 'inter_city', 'airport', 'full_time'])
-      expect(body.hour_packages[0]).toMatchObject({ id: 'h1', hours: 1, included_km: 10 })
+      expect(body.hour_packages[0]).toMatchObject({ id: 'h2', hours: 2, included_km: 20 })
       expect(body.pickup_times.length).toBeGreaterThan(0)
       // VisionCam is listed but unavailable: nothing behind it exists yet.
       expect(body.vision_modes.every((m: { available: boolean }) => m.available === false)).toBe(true)

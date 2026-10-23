@@ -22,6 +22,10 @@ const STATUS_LABEL = {
  * `visionMode` comes from local config only — the backend has no dashcam
  * concept at all and never returns one.
  */
+// Customers no longer pick a tier, so show its name, never the raw id.
+const TIER_LABEL = { 'MD-Standard': 'Standard', 'MD-Auto': 'Auto Spec.', 'MD-SUV': 'SUV', 'MD-Lux': 'Lux', 'MD-Night': 'Night' }
+export const tierLabel = (id) => TIER_LABEL[id] ?? String(id ?? '').replace(/^MD-/, '')
+
 export function toViewTrip(trip, config) {
   if (!trip) return null
 
@@ -92,7 +96,10 @@ export function toViewTrip(trip, config) {
     statusLabel: STATUS_LABEL[trip.status] ?? trip.status,
     from,
     to,
-    skill: trip.required_certification,
+    skill: tierLabel(trip.required_certification),
+    // Once set, cancelling costs the arrival fee (see Track.jsx).
+    arrivedAt: trip.arrived_at ?? null,
+    cancellationFee: trip.cancellation_fee ?? null,
     ceiling: trip.speed_ceiling_kmh,
     visionMode: config?.visionMode ?? 'R',
     fare: Math.round(trip.fare_amount ?? trip.estimated_fare ?? 0),

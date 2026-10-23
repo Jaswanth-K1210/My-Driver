@@ -31,6 +31,7 @@ import {
   revokeNightShield,
   reviewDocument,
   schedulePracticalTest,
+  setDriverGender,
   setOnboardingStatus,
   shiftChecks,
   unsettled,
@@ -96,6 +97,16 @@ export function registerAdminOpsRoutes(app: FastifyInstance): void {
         request.auth!.role,
         request.body.note,
       ),
+  )
+
+  r.patch(
+    '/v1/admin/drivers/:id/gender',
+    {
+      onRequest: [requireAuth, requireRole(...OPS)],
+      schema: { params: Uuid, body: z.object({ gender: z.enum(['FEMALE', 'MALE', 'OTHER']).nullable() }).strict() },
+    },
+    async (request) =>
+      setDriverGender(request.params.id, request.body.gender, request.auth!.userId, request.auth!.role),
   )
 
   /* ── Documents ─────────────────────────────────────────────────────── */

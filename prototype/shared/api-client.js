@@ -389,6 +389,8 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
       search: (q, near) =>
         request(`/v1/locations/search${qs({ q, lat: near?.lat, lng: near?.lng })}`),
       get: (id) => request(`/v1/locations/${id}`),
+      /** The address at a pin the customer dropped on the map. */
+      reverse: (at) => request(`/v1/locations/reverse${qs({ lat: at.lat, lng: at.lng })}`),
     },
 
     /** Public guardian view. No account, no token — the link is the audience. */
@@ -543,6 +545,12 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
       customer: (id) => request(`/v1/admin/customers/${id}`),
       overview: (days = 30) => request(`/v1/admin/overview?days=${days}`),
       rateCards: () => request('/v1/admin/rate-cards'),
+      /** Platform, night and stop fees, as every quote uses them. */
+      fees: () => request('/v1/admin/pricing/fees'),
+      updateFees: (patch) => request('/v1/admin/pricing/fees', { method: 'PATCH', body: patch }),
+      /** Only used to honour a customer's preference for a female driver. */
+      setDriverGender: (id, gender) =>
+        request(`/v1/admin/drivers/${id}/gender`, { method: 'PATCH', body: { gender } }),
       updateRateCard: (skillId, patch) =>
         request(`/v1/admin/rate-cards/${encodeURIComponent(skillId)}`, { method: 'PATCH', body: patch }),
 

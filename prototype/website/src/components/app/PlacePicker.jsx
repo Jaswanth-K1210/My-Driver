@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
-import { ChevronDown, Loader2, LocateFixed, MapPin, PlusCircle, Search } from 'lucide-react'
+import { ChevronDown, Loader2, LocateFixed, Map as MapIcon, MapPin, PlusCircle, Search } from 'lucide-react'
 import { api } from '../../lib/apiClient.js'
 import { getLocationById, registerPlace } from '../../lib/booking.js'
 import { cn } from '../../lib/utils.js'
+import MapPickerModal from './MapPickerModal.jsx'
 import { useAuth } from '../../context/authStore.js'
 
 /** Parse "18.6429, 78.9165" style coordinate input if entered directly. */
@@ -79,6 +80,7 @@ export default function PlacePicker({
   const [locating, setLocating] = useState(false)
   const [error, setError] = useState(null)
   const [active, setActive] = useState(0)
+  const [mapOpen, setMapOpen] = useState(false)
   const rootRef = useRef(null)
   const inputRef = useRef(null)
   const listId = useId()
@@ -350,6 +352,21 @@ export default function PlacePicker({
             </button>
           )}
 
+          {isAuthenticated && (
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setOpen(false)
+                setMapOpen(true)
+              }}
+              className="mt-2 flex w-full items-center gap-2.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs font-bold text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <MapIcon className="h-4 w-4 shrink-0 text-brand-600" aria-hidden="true" />
+              <span className="truncate">Choose on map</span>
+            </button>
+          )}
+
           <p className="px-2 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
             {searching ? 'Search results' : 'Suggested'}
           </p>
@@ -393,6 +410,17 @@ export default function PlacePicker({
           </ul>
         </div>
       )}
+
+      <MapPickerModal
+        open={mapOpen}
+        title={label ? `${label}: choose on map` : 'Choose on map'}
+        start={selected ?? near}
+        onClose={() => setMapOpen(false)}
+        onPick={(place) => {
+          onChange(registerPlace(place))
+          setMapOpen(false)
+        }}
+      />
     </div>
   )
 }

@@ -8,13 +8,13 @@ import { requireAuth, requireRole } from '../auth/rbac.js'
 import { PaymentSchema } from '../payments/routes.js'
 import { createPaymentForTrip, paymentsEnabled } from '../payments/service.js'
 import { trackDispatch } from './dispatch-tracker.js'
-import { computeFare, estimateTripDistanceKm } from './fare.js'
 import { setAvailability } from './geo-index.js'
 import { performHandshake } from './handshake.js'
 import { respondToOffer, startDispatch } from './matching.js'
-import { getRateCard, listRateCards } from './rate-cards.js'
+import { listRateCards } from './rate-cards.js'
 import {
   bookTrip,
+  priceTrip,
   cancelTrip,
   completeTrip,
   getDriverSummary,
@@ -32,6 +32,7 @@ export const LatLngSchema = z.object({
 
 const FareSchema = z.object({
   base: z.number(),
+  stops_fee: z.number(),
   platform_fee: z.number(),
   night_fee: z.number(),
   total: z.number(),
@@ -42,15 +43,26 @@ const FareSchema = z.object({
  * .strict() is what rejects a stray `mode` field. The backend has zero dashcam
  * awareness, and a silently-ignored field would hide that from clients.
  */
+export const MIN_HOURLY_HOURS = 2
+
+function assertHourlyMinimum(b: { booking_type: string; hours?: number | null | undefined }): void {
+  if (b.booking_type === 'HOURLY' && (b.hours ?? 0) < MIN_HOURLY_HOURS) {
+    throw badRequest('HOURS_TOO_SHORT', `Hourly hire starts at ${MIN_HOURLY_HOURS} hours`)
+  }
+}
+
 export const QuoteBody = z
   .object({
     booking_type: z.enum(['POINT_TO_POINT', 'HOURLY']),
+    // Point-to-point trips send the planned duration here too; only hourly
+    // hire is held to MIN_HOURLY_HOURS (checked where the booking type is known).
     hours: z.number().int().min(1).nullable().optional(),
     pickup: LatLngSchema,
     drop: LatLngSchema.nullable().optional(),
     pickup_address: z.string().max(240).nullable().optional(),
     drop_address: z.string().max(240).nullable().optional(),
-    required_certification: z.string().min(1).max(40),
+    // Optional: when omitted the server picks the tier from car_details.
+    required_certification: z.string().min(1).max(40).optional(),
     stops: z.array(z.any()).nullable().optional(),
     return_stops: z.array(z.any()).nullable().optional(),
     return_drop: LatLngSchema.nullable().optional(),
@@ -92,6 +104,7 @@ const TripViewSchema = z.object({
   distance_km: z.number().nullable(),
   duration_min: z.number().int().nullable(),
   fare_amount: z.number().nullable(),
+  cancellation_fee: z.number().nullable().optional(),
   platform_fee: z.number().nullable().optional(),
   night_fee: z.number().nullable().optional(),
   driver_earnings: z.number().nullable(),
@@ -155,6 +168,7 @@ export function registerTripRoutes(app: FastifyInstance): void {
           200: z.object({
             distance_km: z.number(),
             required_certification: z.string(),
+            tier_label: z.string(),
             fare: FareSchema,
           }),
         },
@@ -165,30 +179,26 @@ export function registerTripRoutes(app: FastifyInstance): void {
       if (body.booking_type === 'POINT_TO_POINT' && !body.drop) {
         throw badRequest('DROP_REQUIRED', 'A drop location is required for a point-to-point trip')
       }
+      assertHourlyMinimum(body)
 
-      const card = await getRateCard(body.required_certification)
-      const { distanceKm, stopsFee } = estimateTripDistanceKm({
+      const { card, distanceKm, fare } = await priceTrip({
+        bookingType: body.booking_type,
+        hours: body.hours,
         pickup: body.pickup,
         drop: body.drop,
         stops: body.stops,
         returnStops: body.return_stops,
         returnDrop: body.return_drop,
-        tripType: body.trip_type,
+        carDetails: body.car_details,
         requirement: body.requirement,
+        tripType: body.trip_type,
+        requiredCertification: body.required_certification,
       })
-
       return {
         distance_km: Math.round(distanceKm * 100) / 100,
         required_certification: card.skill_id,
-        fare: computeFare({
-          bookingType: body.booking_type,
-          distanceKm,
-          hours: body.hours ?? undefined,
-          perKmRate: card.per_km_rate,
-          hourlyRate: card.hourly_rate,
-          pickupAt: new Date(),
-          stopsFee,
-        }),
+        tier_label: card.label,
+        fare,
       }
     },
   )
@@ -200,6 +210,9 @@ export function registerTripRoutes(app: FastifyInstance): void {
       schema: {
         body: QuoteBody.extend({
           speed_ceiling_kmh: z.number().int().min(20).max(120),
+          // The customer's safety choices for this ride (defaults from /v1/me).
+          prefer_female_driver: z.boolean().optional(),
+          share_with_guardians: z.boolean().optional(),
         }).strict(),
         response: { 201: TripViewSchema.extend({ payment: PaymentSchema.nullable() }) },
       },
@@ -209,6 +222,7 @@ export function registerTripRoutes(app: FastifyInstance): void {
       if (b.booking_type === 'POINT_TO_POINT' && !b.drop) {
         throw badRequest('DROP_REQUIRED', 'A drop location is required for a point-to-point trip')
       }
+      assertHourlyMinimum(b)
 
       const idempotencyKey = request.headers['idempotency-key']
       const trip = await bookTrip({
@@ -221,6 +235,8 @@ export function registerTripRoutes(app: FastifyInstance): void {
         dropAddress: b.drop_address,
         requiredCertification: b.required_certification,
         speedCeilingKmh: b.speed_ceiling_kmh,
+        preferFemaleDriver: b.prefer_female_driver,
+        shareWithGuardians: b.share_with_guardians,
         idempotencyKey: typeof idempotencyKey === 'string' ? idempotencyKey : undefined,
         stops: b.stops,
         returnStops: b.return_stops,

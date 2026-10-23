@@ -86,7 +86,7 @@ const EnvSchema = z.object({
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
-  MAPS_PROVIDER: z.enum(['mock', 'google']).default('mock'),
+  MAPS_PROVIDER: z.enum(['mock', 'google', 'photon']).default('mock'),
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   // Seconds a search result is served from Redis before asking Google again.
   LOCATION_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
@@ -146,6 +146,7 @@ export function productionProblems(e: Env): { errors: string[]; warnings: string
   if (e.PUSH_PROVIDER === 'console') warnings.push('PUSH_PROVIDER=console: no push notifications are delivered')
   if (e.VOICE_PROVIDER === 'console') warnings.push('VOICE_PROVIDER=console: Safety Desk calls are logged, not placed')
   if (e.MAPS_PROVIDER === 'mock') warnings.push('MAPS_PROVIDER=mock: place search only knows a few built-in places')
+  if (e.MAPS_PROVIDER === 'photon') warnings.push('MAPS_PROVIDER=photon uses the public fair-use Photon server; use google or a self-hosted Photon for real traffic')
   return { errors, warnings }
 }
 

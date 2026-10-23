@@ -5,7 +5,7 @@ import { getPushProvider } from '../../providers/push/index.js'
 import { releaseForTrip } from '../payments/service.js'
 import { broadcastOffer, broadcastStateChange } from './broadcast.js'
 import { findNearbyDrivers, requireApprovedDriver, SEARCH_RADIUS_KM, setAvailability } from './geo-index.js'
-import { flagPendingOffer } from './offer-hint.js'
+import { clearMissedOffers, flagPendingOffer } from './offer-hint.js'
 import {
   getTripById,
   getTripForParticipant,
@@ -27,13 +27,14 @@ type DispatchTrip = {
   required_certification: string
   dispatch_round: number
   estimated_fare: number | null
+  prefer_female_driver: boolean
 }
 
 async function loadTrip(id: string): Promise<DispatchTrip> {
   const { rows } = await pool.query<DispatchTrip>(
     `SELECT id, customer_id, status, pickup_lat, pickup_lng,
             required_certification, dispatch_round,
-            estimated_fare::float8 AS estimated_fare
+            estimated_fare::float8 AS estimated_fare, prefer_female_driver
        FROM trips WHERE id = $1`,
     [id],
   )
@@ -78,6 +79,7 @@ export async function startDispatch(tripId: string): Promise<void> {
     trip.required_certification,
     10,
     isNightPickupIST(new Date()),
+    trip.prefer_female_driver,
   )
 
   const { rows: alreadyOffered } = await pool.query<{ driver_id: string }>(
@@ -187,6 +189,9 @@ export async function respondToOffer(
   } finally {
     client.release()
   }
+
+  // Any answer, yes or no, proves someone is behind the phone.
+  await clearMissedOffers(driverId).catch(() => undefined)
 
   if (accept) {
     await setAvailability(driverId, 'ON_TRIP')

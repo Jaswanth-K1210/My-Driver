@@ -1,10 +1,30 @@
 import { estimateRoadDistanceKm, type LatLng } from '../../lib/geo.js'
 import { isNightPickupIST } from '../../lib/time.js'
 
+// Defaults only: the live values are in pricing_fees, which ops edit from the
+// console (fees.ts). These seed that row and price anything given no fees.
 export const PLATFORM_FEE = 19
 export const NIGHT_FEE = 30
 export const CITY_STOP_FEE = 60
 export const INTERCITY_STOP_FEE = 100
+export const ARRIVAL_CANCELLATION_FEE = 100
+
+export type Fees = {
+  platform_fee: number
+  night_fee: number
+  city_stop_fee: number
+  intercity_stop_fee: number
+  /** Charged when the customer cancels after the driver has arrived. */
+  arrival_cancellation_fee: number
+}
+
+export const DEFAULT_FEES: Fees = {
+  platform_fee: PLATFORM_FEE,
+  night_fee: NIGHT_FEE,
+  city_stop_fee: CITY_STOP_FEE,
+  intercity_stop_fee: INTERCITY_STOP_FEE,
+  arrival_cancellation_fee: ARRIVAL_CANCELLATION_FEE,
+}
 
 export type BookingType = 'POINT_TO_POINT' | 'HOURLY'
 
@@ -16,10 +36,13 @@ export type FareInput = {
   hourlyRate: number
   pickupAt: Date
   stopsFee?: number | undefined
+  fees?: Fees | undefined
 }
 
 export type FareBreakdown = {
+  /** Distance or hours, plus stops_fee. */
   base: number
+  stops_fee: number
   platform_fee: number
   night_fee: number
   total: number
@@ -51,8 +74,10 @@ export function estimateTripDistanceKm(params: {
   returnDrop?: LatLng | null | undefined
   tripType?: string | null | undefined
   requirement?: string | null | undefined
+  fees?: Fees | undefined
 }): { distanceKm: number; stopsFee: number } {
   const { pickup, drop, stops, returnStops, returnDrop, tripType, requirement } = params
+  const fees = params.fees ?? DEFAULT_FEES
   if (!drop) return { distanceKm: 0, stopsFee: 0 }
 
   const validOutboundStops = extractValidStopCoords(stops)
@@ -60,7 +85,7 @@ export function estimateTripDistanceKm(params: {
   const validReturnStops = isTwoWay ? extractValidStopCoords(returnStops) : []
   const totalStopsCount = validOutboundStops.length + validReturnStops.length
   const stopsFee =
-    totalStopsCount * (requirement === 'inter_city' ? INTERCITY_STOP_FEE : CITY_STOP_FEE)
+    totalStopsCount * (requirement === 'inter_city' ? fees.intercity_stop_fee : fees.city_stop_fee)
 
   // Preserve exact unrounded point-to-point distance for direct single-leg calls without requirement metadata
   if (!requirement && validOutboundStops.length === 0 && !isTwoWay) {
@@ -106,21 +131,23 @@ export function computeFare(input: FareInput): FareBreakdown {
     throw new Error('distanceKm must not be negative')
   }
 
-  const stopsFee = input.stopsFee ?? 0
+  const fees = input.fees ?? DEFAULT_FEES
+  const stopsFee = input.bookingType === 'HOURLY' ? 0 : (input.stopsFee ?? 0)
   const base = round2(
     input.bookingType === 'HOURLY'
       ? input.hourlyRate * input.hours!
       : input.perKmRate * input.distanceKm + stopsFee,
   )
 
-  const night_fee = isNightPickupIST(input.pickupAt) ? NIGHT_FEE : 0
-  const total = round2(base + PLATFORM_FEE + night_fee)
+  const night_fee = isNightPickupIST(input.pickupAt) ? fees.night_fee : 0
+  const total = round2(base + fees.platform_fee + night_fee)
 
   return {
     base,
-    platform_fee: PLATFORM_FEE,
+    stops_fee: round2(stopsFee),
+    platform_fee: fees.platform_fee,
     night_fee,
     total,
-    driver_earnings: round2(total - PLATFORM_FEE),
+    driver_earnings: round2(total - fees.platform_fee),
   }
 }

@@ -25,3 +25,26 @@ export async function mayHavePendingOffer(driverId: string): Promise<boolean> {
     return true
   }
 }
+
+/**
+ * Offers a driver let expire in a row. A phone that died or an app that was
+ * killed leaves the driver ONLINE, and every offer to them costs a customer a
+ * 20-second dispatch round out of three. Past this many, they are taken
+ * offline. Answering any offer, either way, resets the count.
+ */
+export const MAX_MISSED_OFFERS = 2
+const missedKey = (driverId: string): string => `offer:missed:${driverId}`
+
+/** Counts one expired offer; true once the driver has missed too many. */
+export async function recordMissedOffer(driverId: string): Promise<boolean> {
+  const n = await redis.incr(missedKey(driverId))
+  // A slow evening is not a dead phone: misses hours apart do not add up.
+  await redis.expire(missedKey(driverId), 30 * 60)
+  if (n < MAX_MISSED_OFFERS) return false
+  await redis.del(missedKey(driverId))
+  return true
+}
+
+export async function clearMissedOffers(driverId: string): Promise<void> {
+  await redis.del(missedKey(driverId))
+}

@@ -19,33 +19,55 @@ import {
   CarSpecPicker,
   CeilingSlider,
   RequirementSelector,
-  SmartDriverPicker,
   TimePicker,
   TripDetailsForm,
   VehicleTypeSelector,
 } from '../../components/app/BookingFields.jsx'
+import { Toggle } from '../../components/app/Primitives.jsx'
+import { useAuth } from '../../context/authStore.js'
 import { useTrip } from '../../context/tripStore.js'
 import { useToast } from '../../context/toastStore.js'
 import { REQUIREMENTS, VEHICLE_TYPES } from '../../data/mock.js'
 import { isEnabled, vehicleEnabled } from '../../lib/features.js'
-import { getRecommendedSkillId, quoteFor, serverQuote } from '../../lib/booking.js'
+import { quoteFor, serverQuote } from '../../lib/booking.js'
 import { api } from '../../lib/apiClient.js'
 import { cn, formatINR } from '../../lib/utils.js'
 
 export default function Book() {
   const navigate = useNavigate()
   const { config, setConfig, skills, startMatching } = useTrip()
+  const { user, refreshMe } = useAuth()
   const { toast } = useToast()
+  const safety = user?.safety
+  const firstTime = safety ? !safety.set : false
 
-  // Accordion open/collapse states
+  // Accordion open/collapse states. Safety starts open only for a customer
+  // who has never chosen their defaults.
   const [openSections, setOpenSections] = useState({
     vehicle: true,
     car: true,
     requirement: true,
-    driver: true,
     safety: false,
     fare: true,
   })
+  const [saveDefaults, setSaveDefaults] = useState(false)
+
+  // Pre-fill this ride from the saved defaults, once they are known.
+  useEffect(() => {
+    if (!safety) return
+    if (safety.set) {
+      setConfig((prev) => ({
+        ...prev,
+        ceiling: safety.speed_limit_kmh,
+        shareWithGuardians: safety.share_with_guardians,
+        preferFemaleDriver: safety.prefer_female_driver,
+      }))
+    } else {
+      setOpenSections((prev) => ({ ...prev, safety: true }))
+      setSaveDefaults(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safety?.set])
 
   const toggleSection = (key) => {
     setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }))
@@ -81,25 +103,28 @@ export default function Book() {
     }
   }, [config, skills, local.ready])
 
-  const quote = local
-  const total = server && config.requirement !== 'full_time' ? server.fare.total : local.total
-  const nightFee = server ? server.fare.night_fee : local.nightFee
+  // Everything on the fare card comes from the server's quote: the same rate
+  // card and fees the admin sets and the final fare uses. Nothing is priced here.
+  const ready = local.ready && server != null
+  const fare = server?.fare
 
   const set = (patch) => setConfig((prev) => ({ ...prev, ...patch }))
 
-  // Auto-match driver skill whenever car details or requirement changes
-  const handleAutoMatch = (updatedCarOrReq) => {
-    const car = updatedCarOrReq?.company ? updatedCarOrReq : config.carDetails
-    const req = typeof updatedCarOrReq === 'string' ? updatedCarOrReq : config.requirement
-    const recSkill = getRecommendedSkillId(car, req)
-    set({ skillId: recSkill })
-  }
-
   const submit = async (e) => {
     e.preventDefault()
-    if (!quote.ready || busy) return
+    if (!ready || busy) return
     setBusy(true)
     try {
+      if (saveDefaults) {
+        await api.me.update({
+          safety: {
+            speed_limit_kmh: config.ceiling,
+            share_with_guardians: Boolean(config.shareWithGuardians),
+            prefer_female_driver: Boolean(config.preferFemaleDriver),
+          },
+        })
+        void refreshMe()
+      }
       await startMatching(config)
       navigate('/app/track')
     } catch (err) {
@@ -111,7 +136,7 @@ export default function Book() {
 
   // Steps renumber themselves when a phase toggle hides one.
   const showVehicleStep = VEHICLE_TYPES.filter((v) => vehicleEnabled(v.id)).length > 1
-  const steps = [showVehicleStep && 'vehicle', 'car', 'trip', 'tier', 'safety'].filter(Boolean)
+  const steps = [showVehicleStep && 'vehicle', 'car', 'trip', 'safety'].filter(Boolean)
   const step = (key) => steps.indexOf(key) + 1
 
   const activeReq = REQUIREMENTS.find((r) => r.id === config.requirement) ?? REQUIREMENTS[0]
@@ -202,11 +227,7 @@ export default function Book() {
 
             {openSections.car && (
               <div className="mt-4 pt-4 border-t border-slate-100">
-                <CarSpecPicker
-                  carDetails={config.carDetails}
-                  onChange={(carDetails) => set({ carDetails })}
-                  onAutoMatchSkill={handleAutoMatch}
-                />
+                <CarSpecPicker carDetails={config.carDetails} onChange={(carDetails) => set({ carDetails })} />
               </div>
             )}
           </div>
@@ -248,11 +269,7 @@ export default function Book() {
 
             {openSections.requirement && (
               <div className="mt-4 pt-4 border-t border-slate-100 space-y-4">
-                <RequirementSelector
-                  value={config.requirement}
-                  onChange={(requirement) => set({ requirement })}
-                  onAutoMatchSkill={(req) => handleAutoMatch(req)}
-                />
+                <RequirementSelector value={config.requirement} onChange={(requirement) => set({ requirement })} />
 
                 <div className="rounded-2xl border border-slate-200/80 bg-slate-50/70 p-4">
                   <TripDetailsForm config={config} setConfig={setConfig} />
@@ -295,46 +312,7 @@ export default function Book() {
             )}
           </div>
 
-          {/* ── CARD 4: SMART DRIVER SELECTION ── */}
-          <div className="rounded-3xl border border-slate-200 bg-white p-6">
-            <button
-              type="button"
-              onClick={() => toggleSection('driver')}
-              className="flex w-full items-center justify-between text-left"
-            >
-              <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                  <ShieldCheck className="h-5 w-5" />
-                </div>
-                <div>
-                  <h2 className="text-base font-bold text-slate-900">{step('tier')}. Driver tier</h2>
-                  {!openSections.driver && (
-                    <p className="text-xs font-medium text-emerald-600">
-                      Tier: {quote.skill.label} (₹{quote.skill.rate}/km)
-                    </p>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="hidden sm:inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-700 border border-emerald-100">
-                  {quote.skill.label}
-                </span>
-                {openSections.driver ? (
-                  <ChevronUp className="h-5 w-5 text-slate-400" />
-                ) : (
-                  <ChevronDown className="h-5 w-5 text-slate-400" />
-                )}
-              </div>
-            </button>
-
-            {openSections.driver && (
-              <div className="mt-4 pt-4 border-t border-slate-100">
-                <SmartDriverPicker config={config} onChange={(skillId) => set({ skillId })} skills={skills} />
-              </div>
-            )}
-          </div>
-
-          {/* ── CARD 5: SAFETY CONTROLS (COLLAPSED BY DEFAULT) ── */}
+          {/* ── CARD: SAFETY (asked once, then the customer's defaults) ── */}
           <div className="rounded-3xl border border-slate-200 bg-white p-6">
             <button
               type="button"
@@ -342,28 +320,53 @@ export default function Book() {
               className="flex w-full items-center justify-between text-left"
             >
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-700">
-                  <Gauge className="h-5 w-5" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+                  <ShieldCheck className="h-5 w-5" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">{step('safety')}. Safety</h2>
+                  <h2 className="text-base font-bold text-slate-900">
+                    {step('safety')}. {firstTime ? 'Set your safety preferences' : 'Safety'}
+                  </h2>
                   <p className="text-xs font-medium text-slate-500">
-                    Speed limit {config.ceiling} km/h · the driver is alerted above it
+                    {firstTime
+                      ? 'Choose once. We use them for every ride, and you can change them any time.'
+                      : [
+                          `Speed limit ${config.ceiling} km/h`,
+                          config.shareWithGuardians && 'shared with guardians',
+                          config.preferFemaleDriver && 'female driver preferred',
+                        ].filter(Boolean).join(' · ')}
                   </p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                {openSections.safety ? (
-                  <ChevronUp className="h-5 w-5 text-slate-400" />
-                ) : (
-                  <ChevronDown className="h-5 w-5 text-slate-400" />
-                )}
-              </div>
+              {openSections.safety ? <ChevronUp className="h-5 w-5 text-slate-400" /> : <ChevronDown className="h-5 w-5 text-slate-400" />}
             </button>
 
             {openSections.safety && (
-              <div className="mt-4 pt-4 border-t border-slate-100 space-y-5">
+              <div className="mt-4 space-y-5 border-t border-slate-100 pt-4">
                 <CeilingSlider value={config.ceiling} onChange={(ceiling) => set({ ceiling })} />
+                <Toggle
+                  checked={Boolean(config.shareWithGuardians)}
+                  onChange={(shareWithGuardians) => set({ shareWithGuardians })}
+                  label="Share every trip with my guardians"
+                  description="When the trip starts, your guardians get a text with a live-tracking link. Add guardians in your profile."
+                />
+                <Toggle
+                  checked={Boolean(config.preferFemaleDriver)}
+                  onChange={(preferFemaleDriver) => set({ preferFemaleDriver })}
+                  label="Prefer a female driver"
+                  description="Female drivers nearby are offered your trip first. If none accepts, the next available driver is."
+                />
+                {!firstTime && (
+                  <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={saveDefaults}
+                      onChange={(e) => setSaveDefaults(e.target.checked)}
+                      className="h-4 w-4 accent-brand-500"
+                    />
+                    Make these my defaults for future rides
+                  </label>
+                )}
               </div>
             )}
           </div>
@@ -378,50 +381,67 @@ export default function Book() {
                 <h2 className="text-base font-black text-slate-900">Fare and booking</h2>
               </div>
               <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                Refundable hold
+                Pay after the trip
               </span>
             </div>
 
-            <dl className="mt-4 space-y-2.5 text-sm">
-              {quote.lines.map((line) => (
-                <div key={line.label} className="flex justify-between">
-                  <dt className="text-slate-500">{line.label}</dt>
-                  <dd className="font-semibold text-slate-800">{line.value}</dd>
-                </div>
-              ))}
-              {nightFee > 0 && (
+            {ready ? (
+              <dl className="mt-4 space-y-2.5 text-sm">
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">Night monitoring allowance</dt>
-                  <dd className="font-semibold text-slate-800">{formatINR(nightFee)}</dd>
+                  <dt className="text-slate-500">Driver</dt>
+                  <dd className="text-right font-semibold text-slate-800">
+                    {server.tier_label}
+                    <span className="block text-[11px] font-medium text-slate-400">matched to your car</span>
+                  </dd>
                 </div>
-              )}
-              {quote.note && (
-                <div className="rounded-xl bg-slate-50 p-2.5 text-xs text-slate-500 font-medium">
-                  ℹ️ {quote.note}
+                {config.requirement !== 'full_time' && (
+                  <div className="flex justify-between">
+                    <dt className="text-slate-500">Estimated distance</dt>
+                    <dd className="font-semibold text-slate-800">~{server.distance_km} km</dd>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Trip fare</dt>
+                  <dd className="font-semibold text-slate-800">{formatINR(fare.base - fare.stops_fee)}</dd>
                 </div>
-              )}
-              <div className="flex items-baseline justify-between border-t border-slate-200 pt-3.5">
-                <div>
-                  <dt className="font-black text-base text-slate-900">Estimated total</dt>
-                  <span className="text-[11px] text-slate-400">Includes the platform fee. You pay the final fare when the trip ends.</span>
+                {fare.stops_fee > 0 && (
+                  <div className="flex justify-between">
+                    <dt className="text-slate-500">Stops</dt>
+                    <dd className="font-semibold text-slate-800">{formatINR(fare.stops_fee)}</dd>
+                  </div>
+                )}
+                <div className="flex justify-between">
+                  <dt className="text-slate-500">Platform fee</dt>
+                  <dd className="font-semibold text-slate-800">{formatINR(fare.platform_fee)}</dd>
                 </div>
-                <dd className="text-3xl font-black tracking-tight text-brand-600">
-                  {quote.ready ? formatINR(total) : '—'}
-                </dd>
-              </div>
-            </dl>
+                {fare.night_fee > 0 && (
+                  <div className="flex justify-between">
+                    <dt className="text-slate-500">Night fee (10 pm – 5 am)</dt>
+                    <dd className="font-semibold text-slate-800">{formatINR(fare.night_fee)}</dd>
+                  </div>
+                )}
+                <div className="flex items-baseline justify-between border-t border-slate-200 pt-3.5">
+                  <div>
+                    <dt className="font-black text-base text-slate-900">Estimated total</dt>
+                    <span className="text-[11px] text-slate-400">Nothing is charged now. We place a hold for this amount and charge only the final fare, on the distance actually driven, when the trip ends.</span>
+                  </div>
+                  <dd className="text-3xl font-black tracking-tight text-brand-600">{formatINR(fare.total)}</dd>
+                </div>
+              </dl>
+            ) : (
+              <p className="mt-4 text-sm text-slate-500">
+                {local.ready ? 'Calculating your fare…' : 'Complete your trip details to see the fare.'}
+              </p>
+            )}
 
             <button
               type="submit"
-              disabled={!quote.ready || busy}
+              disabled={!ready || busy}
               className="mt-6 flex w-full items-center justify-center gap-2.5 rounded-2xl bg-brand-500 px-6 py-4 text-base font-black text-white shadow-xl shadow-brand-500/25 transition-all hover:bg-brand-600 active:scale-[0.99] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none"
             >
               <Search className="h-5 w-5" />
-              {busy ? 'Booking…' : `Book a ${quote.skill.label} driver`}
+              {busy ? 'Booking…' : 'Book a driver'}
             </button>
-            {!quote.ready && (
-              <p className="mt-2 text-center text-xs text-slate-500">Complete your trip details to see the fare</p>
-            )}
           </div>
         </form>
 

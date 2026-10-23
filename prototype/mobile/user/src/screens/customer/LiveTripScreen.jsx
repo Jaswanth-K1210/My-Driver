@@ -76,6 +76,9 @@ export default function LiveTripScreen({ trip, onCancel }) {
   const [sharing, setSharing] = useState(false)
   const [linkSent, setLinkSent] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
+  // After the driver arrives, cancelling (or turning them away) costs a fee
+  // paid to the driver. The amount is set by Finance in the console.
+  const [arrivalFee, setArrivalFee] = useState(null)
   const [sosStage, setSosStage] = useState('idle')
   const [countdown, setCountdown] = useState(SOS_COUNTDOWN_S)
   const holdRef = useRef(null)
@@ -106,6 +109,11 @@ export default function LiveTripScreen({ trip, onCancel }) {
   const drop = rawTrip?.drop
   // Before the handshake the driver is heading to the pickup, after it to the drop.
   const arriving = trip.status === 'HANDSHAKE_PENDING'
+  const driverArrived = arriving && Boolean(rawTrip?.arrived_at)
+  useEffect(() => {
+    if (!driverArrived || arrivalFee !== null) return
+    api.catalogue.tripConfig().then((c) => setArrivalFee(c?.fees?.arrival_cancellation_fee ?? null)).catch(() => undefined)
+  }, [driverArrived, arrivalFee])
   const heading = arriving ? pickup : drop
   const left = driverPosition && heading ? km(driverPosition, heading) : null
   const etaMin = left != null ? Math.max(1, Math.ceil((left / CITY_KMH) * 60)) : null
@@ -279,7 +287,14 @@ export default function LiveTripScreen({ trip, onCancel }) {
 
       {confirmCancel && arriving ? (
         <Card tone="alert" style={{ marginHorizontal: space.lg, marginBottom: space.sm }}>
-          <Text style={{ ...type.caption, color: colors.redPressed }}>Cancel this trip?</Text>
+          <Text style={{ ...type.caption, color: colors.redPressed }}>
+            {driverArrived ? 'Your driver is already at the pickup. Cancel anyway?' : 'Cancel this trip?'}
+          </Text>
+          <Text style={{ ...type.caption, fontWeight: '500', color: colors.textMuted, marginTop: 4 }}>
+            {driverArrived
+              ? `A cancellation fee${arrivalFee != null ? ` of ${formatINR(arrivalFee)}` : ''} is charged from your hold and paid to the driver for coming to you. The rest is released.`
+              : 'Free until your driver arrives. The hold on your card is released.'}
+          </Text>
           <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.sm }}>
             <Button
               label="Keep riding"
@@ -287,7 +302,12 @@ export default function LiveTripScreen({ trip, onCancel }) {
               onPress={() => setConfirmCancel(false)}
               style={{ flex: 1 }}
             />
-            <Button label="Cancel trip" variant="danger" onPress={onCancel} style={{ flex: 1 }} />
+            <Button
+              label={driverArrived ? `Cancel${arrivalFee != null ? ` · pay ${formatINR(arrivalFee)}` : ''}` : 'Cancel trip'}
+              variant="danger"
+              onPress={onCancel}
+              style={{ flex: 1 }}
+            />
           </View>
         </Card>
       ) : null}

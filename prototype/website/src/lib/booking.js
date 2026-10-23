@@ -95,7 +95,7 @@ export const DEFAULT_CONFIG = {
   },
   
   // Full-time State
-  durationHours: 1,
+  durationHours: 2, // hourly hire starts at 2 hours
   fullTimeDetails: {
     locality: 'HITEC City & Gachibowli',
     durationUnit: 'months', // 'days' | 'weeks' | 'months'
@@ -210,13 +210,15 @@ export function getMinDurationForConfig(config) {
     // Average city traffic speed ~25km/h, +30m per stop buffer
     const driveMinutes = Math.round((totalKm / 25) * 60) + (totalStops * 30)
     const requiredMinutes = driveMinutes + 10 // Minimum selected duration must be 10 min greater than travel time
-    const minHours = Math.max(1, Math.ceil(requiredMinutes / 60))
+    const travelHours = Math.ceil(requiredMinutes / 60)
+    // Hourly hire starts at 2 hours; a long route needs more.
+    const minHours = Math.max(2, travelHours)
 
     return {
       minHours,
-      label: minHours > 1 
-        ? `Travel time (~${driveMinutes} mins + 10 min buffer) needs at least ${minHours} ${minHours === 1 ? 'hour' : 'hours'}`
-        : '1 hour minimum package',
+      label: travelHours > 2
+        ? `Travel time (~${driveMinutes} mins + 10 min buffer) needs at least ${minHours} hours`
+        : 'Bookings start at 2 hours',
     }
   }
 
@@ -610,8 +612,16 @@ export function quoteFor(
   }
 }
 
-export function bookingPayloadFor(config, skills = SKILLS) {
-  const skill = skillFor(config.skillId, skills)
+/**
+ * The tier is no longer sent: the server picks it from car_details, the same
+ * way for every client, and the quote says which one it chose.
+ */
+const safetyFields = (config) => ({
+  prefer_female_driver: Boolean(config.preferFemaleDriver),
+  share_with_guardians: Boolean(config.shareWithGuardians),
+})
+
+export function bookingPayloadFor(config) {
   const chosenPickup = getLocationById(config.pickupId) ?? PICKUP
   const isTwoWay = config.tripType === 'two_way'
 
@@ -642,8 +652,8 @@ export function bookingPayloadFor(config, skills = SKILLS) {
       pickup: { lat: chosenPickup.lat, lng: chosenPickup.lng },
       pickup_address:
         config.fullTimeDetails?.locality || chosenPickup.address || chosenPickup.name,
-      required_certification: skill.id,
       speed_ceiling_kmh: config.ceiling,
+      ...safetyFields(config),
       ...basePayload,
     }
   }
@@ -698,8 +708,8 @@ export function bookingPayloadFor(config, skills = SKILLS) {
     pickup_address,
     drop,
     drop_address,
-    required_certification: skill.id,
     speed_ceiling_kmh: config.ceiling,
+    ...safetyFields(config),
     hours: config.durationHours,
     ...basePayload,
   }
@@ -710,7 +720,10 @@ export async function serverQuote(api, config, skills = SKILLS) {
   try {
     const payload = bookingPayloadFor(config, skills)
     const quoteBody = { ...payload }
+    // Booking-only fields: the quote endpoint refuses them.
     delete quoteBody.speed_ceiling_kmh
+    delete quoteBody.prefer_female_driver
+    delete quoteBody.share_with_guardians
     return await api.trips.quote(quoteBody)
   } catch {
     return null

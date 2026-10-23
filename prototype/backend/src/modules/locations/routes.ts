@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { AppError, tooManyRequests } from '../../lib/errors.js'
 import { consumeQuota } from '../../lib/rate-limit.js'
 import { requireAuth } from '../auth/rbac.js'
-import { searchLocations } from './service.js'
+import { reverseLocation, searchLocations } from './service.js'
 
 const PlaceSchema = z.object({ id: z.string(), name: z.string(), address: z.string(), lat: z.number(), lng: z.number() })
 
@@ -40,6 +40,28 @@ export function registerLocationRoutes(app: FastifyInstance): void {
       } catch (err) {
         request.log.warn({ err }, 'location search upstream failed')
         throw new AppError(503, 'LOCATION_SEARCH_UNAVAILABLE', 'Location search is unavailable right now. Try again shortly.')
+      }
+    },
+  )
+
+  r.get(
+    '/v1/locations/reverse',
+    {
+      onRequest: [requireAuth, searchQuota],
+      schema: {
+        querystring: z.object({
+          lat: z.coerce.number().min(-90).max(90),
+          lng: z.coerce.number().min(-180).max(180),
+        }),
+        response: { 200: PlaceSchema },
+      },
+    },
+    async (request) => {
+      try {
+        return await reverseLocation(request.query)
+      } catch (err) {
+        request.log.warn({ err }, 'reverse geocode upstream failed')
+        throw new AppError(503, 'LOCATION_SEARCH_UNAVAILABLE', 'Could not look up that point. Try again shortly.')
       }
     },
   )

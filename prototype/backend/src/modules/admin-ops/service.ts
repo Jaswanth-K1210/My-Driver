@@ -16,6 +16,7 @@ import type { Role } from '../auth/otp.js'
 import { raiseEscalation } from '../escalation/service.js'
 import { audit } from '../safety-desk/service.js'
 import { removeDriverFromIndex } from '../trips/geo-index.js'
+import { earnedAt, earningTrip } from '../trips/earning.js'
 
 export type OnboardingStatus =
   | 'PENDING'
@@ -134,7 +135,7 @@ export async function getDriver(driverId: string) {
     `SELECT dp.user_id, u.full_name, u.phone_number, u.email,
             dp.onboarding_status, dp.mydriver_score::float8 AS mydriver_score,
             dp.rating::float8 AS rating, dp.rating_count, dp.total_trips,
-            dp.certifications, dp.night_shield_certified,
+            dp.certifications, dp.night_shield_certified, dp.gender,
             dp.vehicle_model, dp.vehicle_plate, dp.availability,
             dp.reviewed_by, dp.reviewed_at, dp.review_note, dp.onboarded_at
        FROM driver_profiles dp
@@ -200,9 +201,9 @@ export async function driverActivity(driverId: string) {
     pool.query(
       `SELECT count(*) FILTER (WHERE status = 'COMPLETED')::int AS completed,
               count(*) FILTER (WHERE status = 'CANCELLED')::int AS cancelled,
-              COALESCE(sum(driver_earnings) FILTER (WHERE status = 'COMPLETED'), 0)::float8 AS earned_total,
-              COALESCE(sum(driver_earnings) FILTER (WHERE status = 'COMPLETED' AND completed_at > now() - interval '7 days'), 0)::float8 AS earned_week,
-              COALESCE(sum(driver_earnings) FILTER (WHERE status = 'COMPLETED' AND payout_id IS NULL), 0)::float8 AS unpaid,
+              COALESCE(sum(driver_earnings) FILTER (WHERE ${earningTrip()}), 0)::float8 AS earned_total,
+              COALESCE(sum(driver_earnings) FILTER (WHERE ${earningTrip()} AND ${earnedAt()} > now() - interval '7 days'), 0)::float8 AS earned_week,
+              COALESCE(sum(driver_earnings) FILTER (WHERE ${earningTrip()} AND payout_id IS NULL), 0)::float8 AS unpaid,
               max(completed_at) AS last_trip_at
          FROM trips WHERE driver_id = $1`,
       [driverId],
@@ -823,8 +824,8 @@ export async function unsettled(periodStart: string, periodEnd: string) {
             COALESCE(SUM(t.platform_fee), 0)::float8 AS platform_fee
        FROM trips t
        JOIN users u ON u.id = t.driver_id
-      WHERE t.status = 'COMPLETED' AND t.payout_id IS NULL
-        AND t.completed_at >= $1::date AND t.completed_at < $2::date
+      WHERE ${earningTrip('t.')} AND t.payout_id IS NULL
+        AND ${earnedAt('t.')} >= $1::date AND ${earnedAt('t.')} < $2::date
         ${hideDemo('u.is_demo')}
       GROUP BY t.driver_id, u.full_name
       ORDER BY gross DESC`,
@@ -866,8 +867,8 @@ export async function generatePayout(
               COALESCE(SUM(fare_amount), 0) AS gross,
               COALESCE(SUM(platform_fee), 0) AS platform_fee
          FROM trips
-        WHERE driver_id = $1 AND status = 'COMPLETED' AND payout_id IS NULL
-          AND completed_at >= $2::date AND completed_at < $3::date`,
+        WHERE driver_id = $1 AND ${earningTrip()} AND payout_id IS NULL
+          AND ${earnedAt()} >= $2::date AND ${earnedAt()} < $3::date`,
       [driverId, periodStart, periodEnd],
     )
     const total = totals[0]!
@@ -886,8 +887,8 @@ export async function generatePayout(
 
     const { rowCount } = await client.query(
       `UPDATE trips SET payout_id = $4
-        WHERE driver_id = $1 AND status = 'COMPLETED' AND payout_id IS NULL
-          AND completed_at >= $2::date AND completed_at < $3::date`,
+        WHERE driver_id = $1 AND ${earningTrip()} AND payout_id IS NULL
+          AND ${earnedAt()} >= $2::date AND ${earnedAt()} < $3::date`,
       [driverId, periodStart, periodEnd, payoutId],
     )
 
@@ -967,4 +968,23 @@ export async function auditLog(filters: {
     [filters.actor ?? null, filters.subject ?? null, filters.action ?? null, filters.limit],
   )
   return rows
+}
+
+/**
+ * Recorded at onboarding review, only so a customer's preference for a
+ * female driver can be honoured. Audited: it is personal data.
+ */
+export async function setDriverGender(
+  driverId: string,
+  gender: 'FEMALE' | 'MALE' | 'OTHER' | null,
+  actorId: string,
+  actorRole: Role,
+): Promise<{ user_id: string; gender: string | null }> {
+  const { rows } = await pool.query<{ user_id: string; gender: string | null }>(
+    `UPDATE driver_profiles SET gender = $2, updated_at = now() WHERE user_id = $1 RETURNING user_id, gender`,
+    [driverId, gender],
+  )
+  if (!rows[0]) throw notFound('DRIVER_NOT_FOUND', 'No driver profile for that user')
+  await audit(actorId, actorRole, 'DRIVER_GENDER_SET', driverId, { gender })
+  return rows[0]
 }

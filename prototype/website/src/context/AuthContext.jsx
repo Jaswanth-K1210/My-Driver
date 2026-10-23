@@ -27,6 +27,8 @@ function toViewUser(me) {
     // Only a real name: greeting someone by their phone number reads as a bug.
     firstName: me.full_name ? me.full_name.trim().split(/\s+/)[0] : null,
     initials: me.full_name ? initialsOf(me.full_name) : '',
+    // Booking safety defaults; `set: false` until the customer first chooses.
+    safety: me.safety ?? null,
     memberSince: me.created_at
       ? new Date(me.created_at).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
       : null,

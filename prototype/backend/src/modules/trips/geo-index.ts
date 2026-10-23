@@ -24,9 +24,9 @@ type Queryable = Pick<PoolClient, 'query'>
 export async function requireApprovedDriver(
   userId: string,
   db: Queryable = pool,
-): Promise<void> {
-  const { rows } = await db.query<{ onboarding_status: string }>(
-    `SELECT onboarding_status FROM driver_profiles WHERE user_id = $1`,
+): Promise<Availability> {
+  const { rows } = await db.query<{ onboarding_status: string; availability: Availability }>(
+    `SELECT onboarding_status, availability FROM driver_profiles WHERE user_id = $1`,
     [userId],
   )
   const status = rows[0]?.onboarding_status ?? 'PENDING'
@@ -37,6 +37,7 @@ export async function requireApprovedDriver(
       { onboarding_status: status },
     )
   }
+  return rows[0]!.availability
 }
 
 export async function setAvailability(
@@ -125,6 +126,9 @@ export async function findNearbyDrivers(
   certification: string,
   limit: number,
   requireNightShield = false,
+  // A preference, not a filter: female drivers in range are offered first,
+  // and the trip still goes to anyone else if none accepts.
+  preferFemale = false,
 ): Promise<string[]> {
   const nearby = (await redis.georadius(
     GEO_KEY,
@@ -139,12 +143,12 @@ export async function findNearbyDrivers(
 
   if (nearby.length === 0) return []
 
-  const { rows } = await pool.query<{ user_id: string }>(
+  const { rows } = await pool.query<{ user_id: string; gender: string | null }>(
     // Every dispatch path routes through this one query, so every eligibility
     // rule lives here and only here. A badge, an approval flag or a Night
     // Shield qualification that this predicate does not read would be
     // decoration rather than a control.
-    `SELECT user_id
+    `SELECT user_id, gender
        FROM driver_profiles
       WHERE user_id = ANY($1::uuid[])
         AND availability = 'ONLINE'
@@ -160,5 +164,8 @@ export async function findNearbyDrivers(
 
   const eligible = new Set(rows.map((r) => r.user_id))
   // Preserve the distance ordering Redis gave us, filtered to eligible drivers.
-  return nearby.filter((id) => eligible.has(id))
+  const ordered = nearby.filter((id) => eligible.has(id))
+  if (!preferFemale) return ordered
+  const female = new Set(rows.filter((r) => r.gender === 'FEMALE').map((r) => r.user_id))
+  return [...ordered.filter((id) => female.has(id)), ...ordered.filter((id) => !female.has(id))]
 }

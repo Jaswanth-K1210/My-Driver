@@ -14,7 +14,7 @@ describe('computeFare', () => {
         hourlyRate: 240,
         pickupAt: day,
       }),
-    ).toEqual({ base: 160, platform_fee: 19, night_fee: 0, total: 179, driver_earnings: 160 })
+    ).toEqual({ base: 160, stops_fee: 0, platform_fee: 19, night_fee: 0, total: 179, driver_earnings: 160 })
   })
 
   it('adds the night fee for a pickup inside the night window', () => {

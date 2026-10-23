@@ -46,3 +46,17 @@ export async function searchLocations(
   }
   return { results: await pending, cached: false }
 }
+
+/**
+ * Cached by the pin rounded to ~10 m: a customer nudging a pin back and forth
+ * does not pay for a lookup each time.
+ */
+export async function reverseLocation(at: { lat: number; lng: number }): Promise<Place> {
+  const key = `loc:reverse:${getMapsProvider().name}:${at.lat.toFixed(4)},${at.lng.toFixed(4)}`
+  const hit = await redis.get(key)
+  // The label is shared; the coordinates are always the caller's own pin.
+  if (hit) return { ...(JSON.parse(hit) as Place), lat: at.lat, lng: at.lng }
+  const place = await getMapsProvider().reverse(at)
+  await redis.set(key, JSON.stringify(place), 'EX', env.LOCATION_CACHE_TTL_SECONDS)
+  return place
+}

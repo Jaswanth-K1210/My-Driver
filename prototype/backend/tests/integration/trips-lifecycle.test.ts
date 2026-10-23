@@ -188,6 +188,40 @@ describe('trip lifecycle', () => {
       expect(rows[0].status).toBe('EXPIRED')
       expect(await eventTypes(tripId)).toContain('OFFER_EXPIRED')
     })
+
+    /** Lets every live offer to this driver expire and sweeps them. */
+    async function missOffer(): Promise<void> {
+      await bookAndDispatch()
+      await pool.query(`UPDATE trip_offers SET expires_at = now() - interval '1 second' WHERE status = 'PENDING'`)
+      await expireStaleOffers()
+      await awaitDispatchIdle()
+      // Cancel whatever was re-dispatched so the next booking starts clean.
+      await pool.query(`UPDATE trips SET status = 'CANCELLED' WHERE status IN ('REQUESTED', 'MATCHED')`)
+      await pool.query(`UPDATE trip_offers SET status = 'EXPIRED' WHERE status = 'PENDING'`)
+    }
+    const availability = async () =>
+      (await pool.query(`SELECT availability FROM driver_profiles WHERE user_id = $1`, [driver.userId])).rows[0].availability
+
+    it('takes a driver offline after two missed offers in a row, and the poll says so', async () => {
+      await missOffer()
+      expect(await availability()).toBe('ONLINE')
+      await missOffer()
+      expect(await availability()).toBe('OFFLINE')
+
+      const poll = await app.inject({ method: 'GET', url: '/v1/driver/offers', headers: bearer(driver.accessToken) })
+      expect(poll.statusCode).toBe(409)
+      expect(poll.json().error.code).toBe('DRIVER_OFFLINE')
+    })
+
+    it('answering an offer resets the missed count', async () => {
+      await missOffer()
+      const tripId = await bookAndDispatch()
+      await respond(tripId, false)
+      await pool.query(`UPDATE trips SET status = 'CANCELLED' WHERE status IN ('REQUESTED', 'MATCHED')`)
+      await pool.query(`UPDATE trip_offers SET status = 'EXPIRED' WHERE status = 'PENDING'`)
+      await missOffer()
+      expect(await availability()).toBe('ONLINE')
+    })
   })
 
   describe('handshake', () => {

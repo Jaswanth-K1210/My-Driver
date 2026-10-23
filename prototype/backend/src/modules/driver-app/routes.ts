@@ -85,6 +85,8 @@ export function registerDriverAppRoutes(app: FastifyInstance): void {
                 night_fee: z.number().nullable().optional(),
                 base_fare: z.number().nullable().optional(),
                 driver_earnings: z.number().nullable(),
+                // Set on a trip the customer cancelled after arrival: the fee is the whole fare.
+                cancellation_fee: z.number().nullable(),
                 requirement: z.string().nullable().optional(),
                 trip_type: z.string().nullable().optional(),
                 customer_name: z.string().nullable().optional(),

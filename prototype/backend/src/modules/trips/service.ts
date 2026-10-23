@@ -10,19 +10,15 @@ import { recordAnomaly } from '../escalation/service.js'
 import { revokeLinksForEndedTrip } from '../guardian/service.js'
 import { captureForTrip, releaseForTrip } from '../payments/service.js'
 import { broadcastStateChange } from './broadcast.js'
-import {
-  CITY_STOP_FEE,
-  computeFare,
-  estimateTripDistanceKm,
-  extractValidStopCoords,
-  INTERCITY_STOP_FEE,
-  PLATFORM_FEE,
-} from './fare.js'
+import { computeFare, estimateTripDistanceKm, extractValidStopCoords, type FareBreakdown } from './fare.js'
+import { getFees } from './fees.js'
+import { tierForCar } from './tier.js'
 import { requireApprovedDriver, restoreAvailabilityAfterTrip } from './geo-index.js'
 import { mayHavePendingOffer } from './offer-hint.js'
 import { getRateCard } from './rate-cards.js'
 import { assertTransition, CANCELLABLE_FROM, type TripStatus } from './state-machine.js'
 import { isNightPickupIST } from '../../lib/time.js'
+import { earnedAt, earningTrip } from './earning.js'
 
 export const HANDSHAKE_OTP_DIGITS = 4
 export const HANDSHAKE_MAX_ATTEMPTS = 5
@@ -63,6 +59,8 @@ export type TripView = {
   fare_amount: number | null
   platform_fee?: number | null
   night_fee?: number | null
+  /** Set when the customer cancelled after the driver arrived and was charged. */
+  cancellation_fee?: number | null
   driver_earnings: number | null
   requested_at: string
   // When the driver reached the pickup, and when the handshake started the trip.
@@ -96,6 +94,7 @@ const TRIP_SELECT = `
     t.distance_km::float8           AS distance_km,
     t.duration_min,
     t.fare_amount::float8           AS fare_amount,
+    t.cancellation_fee::float8      AS cancellation_fee,
     t.platform_fee::float8          AS platform_fee,
     t.night_fee::float8             AS night_fee,
     t.driver_earnings::float8       AS driver_earnings,
@@ -204,8 +203,11 @@ export type BookInput = {
   pickupAddress?: string | null | undefined
   drop?: LatLng | null | undefined
   dropAddress?: string | null | undefined
-  requiredCertification: string
+  /** Omitted by current clients: the car decides (tier.ts). */
+  requiredCertification?: string | null | undefined
   speedCeilingKmh: number
+  preferFemaleDriver?: boolean | undefined
+  shareWithGuardians?: boolean | undefined
   idempotencyKey?: string | null | undefined
   stops?: any[] | null | undefined
   returnStops?: any[] | null | undefined
@@ -215,6 +217,52 @@ export type BookInput = {
   flightNumber?: string | null | undefined
   requirement?: string | null | undefined
   tripType?: string | null | undefined
+}
+
+export type PriceInput = Pick<
+  BookInput,
+  'bookingType' | 'hours' | 'pickup' | 'drop' | 'stops' | 'returnStops' | 'returnDrop' | 'carDetails' | 'requirement' | 'tripType' | 'requiredCertification'
+>
+
+/**
+ * The one pricing path: the quote shows exactly what booking will charge, and
+ * both read the admin's live rate card and fees.
+ */
+export async function priceTrip(input: PriceInput): Promise<{
+  card: Awaited<ReturnType<typeof getRateCard>>
+  distanceKm: number
+  fare: FareBreakdown
+}> {
+  const wanted = input.requiredCertification || tierForCar(input.carDetails)
+  // A tier ops have hidden falls back to Standard rather than refusing the car.
+  const card = await getRateCard(wanted).catch((err) => {
+    if (wanted !== 'MD-Standard' && err instanceof AppError && err.code === 'UNKNOWN_SKILL' && !input.requiredCertification) {
+      return getRateCard('MD-Standard')
+    }
+    throw err
+  })
+  const fees = await getFees()
+  const { distanceKm, stopsFee } = estimateTripDistanceKm({
+    pickup: input.pickup,
+    drop: input.drop,
+    stops: input.stops,
+    returnStops: input.returnStops,
+    returnDrop: input.returnDrop,
+    tripType: input.tripType,
+    requirement: input.requirement,
+    fees,
+  })
+  const fare = computeFare({
+    bookingType: input.bookingType,
+    distanceKm,
+    hours: input.hours ?? undefined,
+    perKmRate: card.per_km_rate,
+    hourlyRate: card.hourly_rate,
+    pickupAt: new Date(),
+    stopsFee,
+    fees,
+  })
+  return { card, distanceKm, fare }
 }
 
 export async function bookTrip(input: BookInput): Promise<TripView> {
@@ -234,25 +282,7 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
     if (existing.rows[0]) return toView(existing.rows[0])
   }
 
-  const card = await getRateCard(input.requiredCertification)
-  const { distanceKm, stopsFee } = estimateTripDistanceKm({
-    pickup: input.pickup,
-    drop: input.drop,
-    stops: input.stops,
-    returnStops: input.returnStops,
-    returnDrop: input.returnDrop,
-    tripType: input.tripType,
-    requirement: input.requirement,
-  })
-  const fare = computeFare({
-    bookingType: input.bookingType,
-    distanceKm,
-    hours: input.hours ?? undefined,
-    perKmRate: card.per_km_rate,
-    hourlyRate: card.hourly_rate,
-    pickupAt: new Date(),
-    stopsFee,
-  })
+  const { card, distanceKm, fare } = await priceTrip(input)
 
   const otp = generateHandshakeOtp()
 
@@ -267,8 +297,9 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
          required_certification, speed_ceiling_kmh,
          pickup_handshake_otp_hash, estimated_distance_km, estimated_fare,
          idempotency_key, stops, return_stops, return_drop_lat, return_drop_lng,
-         vehicle_specs, vision_mode, flight_number, requirement, trip_type
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+         vehicle_specs, vision_mode, flight_number, requirement, trip_type,
+         prefer_female_driver, share_with_guardians
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
        RETURNING id`,
       [
         input.customerId,
@@ -295,6 +326,8 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
         input.flightNumber ?? null,
         input.requirement ?? null,
         input.tripType ?? null,
+        input.preferFemaleDriver ?? false,
+        input.shareWithGuardians ?? false,
       ],
     )
     const tripId = rows[0]!.id as string
@@ -406,12 +439,14 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
   const validOutboundStops = extractValidStopCoords(trip.stops)
   const validReturnStops =
     trip.trip_type === 'two_way' ? extractValidStopCoords(trip.return_stops) : []
+  const fees = await getFees()
   const stopsFee =
     (validOutboundStops.length + validReturnStops.length) *
-    (trip.requirement === 'inter_city' ? INTERCITY_STOP_FEE : CITY_STOP_FEE)
+    (trip.requirement === 'inter_city' ? fees.intercity_stop_fee : fees.city_stop_fee)
 
   const card = await getRateCard(trip.required_certification)
   const fare = computeFare({
+    fees,
     bookingType: trip.booking_type,
     distanceKm,
     hours: trip.hourly_package_hours ?? undefined,
@@ -513,8 +548,13 @@ async function cancelTripOnce(
   role: Role,
   reason: string,
 ): Promise<TripView> {
-  const { rows } = await pool.query<{ status: TripStatus; driver_id: string | null }>(
-    `SELECT status, driver_id FROM trips
+  const { rows } = await pool.query<{
+    status: TripStatus
+    driver_id: string | null
+    customer_id: string
+    arrived_at: Date | null
+  }>(
+    `SELECT status, driver_id, customer_id, arrived_at FROM trips
       WHERE id = $1 AND (customer_id = $2 OR driver_id = $2)`,
     [tripId, userId],
   )
@@ -525,6 +565,13 @@ async function cancelTripOnce(
     throw conflict('TRIP_NOT_CANCELLABLE', `A trip in ${trip.status} cannot be cancelled`)
   }
 
+  // Free until the driver is at the pickup. After that, a customer who
+  // cancels (or turns the driver away) pays the driver for the trip there.
+  const fee =
+    trip.customer_id === userId && trip.status === 'HANDSHAKE_PENDING' && trip.arrived_at
+      ? (await getFees()).arrival_cancellation_fee
+      : 0
+
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -532,13 +579,23 @@ async function cancelTripOnce(
       cancelled_at: new Date(),
       cancellation_reason: reason,
       cancelled_by: userId,
+      // The fee is this trip's whole fare, and all of it goes to the driver.
+      ...(fee > 0
+        ? {
+            cancellation_fee: fee.toFixed(2),
+            fare_amount: fee.toFixed(2),
+            platform_fee: '0.00',
+            night_fee: '0.00',
+            driver_earnings: fee.toFixed(2),
+          }
+        : {}),
     })
     await client.query(
       `UPDATE trip_offers SET status = 'EXPIRED', responded_at = now()
         WHERE trip_id = $1 AND status = 'PENDING'`,
       [tripId],
     )
-    await recordEvent(client, tripId, 'TRIP_CANCELLED', userId, role, { reason })
+    await recordEvent(client, tripId, 'TRIP_CANCELLED', userId, role, { reason, ...(fee > 0 ? { cancellation_fee: fee } : {}) })
     await client.query('COMMIT')
   } catch (err) {
     await client.query('ROLLBACK')
@@ -549,7 +606,13 @@ async function cancelTripOnce(
 
   if (trip.driver_id) await restoreAvailabilityAfterTrip(trip.driver_id)
   await revokeLinksForEndedTrip(tripId).catch(() => undefined)
-  await releaseForTrip(tripId).catch(() => undefined)
+  if (fee > 0) {
+    // Taken from the booking's hold, the rest of which is released. Never
+    // fatal: a failed capture stays AUTHORIZED and visible to Finance.
+    await captureForTrip(tripId, fee).catch((err) => console.error('cancellation fee capture failed', tripId, err))
+  } else {
+    await releaseForTrip(tripId).catch(() => undefined)
+  }
   await broadcastStateChange(tripId, 'CANCELLED')
   return getTripForParticipant(tripId, userId)
 }
@@ -720,11 +783,11 @@ export async function getDriverSummary(driverId: string): Promise<DriverSummary>
        SELECT count(*) AS trips_today, sum(driver_earnings) AS earnings_today
          FROM trips
         WHERE driver_id = p.user_id
-          AND status = 'COMPLETED'
+          AND ${earningTrip()}
           -- The trailing AT TIME ZONE converts IST midnight back to a
           -- timestamptz. Without it Postgres compares a naive timestamp as UTC,
           -- so between 18:30 and 24:00 UTC today's earnings read as zero.
-          AND completed_at >= (
+          AND ${earnedAt()} >= (
             date_trunc('day', now() AT TIME ZONE 'Asia/Kolkata') AT TIME ZONE 'Asia/Kolkata'
           )
      ) t ON true
@@ -772,7 +835,11 @@ export type PendingOffer = {
  * first and only queries Postgres when an offer may exist (offer-hint.ts).
  */
 export async function listPendingOffers(driverId: string): Promise<PendingOffer[]> {
-  await requireApprovedDriver(driverId)
+  // Only an ONLINE driver polls. Being OFFLINE here means the server took them
+  // offline (missed offers, or ops), and the app must say so and stop.
+  if ((await requireApprovedDriver(driverId)) === 'OFFLINE') {
+    throw conflict('DRIVER_OFFLINE', 'You are offline. Go online to receive trip requests.')
+  }
   if (!(await mayHavePendingOffer(driverId))) return []
 
   const { rows } = await pool.query(
@@ -807,6 +874,7 @@ export async function listPendingOffers(driverId: string): Promise<PendingOffer[
     [driverId],
   )
 
+  const { platform_fee: platformFee } = await getFees()
   return rows.map((r) => ({
     trip_id: r.trip_id,
     expires_at: new Date(r.expires_at).toISOString(),
@@ -829,7 +897,7 @@ export async function listPendingOffers(driverId: string): Promise<PendingOffer[
     driver_earnings_estimate:
       r.estimated_fare === null
         ? null
-        : Math.max(0, Math.round((r.estimated_fare - PLATFORM_FEE) * 100) / 100),
+        : Math.max(0, Math.round((r.estimated_fare - platformFee) * 100) / 100),
     customer: { name: r.customer_name },
   }))
 }

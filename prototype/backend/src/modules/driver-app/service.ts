@@ -1,5 +1,6 @@
 import { pool } from '../../db/client.js'
 import { conflict, notFound } from '../../lib/errors.js'
+import { earnedAt, earningTrip } from '../trips/earning.js'
 
 /**
  * Read-only views for the driver app's own screens: earnings, assessments and
@@ -17,14 +18,14 @@ export async function getDriverEarnings(driverId: string) {
     today: number; today_trips: number; week: number; week_trips: number; unsettled: number; unsettled_trips: number
   }>(
     `SELECT
-       COALESCE(sum(driver_earnings) FILTER (WHERE completed_at >= ${IST_DAY}), 0)::float8  AS today,
-       (count(*) FILTER (WHERE completed_at >= ${IST_DAY}))::int                            AS today_trips,
-       COALESCE(sum(driver_earnings) FILTER (WHERE completed_at >= ${IST_WEEK}), 0)::float8 AS week,
-       (count(*) FILTER (WHERE completed_at >= ${IST_WEEK}))::int                           AS week_trips,
+       COALESCE(sum(driver_earnings) FILTER (WHERE ${earnedAt()} >= ${IST_DAY}), 0)::float8  AS today,
+       (count(*) FILTER (WHERE ${earnedAt()} >= ${IST_DAY}))::int                            AS today_trips,
+       COALESCE(sum(driver_earnings) FILTER (WHERE ${earnedAt()} >= ${IST_WEEK}), 0)::float8 AS week,
+       (count(*) FILTER (WHERE ${earnedAt()} >= ${IST_WEEK}))::int                           AS week_trips,
        COALESCE(sum(driver_earnings) FILTER (WHERE payout_id IS NULL), 0)::float8           AS unsettled,
        (count(*) FILTER (WHERE payout_id IS NULL))::int                                     AS unsettled_trips
      FROM trips
-     WHERE driver_id = $1 AND status = 'COMPLETED'`,
+     WHERE driver_id = $1 AND ${earningTrip()}`,
     [driverId],
   )
 
@@ -38,14 +39,14 @@ export async function getDriverEarnings(driverId: string) {
               (now() AT TIME ZONE 'Asia/Kolkata')::date,
               interval '1 day') AS d(day)
        LEFT JOIN trips t
-         ON t.driver_id = $1 AND t.status = 'COMPLETED'
-        AND (t.completed_at AT TIME ZONE 'Asia/Kolkata')::date = d.day::date
+         ON t.driver_id = $1 AND ${earningTrip('t.')}
+        AND (${earnedAt('t.')} AT TIME ZONE 'Asia/Kolkata')::date = d.day::date
       GROUP BY d.day ORDER BY d.day`,
     [driverId],
   )
 
   const trips = await pool.query(
-    `SELECT t.id AS trip_id, t.completed_at, t.pickup_address, t.drop_address,
+    `SELECT t.id AS trip_id, ${earnedAt('t.')} AS completed_at, t.cancellation_fee::float8 AS cancellation_fee, t.pickup_address, t.drop_address,
             t.booking_type, t.hourly_package_hours, t.required_certification,
             t.distance_km::float8 AS distance_km, t.duration_min,
             t.fare_amount::float8 AS fare_amount,
@@ -60,8 +61,8 @@ export async function getDriverEarnings(driverId: string) {
        FROM trips t
        LEFT JOIN users cu ON cu.id = t.customer_id
        LEFT JOIN driver_payouts p ON p.id = t.payout_id
-      WHERE t.driver_id = $1 AND t.status = 'COMPLETED'
-      ORDER BY t.completed_at DESC
+      WHERE t.driver_id = $1 AND ${earningTrip('t.')}
+      ORDER BY ${earnedAt('t.')} DESC
       LIMIT 50`,
     [driverId],
   )
