@@ -5,16 +5,17 @@
  *   1. What do you need?          — RequirementTabs
  *   2. Your Vehicle               — CarDetailsForm (saved garage + new vehicle)
  *   3. Trip Details               — WithinCityForm / InterCityForm / AirportForm / FullTimeForm
- *   4. Driver Certification       — SkillPicker (full cards with recommended badge)
- *   5. Speed Ceiling              — Slider 40–120 km/h
+ *   4. Your driver                — the tier the server picks from the car
+ *   5. Safety                     — speed limit, guardians, female driver;
+ *                                   asked once, then pre-filled from /v1/me
  *   6. Price Estimate             — Live quote breakdown
  *
- * Sticky CTA: "Find [Skill] Driver" — disabled until quote.ready
+ * Sticky CTA: "Find [Tier] Driver" — disabled until quote.ready
  */
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Slider from '@react-native-community/slider'
-import { Gauge, Search } from 'lucide-react-native'
+import { Gauge, Search, ShieldCheck } from 'lucide-react-native'
 import { useTrip } from '../../context/TripContext'
 import { useAuth } from '../../context/AuthContext'
 import { useEffect, useState } from 'react'
@@ -25,6 +26,7 @@ import { clamp, formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 import Button from '../../components/Button'
 import Card from '../../components/Card'
+import Toggle from '../../components/Toggle'
 
 import RequirementTabs from './components/RequirementTabs'
 import CarDetailsForm from './components/CarDetailsForm'
@@ -32,7 +34,6 @@ import WithinCityForm from './components/WithinCityForm'
 import InterCityForm from './components/InterCityForm'
 import AirportForm from './components/AirportForm'
 import FullTimeForm from './components/FullTimeForm'
-import SkillPicker from './components/SkillPicker'
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
@@ -64,7 +65,23 @@ function SectionHeader({ step, children }) {
 
 export default function HomeScreen({ config, onChange, onFindDriver }) {
   const { skills, skillsStatus, reloadSkills } = useTrip()
-  const { user } = useAuth()
+  const { user, refreshMe } = useAuth()
+  const safety = user?.safety
+  const firstTime = safety ? !safety.set : false
+  const [saving, setSaving] = useState(false)
+
+  // Saved defaults pre-fill every booking; changing them here is for this
+  // trip only (the Profile screen changes the defaults).
+  useEffect(() => {
+    if (!safety?.set) return
+    onChange({
+      ...config,
+      ceiling: safety.speed_limit_kmh,
+      shareWithGuardians: safety.share_with_guardians,
+      preferFemaleDriver: safety.prefer_female_driver,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safety?.set])
 
   // The price shown, and held at checkout, is the server's. The local quote
   // only supplies the words (route, trip type, duration) and tells us the
@@ -84,7 +101,7 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
     let cancelled = false
     setPriceStatus('loading')
     const timer = setTimeout(() => {
-      serverQuote(api, config, skills).then((q) => {
+      serverQuote(api, config).then((q) => {
         if (cancelled) return
         // serverQuote resolves to null when the request failed. A price from
         // an earlier form state must not stay on screen as if it were current.
@@ -99,8 +116,12 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
   }, [config, skills, local.ready, priceAttempt])
 
   const priced = priceStatus === 'ready' && server
+  // The server picks the tier from the car and the hour; show what it chose.
+  const tier = priced
+    ? { label: server.tier_label, ...skills.find((s) => s.id === server.required_certification) }
+    : null
   const quote = {
-    skill: local.skill,
+    skill: tier,
     ready: Boolean(priced),
     total: priced ? server.fare.total : 0,
     lines: [
@@ -109,12 +130,34 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
       ...(priced
         ? [
             ...(server.distance_km > 0 ? [{ label: 'Distance', value: `${server.distance_km.toFixed(1)} km` }] : []),
-            { label: `${local.skill?.label ?? 'Driver'} fare`, value: formatINR(server.fare.base) },
+            { label: `${server.tier_label} fare`, value: formatINR(server.fare.base) },
             { label: 'Platform fee', value: formatINR(server.fare.platform_fee) },
             ...(server.fare.night_fee > 0 ? [{ label: 'Night fee', value: formatINR(server.fare.night_fee) }] : []),
           ]
         : []),
     ],
+  }
+
+  // First booking: the choices made here become the saved defaults.
+  const findDriver = async () => {
+    if (firstTime) {
+      setSaving(true)
+      try {
+        await api.me.update({
+          safety: {
+            speed_limit_kmh: config.ceiling,
+            share_with_guardians: Boolean(config.shareWithGuardians),
+            prefer_female_driver: Boolean(config.preferFemaleDriver),
+          },
+        })
+        void refreshMe()
+      } catch {
+        // Not saving the defaults must not block the ride; we ask again next time.
+      } finally {
+        setSaving(false)
+      }
+    }
+    onFindDriver(config)
   }
 
   const hour = new Date().getHours()
@@ -202,20 +245,48 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
             )}
           </View>
 
-          {/* ── Step 4: Driver Certification ── */}
+          {/* ── Step 4: Your driver (picked by the server) ── */}
           <View>
-            <SectionHeader step={4}>Driver Certification</SectionHeader>
-            <SkillPicker
-              config={config}
-              onChange={onChange}
-              skills={skills}
-              status={skillsStatus}
-              onRetry={reloadSkills}
-            />
+            <SectionHeader step={4}>Your Driver</SectionHeader>
+            <Card>
+              {skillsStatus === 'error' && !skills.length ? (
+                <View style={{ gap: space.sm }}>
+                  <Text style={{ ...type.caption, color: colors.textMuted }}>
+                    Could not load driver tiers. Check your connection.
+                  </Text>
+                  <Button label="Try again" variant="subtle" onPress={reloadSkills} />
+                </View>
+              ) : tier ? (
+                <View style={{ gap: 4 }}>
+                  <Text style={{ ...type.bodyBold, color: colors.text }}>{tier.label}</Text>
+                  {tier.description ? (
+                    <Text style={{ ...type.caption, color: colors.textMuted }}>{tier.description}</Text>
+                  ) : null}
+                  <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 4 }}>
+                    Matched to your car and the time of the trip.
+                  </Text>
+                </View>
+              ) : (
+                <Text style={{ ...type.caption, color: colors.textMuted }}>
+                  We pick the right certified driver for your car once the trip details are in.
+                </Text>
+              )}
+            </Card>
           </View>
 
-          {/* ── Step 5: Speed Ceiling ── */}
+          {/* ── Step 5: Safety ── */}
           <Card>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: space.sm }}>
+              <ShieldCheck size={14} color={colors.textMuted} />
+              <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5 }}>
+                {firstTime ? 'SET YOUR SAFETY PREFERENCES' : 'SAFETY'}
+              </Text>
+            </View>
+            {firstTime ? (
+              <Text style={{ ...type.tiny, color: colors.textMuted, marginBottom: space.sm, lineHeight: 16 }}>
+                We ask once. Your choices are saved for every trip, and you can change them in Profile.
+              </Text>
+            ) : null}
             <View
               style={{
                 flexDirection: 'row',
@@ -226,9 +297,7 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Gauge size={14} color={colors.textMuted} />
-                <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5 }}>
-                  SPEED CEILING
-                </Text>
+                <Text style={{ ...type.caption, color: colors.text }}>Speed limit</Text>
               </View>
               <View
                 style={{
@@ -255,9 +324,19 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
               maximumTrackTintColor={colors.surfaceSunken}
               thumbTintColor={colors.brand}
             />
-            <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 4 }}>
+            <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 4, marginBottom: space.sm }}>
               Breaches alert you, your guardians and the Safety Desk instantly.
             </Text>
+            <Toggle
+              label="Share the trip with my guardians"
+              checked={Boolean(config.shareWithGuardians)}
+              onChange={(v) => onChange({ ...config, shareWithGuardians: v })}
+            />
+            <Toggle
+              label="Prefer a female driver"
+              checked={Boolean(config.preferFemaleDriver)}
+              onChange={(v) => onChange({ ...config, preferFemaleDriver: v })}
+            />
           </Card>
 
           {/* ── Step 6: Price Estimate ── */}
@@ -336,8 +415,8 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
         <Button
           label={quote.skill ? `Find ${quote.skill.label} Driver` : 'Find a driver'}
           icon={Search}
-          disabled={!quote.ready}
-          onPress={() => onFindDriver(config)}
+          disabled={!quote.ready || saving}
+          onPress={findDriver}
         />
       </View>
     </SafeAreaView>

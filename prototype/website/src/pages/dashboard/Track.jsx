@@ -497,7 +497,7 @@ export default function Track() {
                   {trip.driver?.name ?? 'Assigning a driver…'}
                 </p>
                 <p className="truncate text-sm text-slate-500">
-                  {trip.driver ? `${trip.driver.vehicle} · ${trip.driver.plate}` : 'Vehicle details arrive on acceptance'}
+                  {trip.driver ? [trip.driver.vehicle, trip.driver.plate].filter(Boolean).join(' · ') || 'Verified MyDriver driver' : 'Vehicle details arrive on acceptance'}
                 </p>
               </div>
             </div>

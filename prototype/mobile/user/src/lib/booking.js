@@ -106,6 +106,8 @@ export const DEFAULT_CONFIG = {
   pickupTime: 'Now',
   skillId: 'MD-Standard',
   ceiling: 60,
+  shareWithGuardians: false,
+  preferFemaleDriver: false,
   // VisionCam is not offered; kept null so the payload never claims a mode.
   visionMode: null,
 }
@@ -576,8 +578,14 @@ export function quoteFor(config, skills = [], fees = { platformFee: 19, nightFee
   }
 }
 
-export function bookingPayloadFor(config, skills = []) {
-  const skill = skills.find((s) => s.id === config.skillId) ?? { id: config.skillId }
+// The tier is not sent: the server picks it from the car (and the hour, for
+// night trips), the same rule the website uses.
+const safetyFields = (config) => ({
+  prefer_female_driver: Boolean(config.preferFemaleDriver),
+  share_with_guardians: Boolean(config.shareWithGuardians),
+})
+
+export function bookingPayloadFor(config) {
 
   const basePayload = {
     stops: config.stops,
@@ -605,8 +613,8 @@ export function bookingPayloadFor(config, skills = []) {
         config.requirement === 'full_time' && config.fullTimeDetails?.locality
           ? config.fullTimeDetails.locality
           : chosenPickup.address || chosenPickup.name,
-      required_certification: skill.id,
       speed_ceiling_kmh: config.ceiling,
+      ...safetyFields(config),
       ...basePayload,
     }
   }
@@ -656,19 +664,19 @@ export function bookingPayloadFor(config, skills = []) {
     pickup_address,
     drop,
     drop_address,
-    required_certification: skill.id,
     speed_ceiling_kmh: config.ceiling,
+    ...safetyFields(config),
     hours: config.durationHours,
     ...basePayload,
   }
 }
 
 /** Server quote for the current config. Falls back to the local estimate. */
-export async function serverQuote(api, config, skills = []) {
+export async function serverQuote(api, config) {
   try {
-    const payload = bookingPayloadFor(config, skills)
-    const quoteBody = { ...payload }
-    delete quoteBody.speed_ceiling_kmh
+    // Booking-only fields: the quote endpoint rejects them.
+    const { speed_ceiling_kmh: _c, prefer_female_driver: _f, share_with_guardians: _g, ...quoteBody } =
+      bookingPayloadFor(config)
     return await api.trips.quote(quoteBody)
   } catch {
     return null

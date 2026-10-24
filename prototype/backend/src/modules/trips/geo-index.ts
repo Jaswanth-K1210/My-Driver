@@ -110,6 +110,11 @@ export async function upsertDriverLocation(
   return true
 }
 
+/** In the dispatch index: online (or on a trip) and still approved. */
+export async function isIndexed(userId: string): Promise<boolean> {
+  return (await redis.zscore(GEO_KEY, userId)) !== null
+}
+
 export async function removeDriverFromIndex(userId: string): Promise<void> {
   await redis.zrem(GEO_KEY, userId)
   await redis.del(`geo:throttle:${userId}`)

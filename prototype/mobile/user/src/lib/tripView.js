@@ -69,8 +69,8 @@ export function toViewTrip(trip) {
       ? {
           name: trip.driver.name || 'Your driver',
           initials: trip.driver.initials || 'MD',
-          vehicle: trip.driver.vehicle_model || specVehicle || 'Verified Chauffeur',
-          plate: trip.driver.vehicle_plate || specPlate || 'ID Verified',
+          vehicle: trip.driver.vehicle_model || specVehicle || null,
+          plate: trip.driver.vehicle_plate || specPlate || null,
           rating: trip.driver.rating ?? null,
           score: trip.driver.mydriver_score ?? null,
         }

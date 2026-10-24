@@ -206,14 +206,17 @@ export function TripProvider({ children }) {
     })
     realtimeRef.current = conn
 
-    conn.on('TRIP_STATE_CHANGED', async (frame) => {
+    const refetch = async (frame) => {
       if (frame.trip_id !== tripIdRef.current) return
       try {
         applyTrip(await api.trips.get(frame.trip_id))
       } catch {
         // A refetch can lose a race with cancellation; the next frame corrects it.
       }
-    })
+    }
+    conn.on('TRIP_STATE_CHANGED', refetch)
+    // Arrival happens inside HANDSHAKE_PENDING; the refetch brings arrived_at.
+    conn.on('DRIVER_ARRIVED', refetch)
 
     conn.on('DRIVER_LOCATION', (frame) => {
       if (frame.trip_id !== tripIdRef.current) return
@@ -284,7 +287,7 @@ export function TripProvider({ children }) {
 
       try {
         const key = `mobile-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-        const booked = await api.trips.book(bookingPayloadFor(active, skills), key)
+        const booked = await api.trips.book(bookingPayloadFor(active), key)
         setPayment(booked.payment ?? null)
         applyTrip(booked)
         await watchTrip(booked.id)

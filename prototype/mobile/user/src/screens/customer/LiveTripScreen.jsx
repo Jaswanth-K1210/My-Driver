@@ -249,11 +249,15 @@ export default function LiveTripScreen({ trip, onCancel }) {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
             <KeyRound size={20} color={colors.red} />
             <View style={{ flex: 1 }}>
-              <Text style={{ ...type.micro, color: colors.redPressed, letterSpacing: 0.6 }}>PICKUP CODE</Text>
+              <Text style={{ ...type.micro, color: colors.redPressed, letterSpacing: 0.6 }}>
+                {driverArrived ? 'YOUR DRIVER HAS ARRIVED' : 'PICKUP CODE'}
+              </Text>
               <Text style={{ ...type.tiny, color: colors.text, lineHeight: 16 }}>
                 {pickupCode.status === 'error'
                   ? 'Could not get your code. Check your connection.'
-                  : 'Tell your driver this code at the car, not before. It starts the trip.'}
+                  : driverArrived
+                    ? 'Your driver is at the pickup. Meet them at the car and tell them this code.'
+                    : 'Tell your driver this code at the car, not before. It starts the trip.'}
               </Text>
             </View>
             {pickupCode.status === 'ready' ? (
@@ -335,7 +339,7 @@ export default function LiveTripScreen({ trip, onCancel }) {
         </MapBadge>
         {etaMin != null ? (
           <MapBadge style={{ right: 10, top: 10 }}>
-            {arriving ? `Driver about ${etaMin} min away` : `About ${etaMin} min to go`}
+            {driverArrived ? 'Driver at pickup' : arriving ? `Driver about ${etaMin} min away` : `About ${etaMin} min to go`}
           </MapBadge>
         ) : null}
         <MapBadge style={{ left: 10, bottom: 10 }}>
@@ -366,7 +370,7 @@ export default function LiveTripScreen({ trip, onCancel }) {
                 {trip.driver.name}
               </Text>
               <Text numberOfLines={1} style={{ ...type.tiny, color: colors.textMuted }}>
-                {trip.driver.vehicle} · {trip.driver.plate}
+                {[trip.driver.vehicle, trip.driver.plate].filter(Boolean).join(' · ') || 'Verified MyDriver driver'}
               </Text>
             </View>
           </View>

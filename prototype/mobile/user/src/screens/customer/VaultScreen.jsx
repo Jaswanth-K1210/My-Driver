@@ -40,6 +40,16 @@ function ReceiptCard({ trip }) {
 
   useEffect(load, [load])
 
+  // The same hosted checkout page as the completion screen; with money owed
+  // it collects the difference. Reload afterwards to show the result.
+  const payDue = async () => {
+    await WebBrowser.openBrowserAsync(api.payments.checkoutUrl(payment), {
+      presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
+      controlsColor: colors.red,
+    })
+    load()
+  }
+
   const share = async () => {
     try {
       await Share.share({ message: receiptText(trip, payment || null) })
@@ -94,10 +104,12 @@ function ReceiptCard({ trip }) {
               </Text>
             ) : null}
             {payment?.amount_due > 0 ? (
-              <Text style={{ ...type.caption, color: colors.redPressed, lineHeight: 18 }}>
-                The final fare was more than the amount held at booking. Paying the difference in the app is not
-                available yet.
-              </Text>
+              <>
+                <Text style={{ ...type.caption, color: colors.redPressed, lineHeight: 18 }}>
+                  The final fare was more than the amount held at booking.
+                </Text>
+                <Button label={`Pay ${formatINR(payment.amount_due)}`} onPress={payDue} />
+              </>
             ) : null}
             <Button label="Share receipt" icon={Share2} variant="outline" onPress={share} />
           </>

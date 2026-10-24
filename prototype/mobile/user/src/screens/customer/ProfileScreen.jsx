@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import Slider from '@react-native-community/slider'
 import { LogOut, Plus, Trash2 } from 'lucide-react-native'
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
@@ -181,6 +182,74 @@ function SafetyCard() {
           button on the trip screen.
         </Text>
       )}
+    </Card>
+  )
+}
+
+/** The safety choices every new booking starts from (GET/PATCH /v1/me). */
+function TripDefaultsCard() {
+  const { toast } = useToast()
+  const { user, refreshMe } = useAuth()
+  const saved = user?.safety
+  const [draft, setDraft] = useState(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (saved) setDraft({ speed_limit_kmh: saved.speed_limit_kmh, share_with_guardians: saved.share_with_guardians, prefer_female_driver: saved.prefer_female_driver })
+  }, [saved?.speed_limit_kmh, saved?.share_with_guardians, saved?.prefer_female_driver])
+  if (!draft) return null
+
+  const dirty =
+    !saved.set ||
+    draft.speed_limit_kmh !== saved.speed_limit_kmh ||
+    draft.share_with_guardians !== saved.share_with_guardians ||
+    draft.prefer_female_driver !== saved.prefer_female_driver
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      await api.me.update({ safety: draft })
+      await refreshMe()
+      toast('Saved. New bookings start from these.', 'success')
+    } catch (err) {
+      toast(err?.message ?? 'Could not save your defaults', 'warning')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card style={{ gap: space.sm }}>
+      <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.6 }}>TRIP SAFETY DEFAULTS</Text>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+        <Text style={{ ...type.body, color: colors.text }}>Speed limit</Text>
+        <Text style={{ ...type.bodyBold, color: colors.red }}>{draft.speed_limit_kmh} km/h</Text>
+      </View>
+      <Slider
+        minimumValue={40}
+        maximumValue={120}
+        step={5}
+        value={draft.speed_limit_kmh}
+        onValueChange={(v) => setDraft((d) => ({ ...d, speed_limit_kmh: Math.round(v) }))}
+        accessibilityLabel="Default speed limit"
+        minimumTrackTintColor={colors.red}
+        maximumTrackTintColor={colors.borderStrong}
+        thumbTintColor={colors.red}
+      />
+      <Toggle
+        label="Share every trip with my guardians"
+        checked={draft.share_with_guardians}
+        onChange={(v) => setDraft((d) => ({ ...d, share_with_guardians: v }))}
+      />
+      <Toggle
+        label="Prefer a female driver"
+        checked={draft.prefer_female_driver}
+        onChange={(v) => setDraft((d) => ({ ...d, prefer_female_driver: v }))}
+      />
+      <Text style={{ ...type.caption, color: colors.textMuted, lineHeight: 18 }}>
+        You can still change these for a single trip when you book. A female driver is offered first when one is
+        nearby; otherwise the nearest driver is.
+      </Text>
+      {dirty ? <Button label={busy ? 'Saving…' : 'Save defaults'} disabled={busy} onPress={save} /> : null}
     </Card>
   )
 }
@@ -402,6 +471,8 @@ export default function ProfileScreen({ onLogout }) {
         </Card>
 
         <GarageCard />
+
+        <TripDefaultsCard />
 
         <SafetyCard />
 

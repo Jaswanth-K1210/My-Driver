@@ -13,7 +13,7 @@ import { broadcastStateChange } from './broadcast.js'
 import { computeFare, estimateTripDistanceKm, extractValidStopCoords, type FareBreakdown } from './fare.js'
 import { getFees } from './fees.js'
 import { tierForCar } from './tier.js'
-import { requireApprovedDriver, restoreAvailabilityAfterTrip } from './geo-index.js'
+import { isIndexed, requireApprovedDriver, restoreAvailabilityAfterTrip } from './geo-index.js'
 import { mayHavePendingOffer } from './offer-hint.js'
 import { getRateCard } from './rate-cards.js'
 import { assertTransition, CANCELLABLE_FROM, type TripStatus } from './state-machine.js'
@@ -835,12 +835,18 @@ export type PendingOffer = {
  * first and only queries Postgres when an offer may exist (offer-hint.ts).
  */
 export async function listPendingOffers(driverId: string): Promise<PendingOffer[]> {
+  // The common poll, with nothing offered, must stay off Postgres. Every path
+  // that takes a driver offline or suspends them drops them from the geo
+  // index, so "indexed" means the database check would pass too.
+  const [hinted, indexed] = await Promise.all([mayHavePendingOffer(driverId), isIndexed(driverId)])
+  if (!hinted && indexed) return []
+
   // Only an ONLINE driver polls. Being OFFLINE here means the server took them
   // offline (missed offers, or ops), and the app must say so and stop.
   if ((await requireApprovedDriver(driverId)) === 'OFFLINE') {
     throw conflict('DRIVER_OFFLINE', 'You are offline. Go online to receive trip requests.')
   }
-  if (!(await mayHavePendingOffer(driverId))) return []
+  if (!hinted) return []
 
   const { rows } = await pool.query(
     `SELECT o.trip_id,
