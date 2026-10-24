@@ -92,7 +92,7 @@ export const DEFAULT_CONFIG = {
   },
   
   // Full-time State
-  durationHours: 1,
+  durationHours: 2,
   fullTimeDetails: {
     locality: 'HITEC City & Gachibowli',
     durationUnit: 'months', // 'days' | 'weeks' | 'months'
@@ -222,13 +222,14 @@ export function getMinDurationForConfig(config) {
     // Average city traffic speed ~25km/h, +30m per stop buffer
     const driveMinutes = Math.round((totalKm / 25) * 60) + (totalStops * 30)
     const requiredMinutes = driveMinutes + 10 // Minimum selected duration must be 10 min greater than travel time
-    const minHours = Math.max(1, Math.ceil(requiredMinutes / 60))
+    // Hourly hire starts at 2 hours, as the server enforces.
+    const minHours = Math.max(2, Math.ceil(requiredMinutes / 60))
 
     return {
       minHours,
-      label: minHours > 1 
+      label: minHours > 2 
         ? `Travel time (~${driveMinutes} mins + 10 min buffer) requires min. ${minHours} hrs`
-        : '1 hour minimum package',
+        : 'Minimum 2 hours',
     }
   }
 

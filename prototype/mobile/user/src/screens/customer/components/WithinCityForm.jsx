@@ -8,7 +8,7 @@ import { getMinDurationForConfig } from '../../../lib/booking'
 import { colors, radius, space, type } from '../../../theme/tokens'
 import RoutePlannerCard from './RoutePlannerCard'
 
-const DURATION_PRESETS = [1, 2, 4, 8]
+const DURATION_PRESETS = [2, 4, 8, 12]
 
 export default function WithinCityForm({ config, onChange }) {
   const minDur = getMinDurationForConfig(config)

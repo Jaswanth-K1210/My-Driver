@@ -11,6 +11,7 @@ import { pool } from '../../db/client.js'
 import { hideDemo } from '../../lib/demo.js'
 import { approvalBlockers, getKycStatus } from '../kyc/service.js'
 import { badRequest, conflict, notFound } from '../../lib/errors.js'
+import { getPushProvider } from '../../providers/push/index.js'
 import { getStorageProvider } from '../../providers/storage/index.js'
 import type { Role } from '../auth/otp.js'
 import { raiseEscalation } from '../escalation/service.js'
@@ -336,7 +337,21 @@ export async function setOnboardingStatus(
     to: status,
     note: note ?? null,
   })
+  // Tell the driver's phone now, so the app re-checks instead of waiting
+  // for the next launch.
+  const message = STATUS_PUSH[status]
+  if (message && status !== before.onboarding_status) {
+    await getPushProvider()
+      .send(driverId, { ...message, data: { type: 'ONBOARDING_STATUS', status } })
+      .catch(() => undefined)
+  }
   return updated[0]!
+}
+
+const STATUS_PUSH: Partial<Record<OnboardingStatus, { title: string; body: string }>> = {
+  APPROVED: { title: "You're approved", body: 'You can go online and take trips now.' },
+  REJECTED: { title: 'Application not approved', body: 'Open the app to see why and what to do next.' },
+  SUSPENDED: { title: 'Account suspended', body: 'You cannot take trips for now. Open the app for details.' },
 }
 
 /* ── Documents ───────────────────────────────────────────────────────────── */

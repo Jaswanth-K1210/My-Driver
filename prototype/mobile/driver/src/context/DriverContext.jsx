@@ -398,6 +398,14 @@ export function DriverProvider({ children }) {
     const offTokenChange = onPushTokenChange()
 
     const onPush = (notification) => {
+      const type = notification?.request?.content?.data?.type
+      // The console approved, rejected or suspended this driver, or the
+      // server set them offline: read the truth again rather than trust state.
+      if (type === 'ONBOARDING_STATUS' || type === 'AUTO_OFFLINE') {
+        void controller.validate()
+        void refreshSummary()
+        return
+      }
       if (!isOfferPush(notification)) return
       if (!controller.getSnapshot().canStartOrAcceptNewRide) return
       const data = notification.request.content.data
@@ -412,7 +420,7 @@ export function DriverProvider({ children }) {
       offTokenChange()
       offOfferPush()
     }
-  }, [isAuthenticated, controller, refreshOffers])
+  }, [isAuthenticated, controller, refreshOffers, refreshSummary])
 
   /* ── Offer polling: gated by fresh approval and no active trip ────────── */
   useEffect(() => {
@@ -460,10 +468,15 @@ export function DriverProvider({ children }) {
 
   useEffect(() => {
     const appState = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void syncTrip()
+      if (state === 'active') {
+        void syncTrip()
+        // A push can be missed; approval changes made in the console while
+        // the app was away still show on return.
+        if (isAuthenticated) void controller.validate()
+      }
     })
     return () => appState.remove()
-  }, [syncTrip])
+  }, [syncTrip, isAuthenticated, controller])
 
   /* ── Expire the offer card when its 20s window closes ─────────────────── */
   useEffect(() => {

@@ -94,7 +94,6 @@ export const DROPS = [
 ]
 
 export const HOUR_PACKAGES = [
-  { id: 'h1', hours: 1, includedKm: 10, label: '1 hour' },
   { id: 'h2', hours: 2, includedKm: 20, label: '2 hours' },
   { id: 'h4', hours: 4, includedKm: 40, label: '4 hours' },
   { id: 'h8', hours: 8, includedKm: 80, label: '8 hours' },

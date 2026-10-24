@@ -5,6 +5,7 @@ import { pool } from '../../src/db/client.js'
 import { seed } from '../../src/db/seed.js'
 import { awaitDispatchIdle } from '../../src/modules/trips/dispatch-tracker.js'
 import { findNearbyDrivers } from '../../src/modules/trips/geo-index.js'
+import { ConsolePushProvider, setPushProvider } from '../../src/providers/push/index.js'
 import { bearer, loginAs } from '../helpers/auth.js'
 import { resetDb } from '../helpers/db.js'
 import { resetRedis } from '../helpers/redis.js'
@@ -85,6 +86,31 @@ describe('dispatch eligibility gates', () => {
     await setStatus(driver.userId, 'SUSPENDED')
 
     expect(await nearby()).not.toContain(driver.userId)
+  })
+
+  it("pushes the console's decision to the driver's phone", async () => {
+    const driver = await makeOnlineDriver(app, '+919700000006')
+    const ops = await loginAsRole(app, '+919700000016', 'OPS_MANAGER')
+    // Installed only now: signing in swaps in its own provider.
+    const push = new ConsolePushProvider()
+    setPushProvider(push)
+    try {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/v1/admin/drivers/${driver.userId}/status`,
+        headers: bearer(ops.accessToken),
+        payload: { status: 'SUSPENDED' },
+      })
+      expect(res.statusCode).toBe(200)
+      expect(push.sent).toEqual([
+        expect.objectContaining({
+          userId: driver.userId,
+          payload: expect.objectContaining({ data: { type: 'ONBOARDING_STATUS', status: 'SUSPENDED' } }),
+        }),
+      ])
+    } finally {
+      setPushProvider(undefined)
+    }
   })
 
   describe('operation-level driver approval enforcement (Scenario 12)', () => {

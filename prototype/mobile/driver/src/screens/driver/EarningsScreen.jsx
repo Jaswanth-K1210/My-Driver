@@ -87,6 +87,8 @@ function TripEarningsCard({ t }) {
       ? Number(t.base_fare)
       : Math.max(0, Math.round((fareAmount - platformFee - nightFee) * 100) / 100)
   const reqText = requirementLabel(t.requirement, t.trip_type)
+  // The customer cancelled after this driver reached the pickup.
+  const fined = Number(t.cancellation_fee ?? 0) > 0
   const distanceLabel =
     t.booking_type === 'HOURLY' && t.hourly_package_hours
       ? `${t.hourly_package_hours} hr package`
@@ -101,6 +103,7 @@ function TripEarningsCard({ t }) {
           <Pill label={shortTripId(t.trip_id)} tone="neutral" />
           {t.required_certification ? <Pill label={t.required_certification} tone="neutral" /> : null}
           {reqText ? <Pill label={reqText} tone="neutral" /> : null}
+          {fined ? <Pill label="Cancellation fee" tone="brand" /> : null}
         </View>
         <Pill
           label={t.payout_status ? (PAYOUT_LABEL[t.payout_status] ?? t.payout_status) : 'Unsettled'}
@@ -156,7 +159,7 @@ function TripEarningsCard({ t }) {
         }}
       >
         <BreakdownRow
-          label={`Base trip fare${distanceLabel ? ` (${distanceLabel})` : ''}`}
+          label={fined ? 'Customer cancelled at pickup (paid to you in full)' : `Base trip fare${distanceLabel ? ` (${distanceLabel})` : ''}`}
           value={formatINR(baseFare)}
         />
         {nightFee > 0 && (
