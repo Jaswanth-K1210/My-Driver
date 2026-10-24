@@ -10,7 +10,7 @@ import { colors, radius, space, type } from '../../theme/tokens'
 export default function TripSummaryScreen({ request, result, onDone }) {
   // The server recomputes the score on completion; refreshSummary() already
   // ran in completeTrip(), so this is the post-trip figure.
-  const { summary } = useDriver()
+  const { summary, platformFee } = useDriver()
   // The server's figures come first. What this phone counted (time on the
   // drive screen, harsh events) is lost if the app restarted mid-trip, and is
   // then left out rather than guessed.
@@ -24,7 +24,7 @@ export default function TripSummaryScreen({ request, result, onDone }) {
       ? Number(request.platformFee)
       : payout != null
         ? Math.max(0, Math.round(totalFare - payout))
-        : 19
+        : Number(platformFee ?? 0)
   const nightFee = Number(request.nightFee ?? 0)
   const baseFare = Math.max(0, Math.round((totalFare - fee - nightFee) * 100) / 100)
 

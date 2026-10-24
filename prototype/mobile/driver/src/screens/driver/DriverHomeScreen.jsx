@@ -43,6 +43,7 @@ export default function DriverHomeScreen({ onOpenProfile }) {
     goOnline,
     respondToOffer,
     connection,
+    platformFee,
   } = useDriver()
   const [acting, setActing] = useState(false)
   const canAct = Boolean(onboardingGate?.canStartOrAcceptNewRide)
@@ -265,7 +266,7 @@ export default function DriverHomeScreen({ onOpenProfile }) {
               <Pill label={`Ceiling ${request.ceiling}`} />
               <View style={{ marginLeft: 'auto', alignItems: 'flex-end' }}>
                 <Text style={{ ...type.title, color: colors.red }}>
-                  {formatINR(Math.round(request.earnings ?? Math.max(0, request.fare - 19)))}
+                  {formatINR(Math.round(request.earnings ?? Math.max(0, request.fare - (platformFee ?? 0))))}
                 </Text>
                 <Text style={{ ...type.micro, color: colors.textMuted }}>
                   Your net · Fare {formatINR(request.fare)}

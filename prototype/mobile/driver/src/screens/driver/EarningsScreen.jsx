@@ -233,7 +233,7 @@ function WeekBars({ daily }) {
 export default function EarningsScreen() {
   const load = useLoad(fetchEarnings)
   return (
-    <Screen title="Earnings" subtitle="Your net share after the ₹19 platform fee" load={load}>
+    <Screen title="Earnings" subtitle="Your net share after the platform fee" load={load}>
       {(e) => {
         const pendingPayouts = (e.payouts ?? []).filter(
           (p) => p.status === 'PENDING' || p.status === 'APPROVED',

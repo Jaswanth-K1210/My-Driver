@@ -126,6 +126,11 @@ export function DriverProvider({ children }) {
   const [tracking, setTracking] = useState('off')
   const [queued, setQueued] = useState(0)
   const [pushStatus, setPushStatus] = useState({ ok: false, reason: 'pending' })
+  // Set in the console's Pricing page; only a fallback when a trip lacks its own.
+  const [platformFee, setPlatformFee] = useState(null)
+  useEffect(() => {
+    api.catalogue.tripConfig().then((c) => setPlatformFee(c?.fees?.platform_fee ?? null)).catch(() => undefined)
+  }, [])
   const [pushDelivers, setPushDelivers] = useState(false)
 
   const realtimeRef = useRef(null)
@@ -693,6 +698,7 @@ export function DriverProvider({ children }) {
       tracking,
       queued,
       pushStatus,
+      platformFee,
       onboardingGate,
       reloadOnboarding,
       updateTripInspected,
@@ -708,7 +714,7 @@ export function DriverProvider({ children }) {
       refreshOffers,
     }),
     [
-      online, busy, summary, profileComplete, offer, trip, connection, tracking, queued, pushStatus,
+      online, busy, summary, profileComplete, offer, trip, connection, tracking, queued, pushStatus, platformFee,
       onboardingGate, reloadOnboarding, updateTripInspected, updateDriverProfile,
       goOnline, respondToOffer, submitHandshake, cancelTrip, sendSos, completeTrip, clearTrip,
       refreshSummary, refreshOffers,
