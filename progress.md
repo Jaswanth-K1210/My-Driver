@@ -3,6 +3,58 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-25: review of `31c72a0`, `bc34996`, `de02abc`; full code review; SDLC plan
+
+Sanath's session. Only docs changed: `prd.md`, `tasks.md` and this file. No source code was touched.
+
+**The 24 Oct findings are mostly closed.** Of the 7 findings in the entry below, 6
+were fixed the same day by Jaswanth:
+- `bc34996`: platform fee read from trip-config (finding 3).
+- `de02abc`: tier picker removed; safety-defaults settings; `DRIVER_ARRIVED` banner;
+  "Pay ₹X" on the receipt; "Verified" placeholders removed; Redis hint before the
+  approval query in `listPendingOffers()`.
+- `31c72a0`: approval decisions pushed to the driver app over WebSocket.
+
+Still open: whether drivers must enter their own vehicle and plate. This is now
+decision D-3 in `prd.md`.
+
+**New code review (CodeRabbit CLI on `d640d2d..de02abc` + a manual cross-surface
+audit): 19 findings** — 8 major, 11 moderate/minor.
+
+| Owner | Findings | Majors |
+|---|---|---|
+| Jaswanth | 12 | M-1, M-3, M-4, CR-2, CR-3 |
+| Sanath | 6 | CR-1, M-2 |
+| Umesh | CR-4 + 3 polish items | CR-4 (crash during live trips) |
+
+The three owners' file paths don't overlap, so all three can work in parallel.
+
+**Checks on this laptop at `de02abc`:**
+
+| Check | Result |
+|---|---|
+| Backend `npx tsc --noEmit` | Pass, 0 errors |
+| Driver app `npm test` | 11 / 11 pass |
+| Website `npm run lint` | 0 errors, 22 warnings |
+| Backend Vitest | Not run: needs the Docker Postgres on 5433 (Phase 4) |
+
+**Plan.** `prd.md` now starts with the SDLC master plan; the original requirements are
+unchanged in its Part 6. The target is a **production-testing handover by 15 Nov**.
+
+Testing model agreed by Sanath:
+- Android and iOS, Hyderabad.
+- The three devs test before launch; drivers test after launch.
+- Test keys until launch, with one live-key run just before.
+- Testers report bugs by call or text; the dev who takes it logs it in a shared bug log.
+
+`tasks.md` now follows the plan's phases. Current phase: **Phase 3** (code-review
+fixes, Day-1 accounts, staging server).
+
+**Watch out for:**
+- The Apple Developer account approval can take days — start it on Day 1.
+- iOS push doesn't work yet: the apps register a raw APNs token, and the backend
+  sends through FCM. Decision D-1 proposes an APNs provider in the backend.
+
 ## 2026-10-24: review of the pushed commits `bd0d854`, `52c609f` and `cd9de9c`
 
 Three commits landed on `production-p1` after 2026-10-11. `bd0d854` and
