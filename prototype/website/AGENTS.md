@@ -18,6 +18,7 @@ npm run lint          # oxlint: 0 errors (existing warnings are OK, don't add ne
 npm run build         # customer build
 npm run build:admin   # console build
 npm run check         # booking payload check (scripts/check-booking.mjs)
+npm run e2e           # Playwright, when booking, Track or console flows change (needs the backend's Docker stack; see playwright.config.js)
 ```
 
 ## Area rules

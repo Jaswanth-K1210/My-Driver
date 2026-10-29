@@ -66,19 +66,37 @@ Rule: CI is green before any build goes to testers.
 
 ## 5. Layer 2: website and console end-to-end (Playwright)
 
-New, owned by Jaswanth, in `prototype/website/e2e/`. It runs against a local backend with the demo
-seed and mock providers, in CI on every push. About 10 flows:
+Owned by Jaswanth, in `prototype/website/e2e/`. It drives the real site and console in Chromium
+against a real API (development mode, mock providers), and runs in CI (`e2e` job) on every push.
 
-1. Customer signs in with OTP (read from the mock SMS), books a within-city trip, pays through the mock checkout.
-2. The trip moves through matched, arrived, in trip and completed (driven through the API as the driver), and the Track page follows each state.
-3. A trip with an amount due shows **Pay ₹X**, and the box disappears once paid.
-4. Cancel before and after the driver arrives; the arrival fee is charged only after.
-5. Safety defaults saved from Book; a failed save still books.
-6. Console: staff sign-in, Board, open a trip from an active row, trip detail.
-7. Console Pricing: valid change saved and audited; empty, negative and out-of-range values blocked.
-8. Console Safety Desk: SOS appears, acknowledge, resolve; the trip goes back to in trip.
-9. Console driver approval and suspension; the driver's trips are withdrawn.
-10. Roles: each staff role and a customer token are refused where they should be.
+**Run it locally** (about a minute):
+
+```bash
+cd prototype/backend && npm run infra:up && npm run db:migrate && npm run db:seed
+cd ../website && npx playwright install chromium   # once
+npm run e2e                                        # stop your own API on :4000 first
+```
+
+Playwright starts the API itself so it can read OTPs from its log (`e2e/.api.log`), creates one
+console account per staff role (`e2e/.staff.json`, gitignored), and resets the local Redis login
+counters before each sign-in instead of loosening the limits in the backend. On failure:
+`npx playwright show-report`, and in CI the `playwright-report` artifact.
+
+| # | Flow | File |
+|---|---|---|
+| 1 | Customer signs in with the OTP from the SMS; booking with no driver online ends in "no driver" and releases the hold | `customer.spec.js` |
+| 2 | Book, pay through the mock checkout; Track follows matched, arrived, pickup OTP read off the screen, in trip, complete; rating saved | `customer.spec.js` |
+| 3 | Final fare above the hold shows **Pay ₹X**; paying it through checkout removes the box | `customer.spec.js` |
+| 4 | Cancel before arrival is free (hold released); after arrival the arrival fee is captured | `customer.spec.js` |
+| 5 | Safety defaults from the first booking are saved; a failed save still books | `customer.spec.js` |
+| 6 | Staff sign in through the console, the trip shows on the Board, trip detail opens | `console.spec.js` |
+| 7 | Pricing: empty, negative, zero and too-high rates block Save; a valid change is saved and audited | `console.spec.js` |
+| 8 | Safety Desk: SOS on the Board, acknowledge, resolve; the trip goes back to in trip and Track follows | `console.spec.js` |
+| 9 | Suspending a driver: a pending offer goes to another driver; an accepted trip is cancelled free. Approval stays blocked until identity checks are done | `console.spec.js` |
+| 10 | Roles: customer, finance, desk and ops tokens refused where they should be; staff login refused from the customer site; desk nav has no Pricing or Audit | `console.spec.js` |
+
+The driver's side runs through the API (`onlineDriver` in `e2e/helpers.js`); the driver app itself
+is covered by layer 3. Tests that change prices (3, 7) restore them in a `finally`.
 
 ## 6. Layer 3: mobile end-to-end (Maestro)
 

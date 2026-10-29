@@ -3,6 +3,23 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · Testing layer 2 (Playwright)
+
+**Did:** Playwright end-to-end tests for the website and console in `prototype/website/e2e/`
+(`playwright.config.js`, `npm run e2e`): 14 tests covering the 10 flows of `docs/testing-plan.md` §5,
+through the real UI and a real API in development mode with mock providers. The driver side runs through the
+API. New `e2e` job in `.github/workflows/ci.yml` brings up the backend's Docker stack with
+`.env.example`, migrates, seeds and runs the suite; on failure it uploads the report and the API log.
+Updated testing-plan §5 (how to run, flow table) and added `npm run e2e` to `prototype/website/AGENTS.md`.
+**Checks:** `npm run e2e` 14/14, three full runs in a row · `npm run lint` 0 errors, no new warnings ·
+CI result after this push to be checked.
+**Findings:** no product bugs found. Notes for whoever writes tests: the API limits OTPs to 10 per
+network an hour and staff logins to 5 per account in 15 minutes (the suite resets the counters in local
+Redis); the customer's rating shows only as the driver's average; once a driver accepts, suspending them
+cancels the trip rather than re-dispatching it (CR-2, as designed).
+**Commit:** `test(e2e): testing layer 2, Playwright for website and console`
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · CI lint fix
 
 **Did:** The first CI run on `production-p1` failed the website lint step (`--deny-warnings`): a ref

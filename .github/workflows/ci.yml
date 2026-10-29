@@ -101,6 +101,45 @@ jobs:
         run: npm test
       - run: npx expo export --platform android --output-dir /tmp/export
 
+  # Testing layer 2 (docs/testing-plan.md §5): the website and console driven
+  # in a browser against a real API, on the same Docker stack and .env.example
+  # as a developer laptop.
+  e2e:
+    runs-on: ubuntu-24.04
+    needs: [backend, website]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            prototype/backend/package-lock.json
+            prototype/website/package-lock.json
+      - name: Backend stack
+        working-directory: prototype/backend
+        run: |
+          cp .env.example .env
+          npm ci
+          docker compose up -d --wait
+          npm run db:migrate
+          npm run db:seed
+      - name: Website and browser
+        working-directory: prototype/website
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - run: npm run e2e
+        working-directory: prototype/website
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            prototype/website/playwright-report
+            prototype/website/e2e/.api.log
+          retention-days: 7
+
   images:
     runs-on: ubuntu-24.04
     needs: [backend, website]

@@ -276,8 +276,9 @@ Then:
 - [x] ~~Testing layer 1: CI also runs the driver app's `npm test` and the user app's
       `npx expo export --platform android` (`docs/testing-plan.md` §4)~~ Done: `mobile` job
       exports both apps, and CI now also runs on pushes to `production-p1`
-- [ ] Testing layer 2: Playwright end-to-end flows for the website and console in
-      `prototype/website/e2e/`, run in CI (`docs/testing-plan.md` §5)
+- [x] ~~Testing layer 2: Playwright end-to-end flows for the website and console in
+      `prototype/website/e2e/`, run in CI (`docs/testing-plan.md` §5)~~ Done: 14 tests, all 10
+      flows, `e2e` CI job
 - [ ] Searchable logs on staging (Grafana Loki + Grafana) (`docs/testing-plan.md` §9)
 - [ ] Sentry in the backend and website, with privacy scrubbing (`docs/testing-plan.md` §9)
 - [x] ~~Backend suite on Docker (`infra:up`, `db:migrate`, `npm test`); website lint + both builds~~

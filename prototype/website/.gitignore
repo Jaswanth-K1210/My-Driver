@@ -1,0 +1,4 @@
+# Playwright (npm run e2e)
+e2e/.staff.json
+test-results/
+playwright-report/
