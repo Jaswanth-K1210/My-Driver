@@ -130,7 +130,8 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
       ...(priced
         ? [
             ...(server.distance_km > 0 ? [{ label: 'Distance', value: `${server.distance_km.toFixed(1)} km` }] : []),
-            { label: `${server.tier_label} fare`, value: formatINR(server.fare.base) },
+            { label: `${server.tier_label} fare`, value: formatINR(server.fare.base - (server.fare.stops_fee ?? 0)) },
+            ...(server.fare.stops_fee > 0 ? [{ label: 'Stops', value: formatINR(server.fare.stops_fee) }] : []),
             { label: 'Platform fee', value: formatINR(server.fare.platform_fee) },
             ...(server.fare.night_fee > 0 ? [{ label: 'Night fee', value: formatINR(server.fare.night_fee) }] : []),
           ]

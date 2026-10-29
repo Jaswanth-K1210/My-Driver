@@ -3,6 +3,14 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Sanath · M-5
+
+**Did:** Displayed "Stops" fee line in `prototype/mobile/user/src/screens/customer/HomeScreen.jsx` quote breakdown when `server.fare.stops_fee > 0`, and subtracted `stops_fee` from the base tier fare line (`server.fare.base - (server.fare.stops_fee ?? 0)`) so the sum of individual rows equals total, matching `prototype/website/src/pages/dashboard/Book.jsx`.
+**Checks:** `npx expo export --platform android` pass (bundled cleanly with 0 errors).
+**Commit:** `fix(M-5): display stops fee item in home screen quote breakdown`
+**Not done / follow-ups:** Needs phone check in Phase 5. Next task is CR-7 (safety defaults persistence and refreshMe in try/catch).
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · M-3
 
 **Did:** The website now shows "₹X still to pay" with a **Pay ₹X** button when a finished trip has
@@ -25,7 +33,6 @@ be sent as `POINT_TO_POINT` with `hours: 10`, as the booking code has done since
 script was stale (see the CR-3 entry); the booking code is unchanged.
 **Checks:** `npm run check` pass.
 **Commit:** `chore: website booking check expects long Within-City trips as POINT_TO_POINT`
-**Requests raised:** none.
 
 ## 2026-10-29 · Sanath · CR-1 + M-2
 

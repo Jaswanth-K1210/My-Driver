@@ -80,7 +80,7 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       outstation round trips. Written — needs phone check (`fix(CR-1)`, 29 Oct)
   - [x] CR-1: send stop coordinates {lat, lng} and preserve point-to-point duration (Written — needs phone check)
   - [x] M-2: outstation return_drop and within-city duration > 8h fix (Written — needs phone check)
-- [ ] **M-5** Show the "Stops fee" line in the quote breakdown (`HomeScreen.jsx`)
+- [x] **M-5** Show the "Stops fee" line in the quote breakdown (`HomeScreen.jsx`). Written — needs phone check (`fix(M-5)`, 29 Oct)
 - [ ] **CR-7** Saving safety defaults and `refreshMe()` in their own try/catch so an error never
       blocks booking
 - [ ] **CR-8** Do not show transmission/fuel as the plate (`src/lib/tripView.js`)
