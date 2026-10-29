@@ -3,6 +3,25 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · CR-9 / CR-11
+
+**Did:** `api-documentation.md` is current. The generated endpoint reference was already
+regenerated in `fix(M-1)` and is unchanged by `npm run docs:api` now (113 endpoints). The
+hand-written sections were behind the code and are updated:
+- **Payments flow:** paying `amount_due` on the same checkout page (second order), and who pays
+  the arrival cancellation fee (only a customer cancelling after arrival).
+- **Realtime:** added `SUBSCRIBE_OPS` / `UNSUBSCRIBE_OPS`, `DRIVER_ARRIVED`, `OPS_SUBSCRIBED` /
+  `OPS_UNSUBSCRIBED`, `OPS_CHANGED`, `DRIVERS_LIVE`; `TRIP_STATE_CHANGED` is sent for console
+  actions too; `TRIP_OFFER` points to `GET /v1/driver/offers` for the full card.
+- **New "Push notifications" section:** device registration, FCM vs APNs, when tokens are
+  deleted, the `data.type` values.
+Also corrected the `ANOMALY_TRIGGERED` comment in `src/realtime/protocol.ts` (it said "Reserved for
+Phase 2"; it is sent today). Comment only.
+**Checks:** `npm run docs:api` keeps the edits · `npm run typecheck` pass · `tests/unit/protocol.test.ts`
+7/7 pass.
+**Commit:** `docs(CR-9): bring api-documentation.md up to date with payments, realtime and push`
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · M-7
 
 **Did:** On the console's live Board (`prototype/website/src/pages/admin/Board.jsx`), each row in

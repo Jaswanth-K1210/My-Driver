@@ -55,6 +55,11 @@ Every error uses the same shape:
 3. Razorpay calls the signed webhook. The payment becomes `AUTHORIZED` and dispatch starts.
 4. On completion the backend captures the lower of the final fare and the hold. Any overage is recorded as
    `amount_due`. Cancelling, or no driver being found, releases the hold.
+5. While `amount_due > 0`, the same checkout page (`GET /v1/payments/:id/checkout`) collects the difference
+   as a second order. `GET /v1/trips/:id/payment` shows what is still owed.
+6. A customer who cancels after the driver has arrived pays the arrival cancellation fee (set in the console's
+   Pricing page), taken from the hold and paid to the driver in full. A cancellation by the driver, by ops, or
+   because the driver lost approval is free.
 
 ## Realtime (WebSocket)
 
@@ -67,14 +72,27 @@ Every error uses the same shape:
 | client → server | `SUBSCRIBE`, `UNSUBSCRIBE` | Start or stop receiving a trip's events |
 | client → server | `DRIVER_TELEMETRY` / `CUSTOMER_TELEMETRY` | Position (and driver motion sensors) during `HANDSHAKE_PENDING` / `IN_TRIP` |
 | client → server | `PONG` | Reply to `PING` |
+| client → server | `SUBSCRIBE_OPS`, `UNSUBSCRIBE_OPS` | Console only (Safety Desk roles): `view` is `board` or `map` |
 | server → client | `SUBSCRIBED`, `UNSUBSCRIBED` | Acknowledgements |
-| server → client | `TRIP_OFFER` | New offer for an online driver |
-| server → client | `TRIP_STATE_CHANGED` | The trip moved to a new status |
+| server → client | `TRIP_OFFER` | New offer for an online driver. Fetch `GET /v1/driver/offers` for the full card (stops, car, trip type) |
+| server → client | `TRIP_STATE_CHANGED` | The trip moved to a new status. Sent for every change, including console actions such as resolving an incident (back to `IN_TRIP`) |
+| server → client | `DRIVER_ARRIVED` | The driver is within 150 m of the pickup; the trip is still `HANDSHAKE_PENDING` |
 | server → client | `DRIVER_LOCATION` | Live driver position for the customer's map |
-| server → client | `ANOMALY_TRIGGERED` | Speed, route or telemetry warning raised |
+| server → client | `ANOMALY_TRIGGERED` | Speed, route or telemetry warning, or SOS. At L3 and above the trip is now `ESCALATED` |
+| server → client | `OPS_SUBSCRIBED`, `OPS_UNSUBSCRIBED` | Console acknowledgements |
+| server → client | `OPS_CHANGED` | The live board changed; refetch it |
+| server → client | `DRIVERS_LIVE` | Every online driver, the same rows as `GET /v1/admin/drivers/live` |
 | server → client | `PING`, `ERROR` | Keep-alive; `{ code, message }` on a bad frame |
 
 The full frame schemas are in `prototype/backend/src/realtime/protocol.ts`.
+
+## Push notifications
+
+The apps register their device token with `POST /v1/me/devices` (`platform`: `ios`, `android` or `web`)
+and remove it on sign-out with `DELETE /v1/me/devices`. Android tokens are sent through FCM; iOS tokens
+(the raw APNs token) go straight to Apple when the `APNS_*` variables are set. A token is deleted only when
+FCM or Apple says the app is gone. Every push carries `data.type`, for example `TRIP_STARTED`,
+`DRIVER_ARRIVED`, `PAYMENT_DUE` or, for drivers, `ONBOARDING_STATUS` with the new `status`.
 
 ## Other endpoints
 

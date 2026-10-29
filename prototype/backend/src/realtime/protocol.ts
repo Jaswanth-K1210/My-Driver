@@ -77,7 +77,8 @@ export const ServerFrameSchema = z.discriminatedUnion('type', [
   // Every online driver, the same rows as GET /v1/admin/drivers/live.
   z.object({ type: z.literal('DRIVERS_LIVE'), drivers: z.array(z.unknown()) }),
   z.object({ type: z.literal('ERROR'), code: z.string(), message: z.string() }),
-  // Reserved for Phase 2. Documented now so clients can switch on it safely.
+  // An integrity warning or SOS (escalation/service.ts announce()). From L3
+  // the trip itself is ESCALATED.
   z.object({
     type: z.literal('ANOMALY_TRIGGERED'),
     trip_id: z.string(),
