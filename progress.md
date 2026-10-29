@@ -3,6 +3,19 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Umesh · Onboarding auto-refresh
+
+**Did:** While the driver is `UNDER_REVIEW`, `OnboardingScreen.jsx` checks
+`/v1/driver/onboarding` every 10 s (only while the app is in the foreground, one request at a
+time). It calls the gate's full `reload()` only when the payload differs from the one on screen,
+because `validate()` swaps the screen for a loading state and a blind 10 s reload would flash it.
+The comparison is `hasOnboardingChanged()` in `src/lib/onboardingGate.js`: key-order-independent,
+and a malformed payload never counts as a change, so the poll can never grant approval itself.
+Errors are ignored (the driver stays on the onboarding screen). 3 new unit tests.
+**Checks:** `npm test` 19/19 · `npx expo export --platform android` pass.
+**Commit:** `feat(onboarding-refresh): poll the review status every 10 s while UNDER_REVIEW`
+**Not done / follow-ups:** Needs phone check in Phase 5 (`docs/driver-app-testing.md` §14 step 9).
+
 ## 2026-10-29 · Jaswanth · M-1
 
 **Did:** `GET /v1/driver/offers` now returns `stops`, `return_stops`, `vehicle_specs`,

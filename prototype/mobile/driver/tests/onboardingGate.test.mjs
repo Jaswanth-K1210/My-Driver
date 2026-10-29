@@ -5,6 +5,7 @@ import {
   createOnboardingController,
   createSingleFlight,
   evaluateOnboardingGate,
+  hasOnboardingChanged,
   isTrustedActiveTrip,
   isTrustedInProgressTrip,
   parseOnboardingPayload,
@@ -572,3 +573,34 @@ describe('Driver Onboarding Validation & Active-Trip Continuity Gate', () => {
   })
 })
 
+describe('hasOnboardingChanged (quiet poll while UNDER_REVIEW)', () => {
+  const current = {
+    onboarding_status: 'UNDER_REVIEW',
+    review_note: null,
+    kyc: { pan: { status: 'VERIFIED' }, aadhaar: { status: 'VERIFIED' } },
+    documents: [{ kind: 'DRIVING_LICENCE', status: 'SUBMITTED' }],
+  }
+
+  it('is false for the same payload, even with keys in another order', () => {
+    const raw = {
+      documents: [{ status: 'SUBMITTED', kind: 'DRIVING_LICENCE' }],
+      kyc: { aadhaar: { status: 'VERIFIED' }, pan: { status: 'VERIFIED' } },
+      review_note: null,
+      onboarding_status: 'UNDER_REVIEW',
+    }
+    assert.equal(hasOnboardingChanged(current, raw), false)
+  })
+
+  it('is true when the status or a document changes', () => {
+    assert.equal(hasOnboardingChanged(current, { ...current, onboarding_status: 'APPROVED' }), true)
+    assert.equal(
+      hasOnboardingChanged(current, { ...current, documents: [{ kind: 'DRIVING_LICENCE', status: 'VERIFIED' }] }),
+      true,
+    )
+  })
+
+  it('treats a malformed payload as no change, so it can never trigger approval', () => {
+    assert.equal(hasOnboardingChanged(current, null), false)
+    assert.equal(hasOnboardingChanged(current, { onboarding_status: 'SUPER_APPROVED' }), false)
+  })
+})

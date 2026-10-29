@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react'
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ActivityIndicator, AppState, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as ImagePicker from 'expo-image-picker'
 import { Check, Clock, CreditCard, Fingerprint, IdCard, LogOut, RefreshCw, ShieldCheck, WifiOff } from 'lucide-react-native'
@@ -9,6 +9,7 @@ import { useToast } from '../../components/Toast'
 import { useAuth } from '../../context/AuthContext'
 import { useDriver } from '../../context/DriverContext'
 import { api } from '../../lib/apiClient'
+import { hasOnboardingChanged } from '../../lib/onboardingGate'
 import { unregisterPush } from '../../lib/push'
 import { colors, radius, space, type } from '../../theme/tokens'
 
@@ -22,6 +23,10 @@ const input = {
   color: colors.text,
   backgroundColor: colors.surface,
 }
+
+// While under review, check quietly for the console's decision so approval
+// comes through even without push.
+const REVIEW_POLL_MS = 10_000
 
 const STATUS_COPY = {
   PENDING: { title: 'Finish your verification', body: 'Complete the three steps below. It takes about five minutes.' },
@@ -262,6 +267,30 @@ export default function OnboardingScreen({ onboarding, reload, onLogout }) {
     await reload()
     setRefreshing(false)
   }, [reload])
+
+  // A full reload() swaps this screen for a loading state, so the poll only
+  // reads the payload and reloads when something changed. Errors are ignored:
+  // the driver is not approved either way, and pull-to-refresh still works.
+  const onboardingRef = useRef(onboarding)
+  onboardingRef.current = onboarding
+  const underReview = onboarding.onboarding_status === 'UNDER_REVIEW'
+  useEffect(() => {
+    if (!underReview) return undefined
+    let checking = false
+    const id = setInterval(async () => {
+      if (checking || AppState.currentState !== 'active') return
+      checking = true
+      try {
+        const raw = await api.driver.onboarding()
+        if (hasOnboardingChanged(onboardingRef.current, raw)) await reload()
+      } catch {
+        // Next tick tries again.
+      } finally {
+        checking = false
+      }
+    }, REVIEW_POLL_MS)
+    return () => clearInterval(id)
+  }, [underReview, reload])
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>

@@ -220,6 +220,13 @@ From `bd0d854` and `52c609f`. Not yet run on a phone.
    missing trip requests".
 8. Fake GPS: with a mock-location app on Android, drive a trip. The fixes are
    dropped and the Safety Desk shows an L1 `MOCK_LOCATION` flag.
+9. Approval without push (added 2026-10-29): with notifications turned off
+   for the app, leave a driver in `UNDER_REVIEW` on the onboarding screen.
+   Approve them in the console: within about 10 seconds the app moves on to
+   profile setup or Home without pulling to refresh. Verifying the licence in
+   the console (status unchanged) updates the licence step the same way.
+   With the app in the background nothing is fetched; in aeroplane mode the
+   screen stays as it is and never shows Home.
 
 ## 15. Trips with no address text (CR-4, added 2026-10-29)
 

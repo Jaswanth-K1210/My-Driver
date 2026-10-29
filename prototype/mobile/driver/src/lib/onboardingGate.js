@@ -83,6 +83,30 @@ export function parseOnboardingPayload(payload) {
   }
 }
 
+/** Key-sorted JSON, so two payloads compare equal regardless of key order. */
+function stableStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(value ?? null)
+}
+
+/**
+ * For the quiet background check on the onboarding screen: true when a freshly
+ * fetched payload differs from the one on screen, so the caller should run a
+ * full `validate()`. A malformed payload is never a change; this function never
+ * grants approval itself.
+ */
+export function hasOnboardingChanged(current, raw) {
+  const next = parseOnboardingPayload(raw)
+  if (!next) return false
+  return stableStringify(next) !== stableStringify(current ?? null)
+}
+
 /**
  * Checks whether a trip object represents a genuine, server-confirmed
  * in-progress trip (`IN_TRIP` or `ESCALATED`) owned by `driverId`.
