@@ -3,6 +3,19 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · CR-6
+
+**Did:** The console's Pricing page (`prototype/website/src/pages/admin/Pricing.jsx`) blocks empty,
+negative and out-of-range prices and fees before they reach the server. An emptied box used to be
+sent as `0` (`Number('')`), and a typed minus sign got past `min="0"`. The page now checks each
+value against the server's own bounds (rates: per km 1–500, hourly 10–10,000, included km 0–100
+whole; fees 0–1,000 or 0–2,000), highlights a bad box, says what range to enter, and disables Save
+until it is fixed.
+**Checks:** `npm run lint` 0 errors, 22 warnings (none new) · `npm run build` pass ·
+`npm run build:admin` pass · `npm run check` pass. Not clicked through in a browser.
+**Commit:** `fix(CR-6): block empty or out-of-range prices and fees in the console`
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · CR-5
 
 **Did:** The console's trip page (`prototype/website/src/pages/admin/TripDetail.jsx`) no longer
