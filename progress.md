@@ -3,6 +3,18 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · Phase 4 check run (early prep)
+
+**Did:** Ran Jaswanth's Phase 4 checks on `c44e3f5` (all of today's fixes). Code unchanged.
+**Checks:** backend `npm run db:migrate` pass · `npm run typecheck` pass · `npm test` **36 files,
+411/411 pass** on the Docker Postgres/Redis · website `npm run lint` 0 errors, 22 warnings ·
+`npm run build` pass · `npm run build:admin` pass · `npm run check` pass.
+**Commit:** `docs: Phase 4 backend and website checks pass on c44e3f5`
+**Not done / follow-ups:** Re-run after any later backend or website change. Still open for
+Jaswanth, all needing accounts or the staging server: X-3, X-4, X-5, X-6, staging up, D-4 prices,
+amount due against Razorpay test mode.
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · Staging prep (early prep for X-5)
 
 **Did:** `deploy/README.md` now has a **Staging** section: which variables differ from production

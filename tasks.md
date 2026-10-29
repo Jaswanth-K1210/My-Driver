@@ -264,7 +264,8 @@ Then:
       fees still to enter on staging)
 
 ### Phase 4–6
-- [ ] Backend suite on Docker (`infra:up`, `db:migrate`, `npm test`); website lint + both builds
+- [x] ~~Backend suite on Docker (`infra:up`, `db:migrate`, `npm test`); website lint + both builds~~
+      (30 Oct on `c44e3f5`: 411/411; re-run after later changes)
 - [ ] Amount due against Razorpay test mode (only the mock provider has been run)
 - [ ] Watch the console during the Phase 5 road tests; same-day fixes for P0/P1 bugs
 - [ ] Production-testing server: TLS for mydriver.in, api. and admin.; migrations; staff
