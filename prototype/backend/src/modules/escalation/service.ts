@@ -362,7 +362,7 @@ export async function resolveEscalation(
     await recordEvent(client, id, 'RESOLVED', agentId, role, { resolution })
 
     // A resolved incident releases the trip back to IN_TRIP if it is still running.
-    await client.query(
+    const released = await client.query(
       `UPDATE trips SET status = 'IN_TRIP' WHERE id = $1 AND status = 'ESCALATED'`,
       [escalation.trip_id],
     )
@@ -370,6 +370,15 @@ export async function resolveEscalation(
     // The trip's status may have changed above; drop the gateway's cached copy.
     await invalidateTripCache(escalation.trip_id).catch(() => undefined)
     await opsChanged()
+    // Both apps are still showing ESCALATED. Not broadcastStateChange(): that
+    // would push "Trip started" to the customer.
+    if (released.rowCount) {
+      await getHub()
+        .publish(escalation.trip_id, {
+          type: 'TRIP_STATE_CHANGED', trip_id: escalation.trip_id, status: 'IN_TRIP',
+        })
+        .catch(() => undefined)
+    }
     return escalation
   } catch (err) {
     await client.query('ROLLBACK')

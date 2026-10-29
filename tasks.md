@@ -225,7 +225,8 @@ Do first, because the apps depend on them:
 - [x] ~~**M-1 (major)** `GET /v1/driver/offers`: add `stops`, `return_stops`, `vehicle_specs`,
       `vision_mode`, `flight_number`, `requirement`, `trip_type` to the response schema~~
       (`fix(M-1)`, 29 Oct)
-- [ ] **M-4 (major)** `resolveEscalation()`: publish `TRIP_STATE_CHANGED → IN_TRIP`
+- [x] ~~**M-4 (major)** `resolveEscalation()`: publish `TRIP_STATE_CHANGED → IN_TRIP`~~
+      (`fix(M-4)`, 29 Oct)
 - [ ] **CR-2 (major)** `setOnboardingStatus()`: cancel an unapproved driver's `MATCHED` /
       `HANDSHAKE_PENDING` trips (no arrival fee) before taking them offline
 - [ ] Staging server up on the current code; Firebase config and Maps keys to Sanath and Umesh

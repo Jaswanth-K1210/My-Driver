@@ -3,6 +3,24 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Jaswanth · M-4
+
+**Did:** `resolveEscalation()` (`prototype/backend/src/modules/escalation/service.ts`) now
+publishes `TRIP_STATE_CHANGED → IN_TRIP` on the trip channel after commit, but only when the
+trip actually moved from `ESCALATED` back to `IN_TRIP` (an incident resolved after the trip
+ended sends nothing). It publishes the frame directly instead of calling
+`broadcastStateChange()`, which would also push "Trip started" to the customer. New test in
+`tests/integration/escalation.test.ts` spies on the hub; confirmed it fails without the fix.
+**Checks:** `npm run typecheck` pass · `npm test` 35 files, 401/401 pass (Docker).
+**Commit:** `fix(M-4): tell the apps the trip is back to IN_TRIP when an incident is resolved`
+**Payload changed:** none: the existing `TRIP_STATE_CHANGED` frame, now also sent on resolve.
+No route changed, so `api-documentation.md` is unchanged.
+**Not done / follow-ups:** Unblocks Sanath's and Umesh's SOS tests. Noticed, not changed: raising
+or promoting to L3+ sets the trip to `ESCALATED` but announces it only as `ANOMALY_TRIGGERED`, not
+`TRIP_STATE_CHANGED → ESCALATED`. Fine if both apps treat `ANOMALY_TRIGGERED` as escalated;
+worth checking during the Phase 4 joint test.
+**Requests raised:** none.
+
 ## 2026-10-29 · Umesh · Test-runner warning
 
 **Did:** `npm test` passes `--disable-warning=MODULE_TYPELESS_PACKAGE_JSON` to Node. Adding
