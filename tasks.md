@@ -253,7 +253,7 @@ Then:
 - [x] ~~**M-6 + D-1** `fcm.ts`: do not delete tokens on a generic `INVALID_ARGUMENT`; add an
       APNs provider for iOS tokens~~ (`fix(M-6)`, 30 Oct; code done, real delivery needs the APNs
       key from X-1 and the Firebase project from X-3)
-- [ ] **CR-5** Guard `a.details?.tracked_km` in `TripDetail.jsx`
+- [x] ~~**CR-5** Guard `a.details?.tracked_km` in `TripDetail.jsx`~~ (`fix(CR-5)`, 30 Oct)
 - [ ] **CR-6** Block empty or negative inputs in `Pricing.jsx`
 - [ ] **CR-7** Saving safety defaults in its own try/catch in `Book.jsx`
 - [ ] **CR-8** Do not show transmission/fuel as the plate in `website/src/lib/tripView.js`

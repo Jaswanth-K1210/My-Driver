@@ -3,6 +3,16 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · CR-5
+
+**Did:** The console's trip page (`prototype/website/src/pages/admin/TripDetail.jsx`) no longer
+crashes on a `FARE_DISTANCE_REVIEW` flag with no `details`, and shows "—" instead of "NaN km"
+when a distance is missing (new `km()` helper; `a.details?.tracked_km` / `billed_km`).
+**Checks:** `npm run lint` 0 errors, 22 warnings (none new) · `npm run build` pass ·
+`npm run build:admin` pass · `npm run check` pass.
+**Commit:** `fix(CR-5): guard missing distances on the console's fare-review flag`
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · M-6 + D-1
 
 **Did:** Push no longer cuts iPhones off, and iPhones can now be reached.

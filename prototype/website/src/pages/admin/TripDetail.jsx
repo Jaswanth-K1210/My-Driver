@@ -36,6 +36,9 @@ function Person({ title, name, phone, to, extra }) {
   )
 }
 
+/** A flag's distance, or a dash when the flag did not record one (CR-5). */
+const km = (v) => (v == null || !Number.isFinite(Number(v)) ? '—' : `${Number(v).toFixed(1)} km`)
+
 export default function TripDetail() {
   const { id } = useParams()
   const [data, setData] = useState(null)
@@ -142,7 +145,7 @@ export default function TripDetail() {
                     <span className="flex-1 text-sm font-semibold text-slate-900">{reasonLabel(a.reason)}</span>
                     {a.reason === 'FARE_DISTANCE_REVIEW' && (
                       <span className="text-xs text-slate-500">
-                        tracked {Number(a.details.tracked_km).toFixed(1)} km · billed {Number(a.details.billed_km).toFixed(1)} km
+                        tracked {km(a.details?.tracked_km)} · billed {km(a.details?.billed_km)}
                       </span>
                     )}
                     <span className="text-xs text-slate-500">{dateTime(a.created_at)}</span>
