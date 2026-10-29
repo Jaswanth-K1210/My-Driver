@@ -220,8 +220,9 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 
 ### Phase 3: code-review fixes
 Do first, because the apps depend on them:
-- [ ] **M-1 (major)** `GET /v1/driver/offers`: add `stops`, `return_stops`, `vehicle_specs`,
-      `vision_mode`, `flight_number`, `requirement`, `trip_type` to the response schema
+- [x] ~~**M-1 (major)** `GET /v1/driver/offers`: add `stops`, `return_stops`, `vehicle_specs`,
+      `vision_mode`, `flight_number`, `requirement`, `trip_type` to the response schema~~
+      (`fix(M-1)`, 29 Oct)
 - [ ] **M-4 (major)** `resolveEscalation()`: publish `TRIP_STATE_CHANGED → IN_TRIP`
 - [ ] **CR-2 (major)** `setOnboardingStatus()`: cancel an unapproved driver's `MATCHED` /
       `HANDSHAKE_PENDING` trips (no arrival fee) before taking them offline

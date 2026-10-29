@@ -62,6 +62,36 @@ describe('trip lifecycle', () => {
       expect(await eventTypes(tripId)).toContain('TRIP_MATCHED')
     })
 
+    it('returns the stops, car and trip type on the polled offer', async () => {
+      const stop = { ...GACHIBOWLI, address: 'Gachibowli Stadium' }
+      const car = { model: 'Toyota Innova', transmission: 'MANUAL', fuel: 'DIESEL' }
+      await book({
+        ...BOOK_BODY,
+        stops: [stop],
+        return_stops: [stop],
+        car_details: car,
+        vision_mode: 'NIGHT',
+        flight_number: 'AI 544',
+        requirement: 'AIRPORT',
+        trip_type: 'ROUND_TRIP',
+      })
+      await awaitDispatchIdle()
+
+      const poll = await app.inject({
+        method: 'GET', url: '/v1/driver/offers', headers: bearer(driver.accessToken),
+      })
+      expect(poll.statusCode).toBe(200)
+      expect(poll.json()[0]).toMatchObject({
+        stops: [stop],
+        return_stops: [stop],
+        vehicle_specs: car,
+        vision_mode: 'NIGHT',
+        flight_number: 'AI 544',
+        requirement: 'AIRPORT',
+        trip_type: 'ROUND_TRIP',
+      })
+    })
+
     it('ends as NO_DRIVERS_FOUND when nobody is nearby', async () => {
       await app.inject({
         method: 'POST', url: '/v1/driver/availability',

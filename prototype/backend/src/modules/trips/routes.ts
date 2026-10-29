@@ -485,6 +485,15 @@ export function registerTripRoutes(app: FastifyInstance): void {
               estimated_distance_km: z.number().nullable(),
               estimated_fare: z.number().nullable(),
               driver_earnings_estimate: z.number().nullable(),
+              // listPendingOffers() selects these; without them here Zod strips
+              // them and the offer card has no stops, car or trip type.
+              stops: z.array(z.any()).nullable().optional(),
+              return_stops: z.array(z.any()).nullable().optional(),
+              vehicle_specs: z.any().nullable().optional(),
+              vision_mode: z.string().nullable().optional(),
+              flight_number: z.string().nullable().optional(),
+              requirement: z.string().nullable().optional(),
+              trip_type: z.string().nullable().optional(),
               customer: z.object({ name: z.string().nullable() }),
             }),
           ),

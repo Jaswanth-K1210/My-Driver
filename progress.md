@@ -3,6 +3,26 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Jaswanth · M-1
+
+**Did:** `GET /v1/driver/offers` now returns `stops`, `return_stops`, `vehicle_specs`,
+`vision_mode`, `flight_number`, `requirement` and `trip_type`. `listPendingOffers()` already
+selected them; the route's Zod response schema stripped them
+(`prototype/backend/src/modules/trips/routes.ts`). New integration test in
+`tests/integration/trips-lifecycle.test.ts` books a trip with all seven fields and checks the
+polled offer; confirmed it fails without the fix.
+**Checks:** `npm run typecheck` pass · `npm test` 35 files, 400/400 pass (Docker Postgres on
+5433, migrations applied).
+**Commit:** `fix(M-1): return stops, car and trip type on GET /v1/driver/offers`
+**Payload changed:** `GET /v1/driver/offers` items gain seven optional, nullable fields (additive;
+nothing removed). The WebSocket `TRIP_OFFER` frame is unchanged (still `pickup` +
+`fare_estimate` only), so the driver app should keep fetching the offer list for the card.
+`api-documentation.md` regenerated; it also picked up routes from earlier commits that were
+missing (`admin/pricing`, `locations/reverse`, safety fields). CR-9 / CR-11 left unticked until
+checked against their findings.
+**Not done / follow-ups:** Unblocks Umesh's **M-1 follow-up**.
+**Requests raised:** none.
+
 ## 2026-10-29 · Umesh · CR-4
 
 **Did:** `toRequest()` and `toOffer()` in `src/context/DriverContext.jsx` now take pickup/drop
