@@ -143,7 +143,7 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       check (`docs/driver-app-testing.md` §16)
 - [x] Onboarding: poll `/v1/driver/onboarding` every 10 s while `UNDER_REVIEW`. Written — needs
       phone check (`docs/driver-app-testing.md` §14 step 9)
-- [ ] Remove the `MODULE_TYPELESS_PACKAGE_JSON` warning on `npm test`
+- [x] ~~Remove the `MODULE_TYPELESS_PACKAGE_JSON` warning on `npm test`~~
 - [ ] D-3 with Jaswanth: drivers' own vehicle and plate optional before going online
 
 ### Written, waiting for a phone check (Phase 4–5)

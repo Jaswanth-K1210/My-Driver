@@ -3,6 +3,17 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Umesh · Test-runner warning
+
+**Did:** `npm test` passes `--disable-warning=MODULE_TYPELESS_PACKAGE_JSON` to Node. Adding
+`"type": "module"` to `package.json` (Node's own suggestion) was rejected: `app.config.js` is
+CommonJS (`module.exports`) and Expo would then load it as an ES module and fail. Needs Node
+20.11+; this laptop and CI use Node 22.
+**Checks:** `npm test` 22/22 with no warning · `npx expo export --platform android` pass.
+**Commit:** `chore(test-warning): silence MODULE_TYPELESS_PACKAGE_JSON in the driver unit tests`
+**Not done / follow-ups:** none.
+**Requests raised:** none.
+
 ## 2026-10-29 · Umesh · M-1 follow-up
 
 **Did:** Both offer paths already produce the card through `toOffer()`: a WebSocket
