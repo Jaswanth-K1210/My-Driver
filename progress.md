@@ -3,6 +3,15 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · Website booking check
+
+**Did:** `prototype/website/scripts/check-booking.mjs` now expects a 10-hour Within-City trip to
+be sent as `POINT_TO_POINT` with `hours: 10`, as the booking code has done since `bd0d854`. The
+script was stale (see the CR-3 entry); the booking code is unchanged.
+**Checks:** `npm run check` pass.
+**Commit:** `chore: website booking check expects long Within-City trips as POINT_TO_POINT`
+**Requests raised:** none.
+
 ## 2026-10-29 · Sanath · CR-1 + M-2
 
 **Did:** Fixed booking payload construction in `prototype/mobile/user/src/lib/booking.js`:

@@ -7,7 +7,9 @@ const jubilee = getLocationById('jubilee')
 let p = bookingPayloadFor({ ...DEFAULT_CONFIG, pickupId: 'jubilee' })
 assert.deepEqual(p.pickup, { lat: jubilee.lat, lng: jubilee.lng }, 'within-city pickup follows the choice')
 p = bookingPayloadFor({ ...DEFAULT_CONFIG, pickupId: 'jubilee', durationHours: 10 })
-assert.equal(p.booking_type, 'HOURLY'); assert.equal(p.pickup.lat, jubilee.lat, 'hourly pickup follows the choice')
+// A long Within-City trip stays point-to-point with its hours; only hourly hire is HOURLY.
+assert.equal(p.booking_type, 'POINT_TO_POINT'); assert.equal(p.hours, 10)
+assert.equal(p.pickup.lat, jubilee.lat, 'long trip pickup follows the choice')
 if (registerPlace) {
   registerPlace({ id: 'mock:charminar', name: 'Charminar', address: 'Ghansi Bazaar, Hyderabad', lat: 17.3616, lng: 78.4747 })
   p = bookingPayloadFor({ ...DEFAULT_CONFIG, pickupId: 'mock:charminar' })
