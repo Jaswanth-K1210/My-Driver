@@ -3,6 +3,14 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Sanath · CR-8
+
+**Did:** In `prototype/mobile/user/src/lib/tripView.js`, updated `specPlate` in `toViewTrip` so that it returns strictly the trimmed plate string if present, or `null`. Stopped falling back to `[specs.transmission, specs.engineType]`, which previously caused transmission and fuel types (e.g. "Manual · Petrol") to be displayed in the vehicle license plate field when `specs.plate` was not provided.
+**Checks:** `npx expo export --platform android` passed with 0 errors (bundled 2907 modules).
+**Commit:** `fix(CR-8): do not show transmission and fuel as license plate`
+**Not done / follow-ups:** Needs phone check in Phase 5.
+**Requests raised:** none.
+
 ## 2026-10-30 · Sanath · CR-7
 
 **Did:** In `HomeScreen.jsx` `findDriver()`, wrapped `api.me.update` (saving first-time safety defaults) and `await refreshMe()` in separate, independent `try/catch` blocks. If saving safety defaults fails, the failure is caught without blocking `refreshMe()` or `onFindDriver(config)`. `await refreshMe()` is awaited in its own try/catch block with `finally { setSaving(false) }`, preventing unhandled promise rejections and ensuring saving state is always cleaned up and booking proceeds unconditionally.

@@ -39,9 +39,7 @@ export function toViewTrip(trip) {
     ? [specs.company, specs.model].filter(Boolean).join(' ').trim() || null
     : null
   const specPlate = specs
-    ? (specs.plate && String(specs.plate).trim()) ||
-      [specs.transmission, specs.engineType].filter(Boolean).join(' · ').trim() ||
-      null
+    ? (specs.plate && String(specs.plate).trim()) || null
     : null
 
   return {

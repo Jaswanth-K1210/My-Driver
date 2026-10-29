@@ -82,7 +82,7 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
   - [x] M-2: outstation return_drop and within-city duration > 8h fix (Written — needs phone check)
 - [x] **M-5** Show the "Stops fee" line in the quote breakdown (`HomeScreen.jsx`). Written — needs phone check (`fix(M-5)`, 29 Oct)
 - [x] **CR-7** Put saving safety defaults and refreshMe in their own try/catch blocks so they never block booking (HomeScreen.jsx). Written — needs phone check (fix(CR-7), 29 Oct)
-- [ ] **CR-8** Do not show transmission/fuel as the plate (`src/lib/tripView.js`)
+- [x] **CR-8** Stop showing transmission/fuel as the plate in src/lib/tripView.js. Written — needs phone check (fix(CR-8), 29 Oct)
 - [x] ~~**M-8** Delete `prototype/mobile/user/android` (generated for SDK 54; while it exists EAS
       ignores the icon, permissions and plugins in `app.json`) and `prototype/mobile/proto`
       (nothing references it): `git rm -r prototype/mobile/user/android prototype/mobile/proto`,
