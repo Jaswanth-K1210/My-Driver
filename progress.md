@@ -3,6 +3,16 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · CR-8 (website)
+
+**Did:** `prototype/website/src/lib/tripView.js` uses only the car's real `plate` for the trip
+card. With no plate it used to fall back to transmission and fuel ("Manual · Diesel") and show that
+as the number plate; now the plate is left empty. The driver's own `vehicle_plate` still wins.
+**Checks:** `npm run lint` 0 errors, 22 warnings (none new) · `npm run build` pass ·
+`npm run build:admin` pass · `npm run check` pass.
+**Commit:** `fix(CR-8): never show transmission or fuel as the plate on the website`
+**Requests raised:** none (Sanath's app has its own CR-8 item).
+
 ## 2026-10-30 · Jaswanth · CR-7 (website)
 
 **Did:** On the website's Book page (`prototype/website/src/pages/dashboard/Book.jsx`), saving the

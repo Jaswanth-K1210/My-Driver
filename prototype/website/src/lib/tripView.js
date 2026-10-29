@@ -83,11 +83,9 @@ export function toViewTrip(trip, config) {
   const specVehicle = specs
     ? [specs.company, specs.model].filter(Boolean).join(' ').trim() || null
     : null
-  const specPlate = specs
-    ? (specs.plate && String(specs.plate).trim()) ||
-      [specs.transmission, specs.engineType].filter(Boolean).join(' · ').trim() ||
-      null
-    : null
+  // Only a real plate. Transmission and fuel are not a number plate (CR-8):
+  // with no plate the card shows none rather than "Manual · Diesel".
+  const specPlate = (specs?.plate && String(specs.plate).trim()) || null
 
   return {
     id: shortTripId(trip.id),
