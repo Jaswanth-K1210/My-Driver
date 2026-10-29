@@ -3,6 +3,31 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Sanath · Where I stopped
+
+**Session accomplishments:**
+- **M-8 completed:** Purged stale native `android/` and `proto/` from git tracking, added `android/` and `ios/` to `.gitignore` to unblock EAS builds (commit `0698450`).
+- **CR-1 + M-2 completed:** Resolved stop coordinates `{lat, lng, address}`, removed `durationHours > 8` conversion to `HOURLY` for within-city trips, added `return_drop` for outstation round trips, verified against backend Zod schema (commit `d2cf7b5`).
+- **M-5 completed:** Added "Stops" fee line to quote breakdown in `HomeScreen.jsx` and deducted `stops_fee` from base tier line, matching website `Book.jsx` (commit `bdcfded`).
+- **Checks:** All three tasks verified with `npx expo export --platform android` exiting 0 with zero errors and pushed to `production-p1`.
+
+**Where I stopped:**
+- Completed tasks M-8, CR-1 + M-2, and M-5 cleanly; each committed and pushed.
+- Session paused per user decision before starting CR-7.
+
+**Next code tasks for Sanath (Phase 3):**
+1. **CR-7:** Put saving safety defaults and `refreshMe()` in their own try/catch blocks so they never block booking in `HomeScreen.jsx`.
+2. **CR-8:** Stop showing transmission/fuel as the plate in `src/lib/tripView.js`.
+3. **CR-10:** Update `docs/user-app-testing.md` where it contradicted the code (amount due pay button and server-chosen driver tier).
+4. **Gate 3:** Gate 3 checks and status report across all developers.
+
+**Open non-code tracking reminders:**
+- **X-1:** Apple Developer Program (organisation) & App Store Connect (Sanath).
+- **X-2:** Expo/EAS organisation for user app (Sanath).
+- **X-3:** Firebase project registration for user apps (Sanath, awaiting Jaswanth).
+- **D-2:** TestFlight distribution decision (Sanath + Umesh, awaiting X-1).
+- **Shared bug log setup:** Setup per `prd.md` §3.5 (Sanath).
+
 ## 2026-10-30 · Jaswanth · Phase 4 check run (early prep)
 
 **Did:** Ran Jaswanth's Phase 4 checks on `c44e3f5` (all of today's fixes). Code unchanged.
