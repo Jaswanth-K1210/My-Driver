@@ -3,6 +3,20 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · Session end: test results logged
+
+**Did:** Wrote `docs/test-results.md`, the log of test runs (newest first), with today's results.
+Layer 1: backend 411/411, driver app 26/26, both app exports, website checks and images all pass.
+Layer 2: Playwright 14/14, locally three runs in a row and in CI.
+**Checks:** CI run #40956914501 on `f93c26c`: all six jobs green (backend, website, mobile user,
+mobile driver, e2e, images). This confirms the CI result the layer 2 entry below left open.
+**Where I stopped:** layers 1 and 2 done and pushed. Nothing half-finished.
+**Next:** Sentry in the backend and website with privacy scrubbing (`docs/testing-plan.md` §9).
+Loki on staging and the staging deploy wait on the server's SSH address. Layer 3 (Maestro) is
+Sanath's and Umesh's.
+**Commit:** `docs: test results for layers 1 and 2`
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · Testing layer 2 (Playwright)
 
 **Did:** Playwright end-to-end tests for the website and console in `prototype/website/e2e/`
