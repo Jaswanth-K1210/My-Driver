@@ -3,6 +3,15 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · Testing tasks added
+
+**Did:** Added the testing plan's work to `tasks.md`. In Jaswanth's Phase 4–6 list: layer 1 (CI runs
+the driver app's tests and the user app's bundle check), layer 2 (Playwright for website and console),
+searchable logs on staging, Sentry in the backend and website.
+**Requests raised:** Maestro end-to-end flows (testing layer 3) as REQUEST lines in **Sanath's** and
+**Umesh's** sections, per `docs/testing-plan.md` §6. Only they edit their app folders.
+**Commit:** `docs: testing tasks and Maestro requests in tasks.md`
+
 ## 2026-10-30 · Sanath · CR-10
 
 **Did:** In `docs/user-app-testing.md`, updated the two sections that contradicted the customer mobile app implementation:

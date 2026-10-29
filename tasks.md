@@ -105,6 +105,11 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 - [ ] Run all 11 suites of `docs/user-app-testing.md` on Android **and** iOS, including
       Hyderabad routes (within city, RGIA airport, multi-stop, outstation round trip)
 
+- [ ] REQUEST from Jaswanth (2026-10-30): Maestro end-to-end flows for the customer app in
+      `prototype/mobile/user/e2e/`, run on an Android emulator against the desk backend, then on
+      preview builds against staging. Flows listed in `docs/testing-plan.md` §6. Agreed with the
+      team on 30 Oct as testing layer 3.
+
 ### Builds and release
 - [ ] Development builds for Android and iOS against staging (Phase 4)
 - [ ] Preview builds: Android APK, iOS TestFlight; submit for TestFlight external review by the
@@ -162,6 +167,11 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 - [ ] Inspection: blocks completion until all 8 photos upload; per-photo retry
 - [ ] Run all 14 suites of `docs/driver-app-testing.md` on Android **and** iOS
 - [ ] Battery and data use during a 2-hour trip, on one Android phone and one iPhone
+
+- [ ] REQUEST from Jaswanth (2026-10-30): Maestro end-to-end flows for the driver app in
+      `prototype/mobile/driver/e2e/`, run on an Android emulator against the desk backend, then on
+      preview builds against staging. Flows listed in `docs/testing-plan.md` §6. Agreed with the
+      team on 30 Oct as testing layer 3.
 
 ### Builds and release
 - [ ] Development builds for Android and iOS against staging (Phase 4)
@@ -263,6 +273,12 @@ Then:
       fees still to enter on staging)
 
 ### Phase 4–6
+- [ ] Testing layer 1: CI also runs the driver app's `npm test` and the user app's
+      `npx expo export --platform android` (`docs/testing-plan.md` §4)
+- [ ] Testing layer 2: Playwright end-to-end flows for the website and console in
+      `prototype/website/e2e/`, run in CI (`docs/testing-plan.md` §5)
+- [ ] Searchable logs on staging (Grafana Loki + Grafana) (`docs/testing-plan.md` §9)
+- [ ] Sentry in the backend and website, with privacy scrubbing (`docs/testing-plan.md` §9)
 - [x] ~~Backend suite on Docker (`infra:up`, `db:migrate`, `npm test`); website lint + both builds~~
       (30 Oct on `c44e3f5`: 411/411; re-run after later changes)
 - [ ] Amount due against Razorpay test mode (only the mock provider has been run)
