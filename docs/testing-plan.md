@@ -57,8 +57,10 @@ Phase 6 dry run.
 |---|---|---|
 | Backend | `npm run typecheck`, `npm test` (36 files, 411 tests on 30 Oct; needs Docker) | Yes |
 | Website and console | `npm run lint`, `npm run build`, `npm run build:admin`, `npm run check` | Yes |
-| Driver app | `npm test` | **No: add it to `.github/workflows/ci.yml`** |
-| Customer app | `npx expo export --platform android` (no test script) | No: add the export as a bundle check |
+| Driver app | `npm test`, `npx expo export --platform android` | Yes (since 30 Oct) |
+| Customer app | `npx expo export --platform android` (no test script) | Yes (since 30 Oct) |
+
+CI runs on every push to `production-p1`, `main` and `validation`, and on pull requests.
 
 Rule: CI is green before any build goes to testers.
 

@@ -273,8 +273,9 @@ Then:
       fees still to enter on staging)
 
 ### Phase 4–6
-- [ ] Testing layer 1: CI also runs the driver app's `npm test` and the user app's
-      `npx expo export --platform android` (`docs/testing-plan.md` §4)
+- [x] ~~Testing layer 1: CI also runs the driver app's `npm test` and the user app's
+      `npx expo export --platform android` (`docs/testing-plan.md` §4)~~ Done: `mobile` job
+      exports both apps, and CI now also runs on pushes to `production-p1`
 - [ ] Testing layer 2: Playwright end-to-end flows for the website and console in
       `prototype/website/e2e/`, run in CI (`docs/testing-plan.md` §5)
 - [ ] Searchable logs on staging (Grafana Loki + Grafana) (`docs/testing-plan.md` §9)

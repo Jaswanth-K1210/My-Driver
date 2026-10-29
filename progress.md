@@ -3,6 +3,19 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · Testing layer 1 (CI)
+
+**Did:** Added a `mobile` job to `.github/workflows/ci.yml` (matrix: user, driver): `npm ci`, the
+driver app's `npm test`, and `npx expo export --platform android` for both apps. CI only ran on
+pushes to `main` and `validation`, so nothing pushed to `production-p1` was checked; added
+`production-p1` to the push trigger. Updated `docs/testing-plan.md` §4.
+**Checks:** Driver app after a clean `npm ci`: `npm test` 26/26 · `npx expo export --platform android`
+pass. User app export pass. Workflow YAML parses. The job itself runs on GitHub after this push.
+**Note for Umesh:** the driver app's local `node_modules` was missing `expo-notifications`, so the
+export failed until `npm ci`. If your export fails on a plugin, run `npm ci`.
+**Commit:** `chore(ci): testing layer 1, mobile checks in CI`
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · Testing tasks added
 
 **Did:** Added the testing plan's work to `tasks.md`. In Jaswanth's Phase 4–6 list: layer 1 (CI runs

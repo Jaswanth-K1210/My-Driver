@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, validation]
+    branches: [main, validation, production-p1]
   pull_request:
 
 concurrency:
@@ -77,6 +77,29 @@ jobs:
         run: |
           ! grep -l "Operations console" dist/assets/*.js
           ! grep -l "Book a driver" dist-admin/assets/*.js
+
+  # The apps have no lint script: their checks are the driver app's unit tests
+  # and an Android bundle export, which fails on any import or syntax error.
+  mobile:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [user, driver]
+    defaults:
+      run:
+        working-directory: prototype/mobile/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: prototype/mobile/${{ matrix.app }}/package-lock.json
+      - run: npm ci
+      - if: matrix.app == 'driver'
+        run: npm test
+      - run: npx expo export --platform android --output-dir /tmp/export
 
   images:
     runs-on: ubuntu-24.04
