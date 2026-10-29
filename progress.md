@@ -3,6 +3,16 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Sanath · CR-10
+
+**Did:** In `docs/user-app-testing.md`, updated the two sections that contradicted the customer mobile app implementation:
+- §6 Amount due after a trip: documented that `VaultScreen.jsx` displays a "Pay ₹N" button initiating hosted checkout via the in-app browser for outstanding balances and reloads the receipt upon return (replacing the outdated note stating there was no Pay button yet).
+- Concluding note / Needs from Jaswanth: documented that the customer app follows the website with the manual tier picker removed, and Step 4 automatically displaying the server-assigned tier from `car_details` without sending `tier` in the booking payload (replacing the statement claiming the app still showed a tier picker and that alignment was an open question).
+**Checks:** `npx expo export --platform android` passed with 0 errors (bundled 2907 modules).
+**Commit:** `docs(CR-10): update user app testing guide to match implemented amount-due payment and server tier selection`
+**Not done / follow-ups:** Needs phone check in Phase 5.
+**Requests raised:** none.
+
 ## 2026-10-30 · Sanath · CR-8
 
 **Did:** In `prototype/mobile/user/src/lib/tripView.js`, updated `specPlate` in `toViewTrip` so that it returns strictly the trimmed plate string if present, or `null`. Stopped falling back to `[specs.transmission, specs.engineType]`, which previously caused transmission and fuel types (e.g. "Manual · Petrol") to be displayed in the vehicle license plate field when `specs.plate` was not provided.
@@ -42,23 +52,21 @@ add (Loki on staging, Sentry with privacy scrubbing); and the daily Phase 5 rout
 yet (section 4). Maestro flows are proposed for Sanath and Umesh, not assigned in `tasks.md`.
 **Requests raised:** none.
 
-## 2026-10-29 · Sanath · Where I stopped
+## 2026-10-29 · Sanath · Phase 3 code tasks complete
 
-**Session accomplishments:**
-- **M-8 completed:** Purged stale native `android/` and `proto/` from git tracking, added `android/` and `ios/` to `.gitignore` to unblock EAS builds (commit `0698450`).
-- **CR-1 + M-2 completed:** Resolved stop coordinates `{lat, lng, address}`, removed `durationHours > 8` conversion to `HOURLY` for within-city trips, added `return_drop` for outstation round trips, verified against backend Zod schema (commit `d2cf7b5`).
-- **M-5 completed:** Added "Stops" fee line to quote breakdown in `HomeScreen.jsx` and deducted `stops_fee` from base tier line, matching website `Book.jsx` (commit `bdcfded`).
-- **Checks:** All three tasks verified with `npx expo export --platform android` exiting 0 with zero errors and pushed to `production-p1`.
+**Session accomplishments (all 6 Phase 3 code tasks complete):**
+- **M-8 completed:** Purged stale native `android/` and `proto/` from git tracking, added `android/` and `ios/` to `.gitignore` to unblock EAS builds (`chore(M-8)`).
+- **CR-1 + M-2 completed:** Resolved stop coordinates `{lat, lng, address}`, removed `durationHours > 8` conversion to `HOURLY` for within-city trips, added `return_drop` for outstation round trips, verified against backend Zod schema (`fix(CR-1)`).
+- **Option C refinement completed:** Validated return drop selection on round trips to prevent unprompted fallbacks when cleared (`fix(CR-1)`).
+- **M-5 completed:** Added "Stops" fee line to quote breakdown in `HomeScreen.jsx` and deducted `stops_fee` from base tier line, matching website `Book.jsx` (`fix(M-5)`).
+- **CR-7 completed:** Isolated first-time safety defaults persistence and `refreshMe()` in separate, independent try/catch blocks in `HomeScreen.jsx` (`fix(CR-7)`).
+- **CR-8 completed:** Stopped showing transmission and fuel types as license plate in `tripView.js` (`fix(CR-8)`).
+- **CR-10 completed:** Updated `docs/user-app-testing.md` to reflect `VaultScreen.jsx` amount-due Pay button and server-selected driver tier (`docs(CR-10)`).
+- **Checks:** All tasks verified with `npx expo export --platform android` exiting 0 with zero errors and pushed to `production-p1`.
 
-**Where I stopped:**
-- Completed tasks M-8, CR-1 + M-2, and M-5 cleanly; each committed and pushed.
-- Session paused per user decision before starting CR-7.
-
-**Next code tasks for Sanath (Phase 3):**
-1. **CR-7:** Put saving safety defaults and `refreshMe()` in their own try/catch blocks so they never block booking in `HomeScreen.jsx`.
-2. **CR-8:** Stop showing transmission/fuel as the plate in `src/lib/tripView.js`.
-3. **CR-10:** Update `docs/user-app-testing.md` where it contradicted the code (amount due pay button and server-chosen driver tier).
-4. **Gate 3:** Gate 3 checks and status report across all developers.
+**State:**
+- All six Phase 3 customer mobile app code tasks for Sanath are fully implemented, verified with Expo export (0 errors), and pushed to `production-p1`.
+- Sanath's Phase 3 code items are complete.
 
 **Open non-code tracking reminders:**
 - **X-1:** Apple Developer Program (organisation) & App Store Connect (Sanath).

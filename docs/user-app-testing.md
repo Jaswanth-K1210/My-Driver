@@ -155,7 +155,9 @@ Only run against the mock payment provider so far.
    the mock provider, approve the test payment and close the page: the card
    disappears.
 3. Trips tab, open that trip: before paying, the receipt has a red "Still to
-   pay" line. There is no Pay button there yet (open gap).
+   pay" line with a "Pay ₹N" button (`VaultScreen.jsx`). Tap it: it opens the
+   hosted checkout page via the in-app browser to pay the outstanding balance,
+   and reloads the payment record upon return.
 4. In the database, `SELECT amount_due, amount_due_paid FROM payments WHERE trip_id = '<id>';`
    shows 0 and the amount paid.
 
@@ -234,6 +236,7 @@ variables before a production build. No build has been run.
    FCM, which cannot use the raw APNs token the iOS app registers.
 
 Since 2026-10-24 the website lets the server choose the driver tier from the
-car. The user app still shows its tier picker and sends the chosen tier,
-which the server still accepts. Whether the app should follow the website is
-an open question.
+car. The user app follows the website: the tier picker was removed, and Step 4
+on the Book tab automatically displays the server-assigned tier derived from
+`car_details` (and the trip hour for night bookings) without sending a tier in
+the booking payload.

@@ -87,7 +87,7 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       ignores the icon, permissions and plugins in `app.json`) and `prototype/mobile/proto`
       (nothing references it): `git rm -r prototype/mobile/user/android prototype/mobile/proto`,
       then ignore `android/` and `ios/`~~ (`chore(M-8)`, 29 Oct)
-- [ ] **CR-10** Update `docs/user-app-testing.md` where it contradicts the code
+- [x] **CR-10** Update `docs/user-app-testing.md` where it contradicted the code (amount due pay button in VaultScreen and server-chosen driver tier). (`docs(CR-10)`, 29 Oct)
 
 ### Written, waiting for a phone check (Phase 4–5)
 - [ ] Real map on the live trip and matching screens (react-native-maps). Needs the Maps keys
