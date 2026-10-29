@@ -3,6 +3,26 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · D-4 (early prep: place-search bias)
+
+**Did:** The code part of D-4. Neither app sends its position with a place search (the user
+app's `ModalPicker` calls `search(query)` alone, and nothing sets the website `PlacePicker`'s
+`near`), so searches had no Hyderabad bias at all. `searchLocations()`
+(`prototype/backend/src/modules/locations/service.ts`) now falls back to the new
+`PLACE_SEARCH_BIAS` (default `17.3850,78.4867`, central Hyderabad; empty turns it off) when the
+caller sends no `lat`/`lng`. It is a bias, not a restriction: Google still returns other
+cities. Added to `.env.example` and `deploy/.env.production.example`.
+**Checks:** `npm run typecheck` pass · `npm test` 36 files, 411/411 pass (Docker). New test in
+`tests/integration/app-upgrade.test.ts` checks which point reaches the maps provider.
+**Commit:** `feat(D-4): place search leans towards Hyderabad when the app sends no position`
+**Payload changed:** none.
+**Not done / follow-ups:** The rest of D-4 needs the staging server: enter the Hyderabad rate
+cards and fees in the console's Pricing page. **Question for the team:** `prd.md` D-4 mentions a
+"service area / dispatch centre", but the code has no service-area check (bookings anywhere are
+accepted; dispatch looks 5 km around the pickup). Adding a restriction would be new scope, so it is
+not done; decide whether it is wanted for the handover.
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · CR-9 / CR-11
 
 **Did:** `api-documentation.md` is current. The generated endpoint reference was already

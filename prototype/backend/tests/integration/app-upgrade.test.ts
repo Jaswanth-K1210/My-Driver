@@ -110,6 +110,21 @@ describe('user app upgrade APIs', () => {
       setMapsProvider(undefined)
     })
 
+    it('leans towards Hyderabad when the app sends no position (D-4)', async () => {
+      const seen: Array<{ lat: number; lng: number } | undefined> = []
+      setMapsProvider({
+        name: 'google',
+        search: async (_q: string, near?: { lat: number; lng: number }) => {
+          seen.push(near)
+          return []
+        },
+      } as never)
+      await call('GET', '/v1/locations/search?q=metro%20station')
+      await call('GET', '/v1/locations/search?q=metro%20station&lat=17.24&lng=78.43')
+      expect(seen).toEqual([{ lat: 17.385, lng: 78.4867 }, { lat: 17.24, lng: 78.43 }])
+      setMapsProvider(undefined)
+    })
+
     it('requires sign-in and a sensible query', async () => {
       expect((await app.inject({ method: 'GET', url: '/v1/locations/search?q=airport' })).statusCode).toBe(401)
       expect((await call('GET', '/v1/locations/search?q=a')).statusCode).toBe(400)

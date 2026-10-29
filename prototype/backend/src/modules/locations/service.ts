@@ -21,10 +21,21 @@ function cacheKey(q: string, near?: { lat: number; lng: number }): string {
 // call, so ten users typing "airport" at once cost Google one request.
 const inflight = new Map<string, Promise<Place[]>>()
 
+/** PLACE_SEARCH_BIAS as a point, or undefined when it is turned off. */
+function defaultBias(): { lat: number; lng: number } | undefined {
+  const raw = env.PLACE_SEARCH_BIAS.trim()
+  if (!raw) return undefined
+  const [lat, lng] = raw.split(',').map((n) => Number(n.trim()))
+  return { lat: lat!, lng: lng! }
+}
+
 export async function searchLocations(
   rawQuery: string,
-  near?: { lat: number; lng: number },
+  callerNear?: { lat: number; lng: number },
 ): Promise<{ results: Place[]; cached: boolean }> {
+  // Neither app sends its position with a search, so without this a search
+  // for "metro station" is not leaned towards Hyderabad at all.
+  const near = callerNear ?? defaultBias()
   const q = normaliseQuery(rawQuery)
   const key = cacheKey(q, near)
 

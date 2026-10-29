@@ -260,7 +260,8 @@ Then:
 - [x] ~~**M-7** Active-trip rows clickable in `Board.jsx`~~ (`fix(M-7)`, 30 Oct)
 - [x] ~~**CR-9 / CR-11** Regenerate `api-documentation.md`~~ (`docs(CR-9)`, 30 Oct)
 - [x] ~~D-3 with Umesh~~ (backend side done, `feat(D-3)`, 30 Oct)
-- [ ] D-4 Hyderabad setup on staging
+- [ ] D-4 Hyderabad setup on staging (place-search bias done in `feat(D-4)`, 30 Oct; rate cards and
+      fees still to enter on staging)
 
 ### Phase 4–6
 - [ ] Backend suite on Docker (`infra:up`, `db:migrate`, `npm test`); website lint + both builds

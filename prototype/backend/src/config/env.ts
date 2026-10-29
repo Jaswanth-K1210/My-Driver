@@ -98,6 +98,12 @@ const EnvSchema = z.object({
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   // Seconds a search result is served from Redis before asking Google again.
   LOCATION_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
+  // "lat,lng" that place search leans towards when the app sends no position
+  // of its own (D-4). Central Hyderabad; an empty value turns the bias off.
+  PLACE_SEARCH_BIAS: z
+    .string()
+    .default('17.3850,78.4867')
+    .refine((v) => v.trim() === '' || /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(v.trim()), 'PLACE_SEARCH_BIAS must be "lat,lng" or empty'),
 
   // Whether the operations console shows the seeded demo data (npm run
   // seed:demo). Production always hides it, whatever this says.
