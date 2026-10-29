@@ -3,6 +3,14 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Sanath · M-8
+
+**Did:** Removed stale `prototype/mobile/user/android` (generated for legacy SDK 54, which prevented EAS builds from respecting `app.json` plugins/permissions) and unused `prototype/mobile/proto` from git tracking via `git rm -r`. Added `android/` and `ios/` to `prototype/mobile/user/.gitignore` so generated native directories remain ignored.
+**Checks:** `npx expo export --platform android` pass (bundled cleanly with 0 errors).
+**Commit:** `chore(M-8): remove stale native android and proto directories; ignore generated native folders`
+**Not done / follow-ups:** Unblocks EAS builds for customer app. Next task is CR-1 + M-2 in `src/lib/booking.js`.
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · D-3 (Umesh's request)
 
 **Did:** Backend side of D-3: a driver's own vehicle and plate are optional.

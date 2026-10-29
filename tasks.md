@@ -83,10 +83,10 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 - [ ] **CR-7** Saving safety defaults and `refreshMe()` in their own try/catch so an error never
       blocks booking
 - [ ] **CR-8** Do not show transmission/fuel as the plate (`src/lib/tripView.js`)
-- [ ] **M-8** Delete `prototype/mobile/user/android` (generated for SDK 54; while it exists EAS
+- [x] ~~**M-8** Delete `prototype/mobile/user/android` (generated for SDK 54; while it exists EAS
       ignores the icon, permissions and plugins in `app.json`) and `prototype/mobile/proto`
       (nothing references it): `git rm -r prototype/mobile/user/android prototype/mobile/proto`,
-      then ignore `android/` and `ios/`
+      then ignore `android/` and `ios/`~~ (`chore(M-8)`, 29 Oct)
 - [ ] **CR-10** Update `docs/user-app-testing.md` where it contradicts the code
 
 ### Written, waiting for a phone check (Phase 4–5)
