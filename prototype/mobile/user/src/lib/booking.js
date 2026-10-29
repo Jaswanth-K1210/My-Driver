@@ -354,18 +354,20 @@ export function resolveStopList(rawStops = []) {
 
 export function resolveReturnDrop(returnDropId, fallbackLoc, isTwoWay = true) {
   if (!isTwoWay) return null
-  if (!returnDropId || returnDropId === 'same_as_pickup') {
-    return { lat: fallbackLoc.lat, lng: fallbackLoc.lng }
+  if (returnDropId === 'same_as_pickup' || returnDropId === fallbackLoc?.id) {
+    return fallbackLoc ? { lat: fallbackLoc.lat, lng: fallbackLoc.lng } : null
   }
-  const d = getLocationById(returnDropId)
-  if (d) {
-    return {
-      lat: d.lat,
-      lng: d.lng,
-      ...(d.address || d.name ? { address: d.address || d.name } : {}),
+  if (returnDropId) {
+    const d = getLocationById(returnDropId)
+    if (d) {
+      return {
+        lat: d.lat,
+        lng: d.lng,
+        ...(d.address || d.name ? { address: d.address || d.name } : {}),
+      }
     }
   }
-  return { lat: fallbackLoc.lat, lng: fallbackLoc.lng }
+  return null
 }
 
 /**
@@ -678,7 +680,10 @@ export function bookingPayloadFor(config) {
     basePayload.return_stops = isTwoWay
       ? resolveStopList(config.interCityDetails?.returnStops || config.returnStops)
       : []
-    const returnDropId = config.interCityDetails?.returnDropId || config.returnDropId
+    const returnDropId =
+      config.interCityDetails?.returnDropId !== undefined
+        ? config.interCityDetails.returnDropId
+        : config.returnDropId
     basePayload.return_drop = resolveReturnDrop(returnDropId, startLoc, isTwoWay)
   } else if (config.requirement === 'airport') {
     const airportLoc = AIRPORT_LOCATIONS.find((a) => a.id === config.airportDetails?.terminalId) ?? AIRPORT_LOCATIONS[0]

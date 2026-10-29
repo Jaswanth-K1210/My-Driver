@@ -3,6 +3,14 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Sanath · CR-1 (Option C refinement)
+
+**Did:** Option C return drop refinement in customer app. In `prototype/mobile/user/src/lib/booking.js`, updated `resolveReturnDrop()` so cleared, missing, or invalid location IDs on two-way round trips resolve to `null` instead of silently falling back, while keeping `'same_as_pickup'` or matching pickup ID falling back to pickup coordinates. In `HomeScreen.jsx` `findDriver()`, added two-way round trip validation: if the resolved `return_drop` is null or missing, booking is blocked and an alert prompts the user to select a valid final return destination.
+**Checks:** `npx expo export --platform android` pass (0 errors).
+**Commit:** `fix(CR-1): require return drop selection when cleared on round trips`
+**Not done / follow-ups:** Needs phone check in Phase 5.
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · Testing plan
 
 **Did:** New `docs/testing-plan.md`: the order agreed today (Sanath's CR-7, CR-8, CR-10 first, then

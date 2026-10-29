@@ -12,14 +12,14 @@
  *
  * Sticky CTA: "Find [Tier] Driver" — disabled until quote.ready
  */
-import { ActivityIndicator, ScrollView, Text, View } from 'react-native'
+import { ActivityIndicator, Alert, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Slider from '@react-native-community/slider'
 import { Gauge, Search, ShieldCheck } from 'lucide-react-native'
 import { useTrip } from '../../context/TripContext'
 import { useAuth } from '../../context/AuthContext'
 import { useEffect, useState } from 'react'
-import { quoteFor, serverQuote } from '../../lib/booking'
+import { bookingPayloadFor, quoteFor, serverQuote } from '../../lib/booking'
 import { api } from '../../lib/apiClient'
 import { requirementEnabled } from '../../lib/features'
 import { clamp, formatINR } from '../../lib/utils'
@@ -141,6 +141,17 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
 
   // First booking: the choices made here become the saved defaults.
   const findDriver = async () => {
+    if (config.tripType === 'two_way') {
+      const payload = bookingPayloadFor(config)
+      if (!payload.return_drop) {
+        Alert.alert(
+          'Return Drop Required',
+          'Please select a valid final return destination for your round trip.',
+        )
+        return
+      }
+    }
+
     if (firstTime) {
       setSaving(true)
       try {
