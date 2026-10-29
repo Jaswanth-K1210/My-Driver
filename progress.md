@@ -3,6 +3,18 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · CI lint fix
+
+**Did:** The first CI run on `production-p1` failed the website lint step (`--deny-warnings`): a ref
+written during render in `src/components/app/MapPickerModal.jsx` (from `cd9de9c`). It is now synced
+in an effect that runs before the map effect, so the map still opens at the latest `start`.
+Same CI run: backend, mobile (user) and mobile (driver) all green.
+**Checks:** CI lint command exit 0 · `npm run lint` no new warnings · `npm run check` pass ·
+`npm run build` · `npm run build:admin` pass.
+**Commit:** `fix(ci): website lint, no ref write during render in MapPickerModal`
+**Not done / follow-ups:** Opening the map picker in a browser not re-checked; behaviour unchanged by design.
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · Testing layer 1 (CI)
 
 **Did:** Added a `mobile` job to `.github/workflows/ci.yml` (matrix: user, driver): `npm ci`, the

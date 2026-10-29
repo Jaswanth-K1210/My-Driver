@@ -26,8 +26,11 @@ export default function MapPickerModal({ open, start, title = 'Choose on map', o
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
   // Read once per opening: a new object each parent render must not rebuild the map.
+  // Synced before the map effect below, which runs after it in the same commit.
   const startRef = useRef(start)
-  startRef.current = start
+  useEffect(() => {
+    startRef.current = start
+  })
 
   useEffect(() => {
     if (!open) return undefined
