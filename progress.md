@@ -3,6 +3,24 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · CR-3
+
+**Did:** "Use current location" on the website (`prototype/website/src/components/app/PlacePicker.jsx`)
+names the customer's GPS position through `api.locations.reverse()` (the backend's cached
+locations proxy) instead of the browser calling public Nominatim. Signed out, or if the lookup
+fails, the label is the coordinates and nothing leaves for a third party. No other browser
+geocoder call is left in `website/src` (the map picker already used the backend).
+**Checks:** `npm run lint` 0 errors, 22 warnings (same as before, none new) · `npm run build` pass ·
+`npm run build:admin` pass · `npm run check` **fails, and failed before this change too**: it
+asserts a 10-hour Within-City trip is sent as `HOURLY`, but `bd0d854` (18 Oct) deliberately
+stopped that conversion (the same rule as Sanath's M-2). The script is stale, not the booking
+code; to be fixed in its own commit.
+**Commit:** `fix(CR-3): reverse geocode through the backend, not public Nominatim`
+**Payload changed:** none. `api.js` not changed.
+**Not done / follow-ups:** Update `scripts/check-booking.mjs` to expect `POINT_TO_POINT` with
+`hours: 10`.
+**Requests raised:** none.
+
 ## 2026-10-29 · Sanath · M-8
 
 **Did:** Removed stale `prototype/mobile/user/android` (generated for legacy SDK 54, which prevented EAS builds from respecting `app.json` plugins/permissions) and unused `prototype/mobile/proto` from git tracking via `git rm -r`. Added `android/` and `ios/` to `prototype/mobile/user/.gitignore` so generated native directories remain ignored.

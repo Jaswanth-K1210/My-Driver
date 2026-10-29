@@ -20,35 +20,24 @@ function parseLatLngQuery(q) {
   return { lat, lng }
 }
 
-async function reverseGeocode(lat, lng) {
-  try {
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lng)}`,
-      { headers: { Accept: 'application/json' } },
-    )
-    if (!res.ok) throw new Error('reverse geocode failed')
-    const data = await res.json()
-    const addr = data?.address || {}
-    const shortName =
-      data?.name ||
-      addr.neighbourhood ||
-      addr.suburb ||
-      addr.road ||
-      addr.village ||
-      addr.town ||
-      addr.city ||
-      'Current Location'
-    const cityPart = addr.city || addr.town || addr.state_district || addr.state || ''
-    const label = cityPart && !shortName.includes(cityPart) ? `${shortName}, ${cityPart}` : shortName
-    return {
-      name: `Current Location (${label})`,
-      address: data?.display_name || `${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+/**
+ * Names the customer's GPS position through the backend's locations proxy.
+ * Never call a geocoder from the browser: that would send the customer's
+ * position to a third party (CR-3). Signed out, or if the lookup fails, the
+ * coordinates themselves are the label.
+ */
+async function reverseGeocode(lat, lng, signedIn) {
+  if (signedIn) {
+    try {
+      const place = await api.locations.reverse({ lat, lng })
+      return { name: `Current Location (${place.name})`, address: place.address }
+    } catch {
+      // Fall through to the coordinates.
     }
-  } catch {
-    return {
-      name: `Current Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
-      address: `GPS: ${lat.toFixed(5)}, ${lng.toFixed(5)}`,
-    }
+  }
+  return {
+    name: `Current Location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+    address: `GPS: ${lat.toFixed(5)}, ${lng.toFixed(5)}`,
   }
 }
 
@@ -106,7 +95,7 @@ export default function PlacePicker({
           try {
             const lat = pos.coords.latitude
             const lng = pos.coords.longitude
-            const geo = await reverseGeocode(lat, lng)
+            const geo = await reverseGeocode(lat, lng, isAuthenticated)
             const place = {
               id: `gps_${lat.toFixed(5)}_${lng.toFixed(5)}`,
               name: geo.name,
@@ -137,7 +126,7 @@ export default function PlacePicker({
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 },
       )
     },
-    [onChange],
+    [onChange, isAuthenticated],
   )
 
   // Automatically use customer's current GPS location once on initial mount when enabled

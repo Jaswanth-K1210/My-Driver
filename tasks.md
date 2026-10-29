@@ -244,8 +244,9 @@ Do first, because the apps depend on them:
 - [ ] Staging server up on the current code; Firebase config and Maps keys to Sanath and Umesh
 
 Then:
-- [ ] **CR-3 (major, privacy)** `PlacePicker.jsx`: reverse geocoding through
-      `api.locations.reverse()` instead of the browser calling public Nominatim
+- [x] ~~**CR-3 (major, privacy)** `PlacePicker.jsx`: reverse geocoding through
+      `api.locations.reverse()` instead of the browser calling public Nominatim~~ (`fix(CR-3)`,
+      30 Oct)
 - [ ] **M-3 (major)** Website "Pay ₹X balance" for `amount_due > 0` in `Track.jsx` and `Vault.jsx`
 - [ ] **M-6 + D-1** `fcm.ts`: do not delete tokens on a generic `INVALID_ARGUMENT`; add an
       APNs provider for iOS tokens
