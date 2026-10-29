@@ -3,6 +3,17 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · CR-7 (website)
+
+**Did:** On the website's Book page (`prototype/website/src/pages/dashboard/Book.jsx`), saving the
+safety defaults ("Save as my defaults") now runs in its own try/catch. If it fails the customer
+sees a warning and the trip is still booked; before, the error stopped the booking. A failed
+`refreshMe()` is ignored too.
+**Checks:** `npm run lint` 0 errors, 22 warnings (none new) · `npm run build` pass ·
+`npm run build:admin` pass · `npm run check` pass.
+**Commit:** `fix(CR-7): a failed safety-defaults save never blocks a website booking`
+**Requests raised:** none (Sanath's app has its own CR-7 item).
+
 ## 2026-10-30 · Jaswanth · CR-6
 
 **Did:** The console's Pricing page (`prototype/website/src/pages/admin/Pricing.jsx`) blocks empty,

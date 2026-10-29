@@ -255,7 +255,7 @@ Then:
       key from X-1 and the Firebase project from X-3)
 - [x] ~~**CR-5** Guard `a.details?.tracked_km` in `TripDetail.jsx`~~ (`fix(CR-5)`, 30 Oct)
 - [x] ~~**CR-6** Block empty or negative inputs in `Pricing.jsx`~~ (`fix(CR-6)`, 30 Oct)
-- [ ] **CR-7** Saving safety defaults in its own try/catch in `Book.jsx`
+- [x] ~~**CR-7** Saving safety defaults in its own try/catch in `Book.jsx`~~ (`fix(CR-7)`, 30 Oct)
 - [ ] **CR-8** Do not show transmission/fuel as the plate in `website/src/lib/tripView.js`
 - [ ] **M-7** Active-trip rows clickable in `Board.jsx`
 - [ ] **CR-9 / CR-11** Regenerate `api-documentation.md`

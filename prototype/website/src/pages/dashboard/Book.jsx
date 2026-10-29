@@ -116,14 +116,19 @@ export default function Book() {
     setBusy(true)
     try {
       if (saveDefaults) {
-        await api.me.update({
-          safety: {
-            speed_limit_kmh: config.ceiling,
-            share_with_guardians: Boolean(config.shareWithGuardians),
-            prefer_female_driver: Boolean(config.preferFemaleDriver),
-          },
-        })
-        void refreshMe()
+        // A failure to save defaults must never stop the booking (CR-7).
+        try {
+          await api.me.update({
+            safety: {
+              speed_limit_kmh: config.ceiling,
+              share_with_guardians: Boolean(config.shareWithGuardians),
+              prefer_female_driver: Boolean(config.preferFemaleDriver),
+            },
+          })
+          void Promise.resolve(refreshMe()).catch(() => undefined)
+        } catch {
+          toast('Booking anyway. Your safety defaults could not be saved this time.', 'warning')
+        }
       }
       await startMatching(config)
       navigate('/app/track')
