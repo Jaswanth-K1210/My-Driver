@@ -198,8 +198,8 @@ function Flow({ onLogout }) {
     )
   }
 
-  // 4. Freshly validated APPROVED driver: require profile setup (name + vehicle + plate)
-  //    before going online or accepting new trips.
+  // 4. Freshly validated APPROVED driver: require profile setup (a name; vehicle
+  //    and plate are optional, D-3) before going online or accepting new trips.
   if (!trip && !summary) {
     return <OnboardingLoading />
   }

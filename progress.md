@@ -3,6 +3,25 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Umesh · D-3
+
+**Decision (Umesh, 29 Oct):** drivers drive the customer's car, so their own vehicle model and
+plate are **optional**; only the name is required before going online. `prd.md` D-3 and the
+"Everyone" D-3 line in `tasks.md` are left for a human to update.
+**Did:** `isDriverProfileComplete()` in `src/lib/utils.js` (4 unit tests) now decides profile
+setup, going online and accepting offers from the name alone, in `DriverContext.jsx` and
+`ProfileScreen.jsx`. It ignores the server's `profile_complete`, which still counts the vehicle
+fields; the server never blocked going online on it, so this works before the backend change.
+The profile form marks vehicle model and plate "(OPTIONAL)", and leaves them out of the save when
+blank because the server's `min(2)` rejects an empty string. Messages on Home and in the setup
+screen no longer ask for vehicle details.
+**Checks:** `npm test` 26/26 · `npx expo export --platform android` pass.
+**Commit:** `feat(D-3): drivers' own vehicle and plate are optional; only the name is required`
+**Not done / follow-ups:** Needs phone check (`docs/driver-app-testing.md` §14 step 1). A driver
+cannot clear a vehicle field they saved earlier until the backend accepts an empty value.
+**Requests raised:** Jaswanth: `profile_complete` on name only, and allow clearing the vehicle
+fields (`tasks.md`, his Phase 3 list).
+
 ## 2026-10-29 · Jaswanth · M-4
 
 **Did:** `resolveEscalation()` (`prototype/backend/src/modules/escalation/service.ts`) now

@@ -199,9 +199,12 @@ variables before a production build.
 
 From `bd0d854` and `52c609f`. Not yet run on a phone.
 
-1. Profile setup: sign in as an approved driver with no vehicle details. The
-   app opens Profile in setup mode; Home appears only after saving a name (2+
-   characters), a vehicle model and a plate. The plate is saved in capitals.
+1. Profile setup: sign in as an approved driver with no name. The app opens
+   Profile in setup mode; Home appears after saving a name (2+ characters).
+   Vehicle model and plate are optional (D-3, 29 Oct): leaving both blank
+   still lets the driver go online and accept trips. If given, each needs 2+
+   characters, and the plate is saved in capitals. A driver who has a name
+   but no vehicle details goes straight to Home.
 2. Not approved: set the driver's `onboarding_status` to `UNDER_REVIEW` in the
    database, reopen the app: the onboarding checklist shows, not Home.
 3. Offline start, no trip: aeroplane mode, force-stop, reopen. "Could not

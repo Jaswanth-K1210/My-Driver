@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { offerTags, placeCoords, placeText } from '../src/lib/utils.js'
+import { isDriverProfileComplete, offerTags, placeCoords, placeText } from '../src/lib/utils.js'
 
 describe('placeText', () => {
   it('skips {lat,lng} objects and falls back to readable text', () => {
@@ -55,5 +55,24 @@ describe('offerTags', () => {
     assert.deepEqual(offerTags({ requirement: 'within_city' }).map((t) => t.label), ['Within City'])
     assert.deepEqual(offerTags({ tripType: 'one_way', stops: null, vehicleSpecs: null }), [])
     assert.deepEqual(offerTags(null), [])
+  })
+})
+
+describe('isDriverProfileComplete (D-3)', () => {
+  it('needs only a name; vehicle model and plate are optional', () => {
+    assert.equal(isDriverProfileComplete({ full_name: 'Ramesh', vehicle_model: null, vehicle_plate: null }), true)
+  })
+
+  it('ignores the server flag that still counts the vehicle fields', () => {
+    assert.equal(isDriverProfileComplete({ full_name: 'Ramesh', profile_complete: false }), true)
+  })
+
+  it('is incomplete without a name, unless the signed-in user has one', () => {
+    assert.equal(isDriverProfileComplete({ full_name: '  ', vehicle_model: 'Swift', vehicle_plate: 'TS09' }), false)
+    assert.equal(isDriverProfileComplete({ full_name: null }, 'Ramesh'), true)
+  })
+
+  it('does not block before the summary has loaded', () => {
+    assert.equal(isDriverProfileComplete(null), true)
   })
 })

@@ -65,3 +65,13 @@ function titleCase(value) {
     .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
     .join(' ')
 }
+
+/**
+ * D-3: drivers drive the customer's car, so only a name is required before
+ * going online; their own vehicle model and plate are optional. The server's
+ * `profile_complete` still counts the vehicle fields, so it is not used here.
+ */
+export function isDriverProfileComplete(profile, fallbackName = '') {
+  if (!profile) return true
+  return Boolean(placeText(profile.full_name, fallbackName))
+}

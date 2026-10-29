@@ -75,7 +75,7 @@ export default function DriverHomeScreen({ onOpenProfile }) {
       return
     }
     if (next && summary && !profileComplete) {
-      toast('Complete your driver profile (name & vehicle details) before going online', 'warning')
+      toast('Add your name to your driver profile before going online', 'warning')
       onOpenProfile?.()
       return
     }
@@ -130,7 +130,7 @@ export default function DriverHomeScreen({ onOpenProfile }) {
               Complete your driver profile
             </Text>
             <Text style={{ ...type.tiny, color: colors.textMuted }}>
-              Add your full name and vehicle/plate details so customers can verify you on the live trip screen.
+              Add your full name so customers can verify you on the live trip screen.
             </Text>
             {onOpenProfile && (
               <Button

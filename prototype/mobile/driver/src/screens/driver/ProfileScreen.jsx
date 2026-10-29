@@ -11,7 +11,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useDriver } from '../../context/DriverContext'
 import { api } from '../../lib/apiClient'
 import { daysUntil, documentLabel, scheduleExpiryReminders, unregisterPush } from '../../lib/push'
-import { maskPhone } from '../../lib/utils'
+import { isDriverProfileComplete, maskPhone } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 
 const fetchProfile = () => api.driver.profile()
@@ -205,7 +205,7 @@ const inputStyle = (invalid = false) => ({
 function DriverDetailsCard({ profile, setupMode, onSaved }) {
   const { toast } = useToast()
   const { updateDriverProfile } = useDriver()
-  const incomplete = !profile.profile_complete
+  const incomplete = !isDriverProfileComplete(profile)
   const [editing, setEditing] = useState(Boolean(setupMode || incomplete))
   const [fullName, setFullName] = useState(profile.full_name ?? '')
   const [email, setEmail] = useState(profile.email ?? '')
@@ -218,20 +218,21 @@ function DriverDetailsCard({ profile, setupMode, onSaved }) {
     setEmail(profile.email ?? '')
     setVehicleModel(profile.vehicle_model ?? '')
     setVehiclePlate(profile.vehicle_plate ?? '')
-    if (!profile.profile_complete || setupMode) {
+    if (incomplete || setupMode) {
       setEditing(true)
     }
-  }, [profile.full_name, profile.email, profile.vehicle_model, profile.vehicle_plate, profile.profile_complete, setupMode])
+  }, [profile.full_name, profile.email, profile.vehicle_model, profile.vehicle_plate, incomplete, setupMode])
 
-  const canSave =
-    fullName.trim().length >= 2 &&
-    vehicleModel.trim().length >= 2 &&
-    vehiclePlate.trim().length >= 2 &&
-    !saving
+  // D-3: only the name is required. The vehicle fields are optional, but the
+  // server rejects values shorter than 2 characters, so a blank one is left out.
+  const model = vehicleModel.trim()
+  const plate = vehiclePlate.trim().toUpperCase()
+  const optionalOk = (v) => v.length === 0 || v.length >= 2
+  const canSave = fullName.trim().length >= 2 && optionalOk(model) && optionalOk(plate) && !saving
 
   const save = async () => {
     if (!canSave) {
-      toast('Enter your full name, vehicle model, and registration/plate number.', 'warning')
+      toast('Enter your full name. Vehicle model and plate, if given, need at least 2 characters.', 'warning')
       return
     }
     setSaving(true)
@@ -239,8 +240,8 @@ function DriverDetailsCard({ profile, setupMode, onSaved }) {
       await updateDriverProfile({
         full_name: fullName.trim(),
         email: email.trim() || null,
-        vehicle_model: vehicleModel.trim(),
-        vehicle_plate: vehiclePlate.trim().toUpperCase(),
+        ...(model ? { vehicle_model: model } : {}),
+        ...(plate ? { vehicle_plate: plate } : {}),
       })
       toast('Driver profile saved', 'success')
       setEditing(false)
@@ -338,7 +339,7 @@ function DriverDetailsCard({ profile, setupMode, onSaved }) {
           </View>
 
           <View style={{ gap: 4 }}>
-            <Text style={{ ...type.micro, color: colors.textMuted }}>VEHICLE MODEL / DRIVING CLASS *</Text>
+            <Text style={{ ...type.micro, color: colors.textMuted }}>VEHICLE MODEL / DRIVING CLASS (OPTIONAL)</Text>
             <TextInput
               value={vehicleModel}
               onChangeText={setVehicleModel}
@@ -349,7 +350,7 @@ function DriverDetailsCard({ profile, setupMode, onSaved }) {
           </View>
 
           <View style={{ gap: 4 }}>
-            <Text style={{ ...type.micro, color: colors.textMuted }}>VEHICLE PLATE / LICENCE REF *</Text>
+            <Text style={{ ...type.micro, color: colors.textMuted }}>VEHICLE PLATE / LICENCE REF (OPTIONAL)</Text>
             <TextInput
               value={vehiclePlate}
               onChangeText={(v) => setVehiclePlate(v.toUpperCase())}
@@ -405,7 +406,7 @@ export default function ProfileScreen({ onLogout, setupMode = false, onSetupDone
       title={setupMode ? 'Set up your profile' : 'Profile'}
       subtitle={
         setupMode
-          ? 'Enter your name and vehicle details once before going online'
+          ? 'Enter your name once before going online'
           : undefined
       }
       load={load}

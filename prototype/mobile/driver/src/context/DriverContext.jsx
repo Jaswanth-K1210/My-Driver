@@ -11,7 +11,7 @@ import {
   isTrustedInProgressTrip,
 } from '../lib/onboardingGate'
 import * as telemetry from '../lib/telemetry'
-import { placeCoords, placeText } from '../lib/utils'
+import { isDriverProfileComplete, placeCoords, placeText } from '../lib/utils'
 import { startTracking, stopTracking } from '../lib/tracking'
 import { useAuth } from './AuthContext'
 
@@ -180,14 +180,7 @@ export function DriverProvider({ children }) {
   const refreshSummary = useCallback(async () => {
     try {
       const next = await api.driver.summary()
-      const isProfileReady =
-        typeof next.profile_complete === 'boolean'
-          ? next.profile_complete
-          : Boolean(
-              (next.full_name || '').trim() &&
-                (next.vehicle_model || '').trim() &&
-                (next.vehicle_plate || '').trim(),
-            )
+      const isProfileReady = isDriverProfileComplete(next)
       if (!isProfileReady && next.availability === 'ONLINE') {
         await api.driver.setAvailability('OFFLINE').catch(() => undefined)
         const updated = { ...next, availability: 'OFFLINE' }
@@ -506,15 +499,10 @@ export function DriverProvider({ children }) {
 
   /* ── Actions (with single-flight duplicate protection & auth/approval gates) ── */
 
-  const profileComplete = useMemo(() => {
-    if (!summary) return true
-    if (typeof summary.profile_complete === 'boolean') return summary.profile_complete
-    return Boolean(
-      (summary.full_name || user?.full_name || '').trim() &&
-        (summary.vehicle_model || '').trim() &&
-        (summary.vehicle_plate || '').trim(),
-    )
-  }, [summary, user?.full_name])
+  const profileComplete = useMemo(
+    () => isDriverProfileComplete(summary, user?.full_name),
+    [summary, user?.full_name],
+  )
 
   const updateDriverProfile = useCallback(
     async (patch) => {
@@ -531,7 +519,7 @@ export function DriverProvider({ children }) {
         throw new Error('Verify your driver approval status before going online.')
       }
       if (next && summary && !profileComplete) {
-        throw new Error('Complete your driver profile (name & vehicle details) before going online.')
+        throw new Error('Add your name to your driver profile before going online.')
       }
       setBusy(true)
       try {
