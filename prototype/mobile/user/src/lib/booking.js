@@ -322,6 +322,52 @@ export function getRouteLegTelemetry(startId, stops = [], destId, isInterCity = 
   }
 }
 
+export function resolveStopList(rawStops = []) {
+  return (rawStops || [])
+    .map((s) => {
+      const id = typeof s === 'string' ? s : s?.locationId
+      const loc = id ? getLocationById(id) : null
+      if (!loc) {
+        if (s && typeof s.lat === 'number' && typeof s.lng === 'number') {
+          return {
+            id: s.id || id || 'stop',
+            locationId: id || '',
+            name: s.name || s.address || '',
+            address: s.address || s.name || '',
+            lat: s.lat,
+            lng: s.lng,
+          }
+        }
+        return null
+      }
+      return {
+        id: s?.id || id,
+        locationId: id,
+        name: loc.name,
+        address: loc.address || loc.name,
+        lat: loc.lat,
+        lng: loc.lng,
+      }
+    })
+    .filter(Boolean)
+}
+
+export function resolveReturnDrop(returnDropId, fallbackLoc, isTwoWay = true) {
+  if (!isTwoWay) return null
+  if (!returnDropId || returnDropId === 'same_as_pickup') {
+    return { lat: fallbackLoc.lat, lng: fallbackLoc.lng }
+  }
+  const d = getLocationById(returnDropId)
+  if (d) {
+    return {
+      lat: d.lat,
+      lng: d.lng,
+      ...(d.address || d.name ? { address: d.address || d.name } : {}),
+    }
+  }
+  return { lat: fallbackLoc.lat, lng: fallbackLoc.lng }
+}
+
 /**
  * Local fare estimate, shown instantly while typing.
  * Supports Within City, Inter City, Airport, and Full Time contracts.
@@ -586,13 +632,13 @@ const safetyFields = (config) => ({
 })
 
 export function bookingPayloadFor(config) {
+  const chosenPickup = getLocationById(config.pickupId) ?? PICKUP
+  const isTwoWay = config.tripType === 'two_way'
 
   const basePayload = {
-    stops: config.stops,
-    return_stops: config.returnStops,
-    return_drop: config.returnDropId && config.returnDropId !== 'same_as_pickup' 
-        ? (() => { const d = getLocationById(config.returnDropId); return d ? {lat: d.lat, lng: d.lng} : null; })()
-        : null,
+    stops: resolveStopList(config.stops),
+    return_stops: isTwoWay ? resolveStopList(config.returnStops) : [],
+    return_drop: resolveReturnDrop(config.returnDropId, chosenPickup, isTwoWay),
     car_details: config.carDetails,
     vision_mode: config.visionMode,
     flight_number: config.flightNumber || config.airportDetails?.flightNumber,
@@ -600,19 +646,13 @@ export function bookingPayloadFor(config) {
     trip_type: config.tripType,
   }
 
-  // The customer's chosen pickup. This used to be the fixed PICKUP constant,
-  // which sent every driver to Cyber Towers whatever the customer picked.
-  const chosenPickup = getLocationById(config.pickupId) ?? PICKUP
-
-  if (config.requirement === 'full_time' || config.durationHours > 8) {
+  if (config.requirement === 'full_time') {
     return {
       booking_type: 'HOURLY',
       hours: Math.min(12, config.durationHours || 4),
       pickup: { lat: chosenPickup.lat, lng: chosenPickup.lng },
       pickup_address:
-        config.requirement === 'full_time' && config.fullTimeDetails?.locality
-          ? config.fullTimeDetails.locality
-          : chosenPickup.address || chosenPickup.name,
+        config.fullTimeDetails?.locality || chosenPickup.address || chosenPickup.name,
       speed_ceiling_kmh: config.ceiling,
       ...safetyFields(config),
       ...basePayload,
@@ -634,28 +674,34 @@ export function bookingPayloadFor(config) {
     const dest = getLocationById(destId) ?? INTERCITY_DESTINATIONS[0]
     drop = { lat: dest.lat, lng: dest.lng }
     drop_address = dest.address || dest.name
-    basePayload.stops = config.interCityDetails?.stops || config.stops
-    basePayload.return_stops = config.interCityDetails?.returnStops || config.returnStops
+    basePayload.stops = resolveStopList(config.interCityDetails?.stops || config.stops)
+    basePayload.return_stops = isTwoWay
+      ? resolveStopList(config.interCityDetails?.returnStops || config.returnStops)
+      : []
+    const returnDropId = config.interCityDetails?.returnDropId || config.returnDropId
+    basePayload.return_drop = resolveReturnDrop(returnDropId, startLoc, isTwoWay)
   } else if (config.requirement === 'airport') {
-    const airportLoc = AIRPORT_LOCATIONS.find((a) => a.id === config.airportDetails.terminalId) ?? AIRPORT_LOCATIONS[0]
-    if (config.airportDetails.flow === 'arrival') {
+    const airportLoc = AIRPORT_LOCATIONS.find((a) => a.id === config.airportDetails?.terminalId) ?? AIRPORT_LOCATIONS[0]
+    const defaultDrop = dropFor(config.dropId) || DROPS[0]
+    if (config.airportDetails?.flow === 'arrival') {
       pickup = { lat: airportLoc.lat, lng: airportLoc.lng }
       pickup_address = airportLoc.address || airportLoc.name
-      const defaultDrop = dropFor(config.dropId) || DROPS[0]
       drop = { lat: defaultDrop.lat, lng: defaultDrop.lng }
       drop_address = defaultDrop.address || defaultDrop.name
     } else { // departure
-      const defaultDrop = dropFor(config.dropId) || DROPS[0]
       pickup = { lat: defaultDrop.lat, lng: defaultDrop.lng } // User is at drop (e.g. home/gachibowli) going to airport
       pickup_address = defaultDrop.address || defaultDrop.name
       drop = { lat: airportLoc.lat, lng: airportLoc.lng }
       drop_address = airportLoc.address || airportLoc.name
     }
+    basePayload.stops = []
+    basePayload.return_stops = []
+    basePayload.return_drop = isTwoWay ? { lat: pickup.lat, lng: pickup.lng } : null
   } else {
     // Within city point-to-point
     const dropData = dropFor(config.dropId)
     drop = { lat: dropData.lat, lng: dropData.lng }
-    drop_address = dropData.address
+    drop_address = dropData.address || dropData.name
   }
 
   return {

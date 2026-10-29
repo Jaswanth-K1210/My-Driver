@@ -3,6 +3,19 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Sanath · CR-1 + M-2
+
+**Did:** Fixed booking payload construction in `prototype/mobile/user/src/lib/booking.js`:
+- Added `resolveStopList` helper to resolve every stop and return stop to `{ id, locationId, name, address, lat, lng }` via `getLocationById()`.
+- Added `resolveReturnDrop` helper to resolve return drops for round trips to `{ lat, lng, address }`, falling back to pickup coordinates.
+- Stopped converting Within-City trips over 8 hours to `HOURLY`; only `config.requirement === 'full_time'` switches to `HOURLY`, preserving `drop`, `drop_address`, and durations up to 12h for point-to-point routes.
+- Sent `return_drop` for outstation round trips (`inter_city` with `tripType === 'two_way'`) using `config.interCityDetails?.returnDropId || config.returnDropId`.
+- Handled airport two-way `return_drop` set to `{ lat: pickup.lat, lng: pickup.lng }`.
+**Checks:** Zod schema validation pass (`QuoteBody` and `BookTripBody`) · `npx expo export --platform android` pass (bundled cleanly with 0 errors).
+**Commit:** `fix(CR-1): resolve stop coordinates, outstation return drop, and preserve point-to-point duration`
+**Not done / follow-ups:** Needs phone check in Phase 5. Next task is M-5 (Stops fee in quote breakdown).
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · CR-3
 
 **Did:** "Use current location" on the website (`prototype/website/src/components/app/PlacePicker.jsx`)
@@ -19,6 +32,7 @@ code; to be fixed in its own commit.
 **Payload changed:** none. `api.js` not changed.
 **Not done / follow-ups:** Update `scripts/check-booking.mjs` to expect `POINT_TO_POINT` with
 `hours: 10`.
+**Requests raised:** none.
 **Requests raised:** none.
 
 ## 2026-10-29 · Sanath · M-8

@@ -75,10 +75,11 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       plate (`de02abc`)~~
 - [x] ~~Hourly hire 2-hour minimum, matching the server (`31c72a0`)~~
 
-### Phase 3: code-review fixes
-- [ ] **CR-1 + M-2 (major)** `src/lib/booking.js`: send stops and return stops with `lat`/`lng`;
+- [x] **CR-1 + M-2 (major)** `src/lib/booking.js`: send stop coordinates {lat, lng};
       stop turning Within-City trips over 8 hours into `HOURLY`; send `return_drop` for
-      outstation round trips
+      outstation round trips. Written — needs phone check (`fix(CR-1)`, 29 Oct)
+  - [x] CR-1: send stop coordinates {lat, lng} and preserve point-to-point duration (Written — needs phone check)
+  - [x] M-2: outstation return_drop and within-city duration > 8h fix (Written — needs phone check)
 - [ ] **M-5** Show the "Stops fee" line in the quote breakdown (`HomeScreen.jsx`)
 - [ ] **CR-7** Saving safety defaults and `refreshMe()` in their own try/catch so an error never
       blocks booking
