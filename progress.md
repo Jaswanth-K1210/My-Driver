@@ -3,6 +3,23 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Umesh · M-1 follow-up
+
+**Did:** Both offer paths already produce the card through `toOffer()`: a WebSocket
+`TRIP_OFFER` frame only triggers `refreshOffers()`, which reads `GET /v1/driver/offers`, so
+Jaswanth's `de8adf1` fields reach the card either way. Fixed what the card did with them: the
+car tag read "undefined Toyota Innova" when the car had no `company`, the round-trip and airport
+tags only matched lower-case `two_way` / `airport` (the backend test books `ROUND_TRIP` /
+`AIRPORT`), and only the first underscore of the requirement was replaced. The tags now come from
+`offerTags()` in `src/lib/utils.js` (3 unit tests). `toRequest()` keeps `stops`, `returnStops`,
+`vehicleSpecs`, `visionMode` and `flightNumber`, and accepting an offer keeps the offer's values
+when the accept response lacks them.
+**Checks:** `npm test` 22/22 · `npx expo export --platform android` pass.
+**Commit:** `fix(M-1): offer card tags from the polled offer fields; keep them on the trip`
+**Not done / follow-ups:** Needs phone check in Phase 5 (`docs/driver-app-testing.md` §16). The
+card does not show `vision_mode` or the return stops; no task asks for it.
+**Requests raised:** none.
+
 ## 2026-10-29 · Umesh · Onboarding auto-refresh
 
 **Did:** While the driver is `UNDER_REVIEW`, `OnboardingScreen.jsx` checks

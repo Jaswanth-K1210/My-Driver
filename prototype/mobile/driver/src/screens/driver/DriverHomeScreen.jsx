@@ -10,7 +10,7 @@ import { useToast } from '../../components/Toast'
 import Toggle from '../../components/Toggle'
 import { useAuth } from '../../context/AuthContext'
 import { useDriver } from '../../context/DriverContext'
-import { formatINR } from '../../lib/utils'
+import { formatINR, offerTags } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 
 function MiniStat({ value, label, alert }) {
@@ -50,6 +50,7 @@ export default function DriverHomeScreen({ onOpenProfile }) {
 
   // Offers come from the real dispatcher: by push, with polling as the fallback.
   const request = canAct ? offer : null
+  const tags = offerTags(request)
 
   const respond = async (accept) => {
     if (accept && summary && !profileComplete) {
@@ -229,24 +230,11 @@ export default function DriverHomeScreen({ onOpenProfile }) {
               </View>
             </View>
 
-            {(request.vehicleSpecs || request.requirement || request.stops?.length > 0) && (
+            {tags.length > 0 && (
               <View style={{ flexDirection: 'row', gap: space.xs, marginTop: space.md, flexWrap: 'wrap' }}>
-                {request.vehicleSpecs && (
-                  <>
-                    <Pill label={`${request.vehicleSpecs.company} ${request.vehicleSpecs.model}`} />
-                    <Pill label={request.vehicleSpecs.transmission} />
-                  </>
-                )}
-                {request.requirement === 'airport' && request.flightNumber && (
-                  <Pill label={`Flight ${request.flightNumber}`} tone="brand" />
-                )}
-                {request.tripType === 'two_way' && <Pill label="Round Trip" tone="brand" />}
-                {request.stops?.length > 0 && (
-                  <Pill label={`${request.stops.length} Stop${request.stops.length > 1 ? 's' : ''}`} />
-                )}
-                {request.requirement && (
-                  <Pill label={request.requirement.replace('_', ' ')} style={{ textTransform: 'capitalize' }} />
-                )}
+                {tags.map((tag) => (
+                  <Pill key={tag.label} label={tag.label} tone={tag.tone} />
+                ))}
               </View>
             )}
 

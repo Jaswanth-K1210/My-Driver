@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { placeCoords, placeText } from '../src/lib/utils.js'
+import { offerTags, placeCoords, placeText } from '../src/lib/utils.js'
 
 describe('placeText', () => {
   it('skips {lat,lng} objects and falls back to readable text', () => {
@@ -24,5 +24,36 @@ describe('placeCoords', () => {
 
   it('never returns a string as coordinates', () => {
     assert.equal(placeCoords('Hitech City', undefined), null)
+  })
+})
+
+describe('offerTags', () => {
+  it('builds the car, airport, round-trip, stops and requirement tags from app values', () => {
+    const tags = offerTags({
+      vehicleSpecs: { company: 'Maruti', model: 'Swift', transmission: 'Automatic' },
+      requirement: 'airport',
+      flightNumber: 'AI 544',
+      tripType: 'two_way',
+      stops: [{}, {}],
+    })
+    assert.deepEqual(tags.map((t) => t.label), ['Maruti Swift', 'Automatic', 'Flight AI 544', 'Round Trip', '2 Stops', 'Airport'])
+  })
+
+  it('accepts upper-case values and a car with no company', () => {
+    const tags = offerTags({
+      vehicleSpecs: { model: 'Toyota Innova', transmission: 'MANUAL' },
+      requirement: 'AIRPORT',
+      flightNumber: 'AI 544',
+      tripType: 'ROUND_TRIP',
+      stops: [{}],
+    })
+    assert.deepEqual(tags.map((t) => t.label), ['Toyota Innova', 'Manual', 'Flight AI 544', 'Round Trip', '1 Stop', 'Airport'])
+    assert.ok(!tags.some((t) => t.label.includes('undefined')))
+  })
+
+  it('replaces every underscore in the requirement and returns nothing for a bare offer', () => {
+    assert.deepEqual(offerTags({ requirement: 'within_city' }).map((t) => t.label), ['Within City'])
+    assert.deepEqual(offerTags({ tripType: 'one_way', stops: null, vehicleSpecs: null }), [])
+    assert.deepEqual(offerTags(null), [])
   })
 })

@@ -243,6 +243,21 @@ screens. Not yet run on a phone.
 4. Force-stop and reopen the app mid-drive (trip comes back from the server
    without the offer's labels): the drive screen still opens without a crash.
 
+## 16. Offer card details (M-1 follow-up, added 2026-10-29)
+
+Needs a backend with `de8adf1` or later. Not yet run on a phone.
+
+1. From the user app, book an airport trip with a saved car (company, model,
+   transmission), a flight number, two stops and a round trip.
+2. With the driver app online and push **on** (the offer arrives over the
+   WebSocket), the card shows: "Maruti Swift" (company and model), the
+   transmission, "Flight …", "Round Trip", "2 Stops" and "Airport". Nothing
+   reads "undefined".
+3. Repeat with push **off** and the app left open (the offer arrives by
+   polling): the card is identical.
+4. A plain within-city trip with no car shows only "Within City".
+5. Accept: the trip continues as before (handshake, drive, summary).
+
 ## Needs from Jaswanth
 
 1. A Firebase project with Android apps for `com.mydriver.driver`,

@@ -46,6 +46,8 @@ const OFFER_POLL_WITH_PUSH_MS = 10_000
 
 const shortId = (id) => `TRP-${String(id).replace(/-/g, '').slice(0, 6).toUpperCase()}`
 
+const RICH_OFFER_KEYS = ['stops', 'returnStops', 'vehicleSpecs', 'visionMode', 'flightNumber', 'requirement', 'tripType']
+
 /** Adapts a pending offer into the shape the offer card already renders. */
 function toOffer(pending) {
   if (!pending) return null
@@ -99,6 +101,12 @@ function toRequest(trip, prevInspected = undefined) {
     platformFee: trip.platform_fee ?? trip.platformFee ?? null,
     nightFee: trip.night_fee ?? trip.nightFee ?? null,
     earnings: trip.driver_earnings ?? trip.earnings,
+    // Rich offer fields (M-1), kept so the card's details survive into the trip.
+    stops: trip.stops ?? null,
+    returnStops: trip.return_stops ?? trip.returnStops ?? null,
+    vehicleSpecs: trip.vehicle_specs ?? trip.vehicleSpecs ?? null,
+    visionMode: trip.vision_mode ?? trip.visionMode ?? null,
+    flightNumber: trip.flight_number ?? trip.flightNumber ?? null,
     requirement: trip.requirement ?? null,
     tripType: trip.trip_type ?? trip.tripType ?? null,
     pickupCoords: placeCoords(trip.pickupCoords, trip.pickup),
@@ -565,12 +573,17 @@ export function DriverProvider({ children }) {
           setOffer(null)
           if (!accept) return null
 
+          const fromServer = toRequest(accepted)
           const adapted = {
-            ...toRequest(accepted),
+            ...fromServer,
             driverId: accepted.driver_id ?? user?.id ?? null,
             customer: pending.customer,
             pickup: pending.pickup,
             drop: pending.drop,
+          }
+          // The accept response may not carry the rich fields; keep the offer's.
+          for (const key of RICH_OFFER_KEYS) {
+            if (adapted[key] == null && pending[key] != null) adapted[key] = pending[key]
           }
           tripIdRef.current = accepted.id
           setTrip(adapted)

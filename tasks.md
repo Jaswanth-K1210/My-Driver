@@ -138,8 +138,9 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 - [x] **CR-4 (major, crash during live trips)** `DriverContext.jsx` `toRequest()`: never use a
       `{lat,lng}` object as the pickup/drop text. Written — needs phone check
       (`docs/driver-app-testing.md` §15)
-- [ ] **M-1 follow-up** After Jaswanth's M-1 lands: keep the rich offer fields in `toRequest`,
-      and check the offer card on both the WebSocket and polling paths
+- [x] **M-1 follow-up** After Jaswanth's M-1 lands: keep the rich offer fields in `toRequest`,
+      and check the offer card on both the WebSocket and polling paths. Written — needs phone
+      check (`docs/driver-app-testing.md` §16)
 - [x] Onboarding: poll `/v1/driver/onboarding` every 10 s while `UNDER_REVIEW`. Written — needs
       phone check (`docs/driver-app-testing.md` §14 step 9)
 - [ ] Remove the `MODULE_TYPELESS_PACKAGE_JSON` warning on `npm test`
