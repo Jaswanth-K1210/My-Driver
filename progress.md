@@ -3,6 +3,21 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · Testing plan
+
+**Did:** New `docs/testing-plan.md`: the order agreed today (Sanath's CR-7, CR-8, CR-10 first, then
+testing layers 1 to 3, then Sentry); which build to test on (development builds in Phase 4, preview
+builds for Phase 5 results, never Expo Go); where the backend runs (laptop on the same Wi-Fi at a
+desk, staging for road tests, a Cloudflare tunnel as a stopgap); the four test layers with owners
+(automated checks, Playwright for website and console, Maestro for both apps, the manual suites as
+joint rides); the iPhone path through X-1 and TestFlight; what the backend already logs and what to
+add (Loki on staging, Sentry with privacy scrubbing); and the daily Phase 5 routine.
+**Checks:** docs only.
+**Commit:** `docs: testing plan for Phases 4 and 5`
+**Not done / follow-ups:** CI does not run the driver app's `npm test` or the user app's bundle check
+yet (section 4). Maestro flows are proposed for Sanath and Umesh, not assigned in `tasks.md`.
+**Requests raised:** none.
+
 ## 2026-10-29 · Sanath · Where I stopped
 
 **Session accomplishments:**
