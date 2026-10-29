@@ -261,6 +261,15 @@ Needs a backend with `de8adf1` or later. Not yet run on a phone.
 4. A plain within-city trip with no car shows only "Within City".
 5. Accept: the trip continues as before (handshake, drive, summary).
 
+## 17. Escalation banner (M-4 follow-up, added 2026-10-29)
+
+Needs a backend with `942fd87` or later. Not yet run on a phone.
+
+1. During a drive, raise an L3+ escalation (Safety Desk, or drive well over
+   the speed limit). The escalation banner appears on the drive screen within
+   a second or two, without leaving the screen.
+2. Resolve it in the Safety Desk: the banner goes away and the drive goes on.
+
 ## Needs from Jaswanth
 
 1. A Firebase project with Android apps for `com.mydriver.driver`,

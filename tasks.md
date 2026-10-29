@@ -147,6 +147,9 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 - [x] D-3 with Jaswanth: drivers' own vehicle and plate optional before going online. Umesh
       decided 29 Oct: optional, only the name is required. App side written — needs phone
       check (`docs/driver-app-testing.md` §14 step 1)
+- [x] **M-4 follow-up** (from Jaswanth's M-4 note): re-read the trip on `ANOMALY_TRIGGERED`, so an
+      L3+ escalation shows the drive screen's escalation banner at once. Written — needs phone
+      check (`docs/driver-app-testing.md` §17)
 
 ### Written, waiting for a phone check (Phase 4–5)
 - [ ] Background location (foreground service on Android; on iOS, the "Always" permission and

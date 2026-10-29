@@ -3,6 +3,18 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Umesh · M-4 follow-up
+
+**Did:** `DriverContext.jsx` re-reads the trip on an `ANOMALY_TRIGGERED` frame for the current
+trip, as it already did on `TRIP_STATE_CHANGED`. Jaswanth's M-4 note: L3+ sets the trip to
+`ESCALATED` but announces only `ANOMALY_TRIGGERED`, so the drive screen's escalation banner
+waited for the next refresh. Logged under my Phase 3 list as "M-4 follow-up" (M-4 itself is
+Jaswanth's item).
+**Checks:** `npm test` 26/26 · `npx expo export --platform android` pass.
+**Commit:** `fix(M-4): show the escalation banner as soon as an anomaly is announced`
+**Not done / follow-ups:** Needs phone check (`docs/driver-app-testing.md` §17).
+**Requests raised:** none.
+
 ## 2026-10-29 · Umesh · D-3
 
 **Decision (Umesh, 29 Oct):** drivers drive the customer's car, so their own vehicle model and

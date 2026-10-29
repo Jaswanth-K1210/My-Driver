@@ -308,6 +308,12 @@ export function DriverProvider({ children }) {
       if (frame.trip_id === tripIdRef.current) void syncTrip()
     })
 
+    // L3+ sets the trip to ESCALATED but only announces ANOMALY_TRIGGERED, so
+    // re-read the trip to show the escalation banner straight away.
+    conn.on('ANOMALY_TRIGGERED', (frame) => {
+      if (frame.trip_id === tripIdRef.current) void syncTrip()
+    })
+
     await conn.connect()
     return conn
   }, [refreshOffers, syncTrip])
