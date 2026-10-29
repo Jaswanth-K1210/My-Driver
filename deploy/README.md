@@ -18,7 +18,8 @@ and prints exactly what is wrong.
 | Payments | Razorpay (test keys are fine for staging) | `RAZORPAY_*` |
 | Place search | Google Maps Platform, Places API (New) | `GOOGLE_MAPS_API_KEY` |
 | Photos, documents, certificates | S3 bucket (private) | `STORAGE_*` |
-| Push notifications (optional) | Firebase Cloud Messaging | `FCM_SERVICE_ACCOUNT_JSON` |
+| Push to Android (optional) | Firebase Cloud Messaging | `FCM_SERVICE_ACCOUNT_JSON` |
+| Push to iPhones (optional) | Apple Developer > Keys, an APNs `.p8` key | `APNS_*` |
 
 DNS: point `WEB_DOMAIN`, `ADMIN_DOMAIN` and `API_DOMAIN` (A/AAAA records) at
 the host before starting, so Caddy can obtain certificates.
@@ -71,6 +72,37 @@ Then:
 3. **Smoke check.** `https://<API_DOMAIN>/ready` returns `{"status":"ready"}`
    the website loads at `https://<WEB_DOMAIN>`, and the console sign-in loads
    at `https://<ADMIN_DOMAIN>/login`.
+
+## Staging (Phase 3–5 testing)
+
+Staging is the same stack and the same steps as above, with test keys. It runs with
+`NODE_ENV=production`, so the start-up guard still applies: SMS, KYC and payments must be real
+providers, but **test or sandbox** accounts are enough.
+
+| Variable | Staging value |
+|---|---|
+| `WEB_DOMAIN` / `API_DOMAIN` / `ADMIN_DOMAIN` | Staging subdomains, e.g. `staging.mydriver.in`, `api.staging.mydriver.in`, `admin.staging.mydriver.in`. DNS first, then start Caddy. |
+| `RAZORPAY_*` | Test-mode keys (`rzp_test_…`) and a test-mode webhook pointing at the staging API |
+| `CASHFREE_*` | Sandbox credentials, with `CASHFREE_BASE_URL` set to Cashfree's sandbox verification URL |
+| Demo data | Nothing to set: with `NODE_ENV=production` the console never shows the demo drivers and trips |
+| `APNS_PRODUCTION` | `false` while testers use development builds; `true` once they move to TestFlight |
+| `APNS_TOPICS` | The builds testers actually run, e.g. `com.mydriver.user.dev,com.mydriver.driver.dev` (add the `.preview` IDs for preview builds) |
+| `PLACE_SEARCH_BIAS` | Leave the Hyderabad default (`17.3850,78.4867`) |
+
+After the first deploy:
+
+1. **Staff accounts** for the three developers (`create-staff.js`, above).
+2. **Hyderabad prices (D-4).** Sign in to the staging console, open **Pricing**, and enter the agreed rate
+   cards and fees. Every change is audited.
+3. **Hand over to the app developers** (X-3, X-4). They need, for **each** app and variant:
+   - the staging API URL, set as `EXPO_PUBLIC_API_URL` in their EAS profile;
+   - `google-services.json` (Android) and `GoogleService-Info.plist` (iOS) from the Firebase project,
+     as EAS file secrets, never committed;
+   - the Maps SDK for Android key as `GOOGLE_MAPS_API_KEY_ANDROID`, restricted to the package names
+     and the EAS signing certificate (and an iOS key restricted to the bundle IDs).
+4. **Smoke check** as above, then one booking from the website with a Razorpay test card.
+
+Redeploy (see Updating) whenever fixes land on `production-p1`.
 
 ## Updating
 

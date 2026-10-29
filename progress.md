@@ -3,6 +3,22 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · Staging prep (early prep for X-5)
+
+**Did:** `deploy/README.md` now has a **Staging** section: which variables differ from production
+(staging subdomains, Razorpay test mode, Cashfree sandbox, APNs sandbox and the `.dev` /
+`.preview` bundle IDs, the Hyderabad search bias), the steps after the first deploy (staff
+accounts, Hyderabad prices in Pricing for D-4), and exactly what to hand Sanath and Umesh for X-3
+and X-4 (`EXPO_PUBLIC_API_URL`, the Firebase files as EAS secrets, restricted Maps keys). The
+accounts table also lists the APNs key.
+**Checks:** docs only; values checked against `env.ts`, the Caddyfile and both apps'
+`app.config.js` / `src/lib/config.js`.
+**Commit:** `docs: staging runbook and app-key handover in deploy/README.md`
+**Not done / follow-ups:** The staging server itself (X-5), the Firebase project (X-3), the Maps
+keys (X-4) and Razorpay/Cashfree activation (X-6) need Jaswanth's accounts. Nothing else in
+Jaswanth's Phase 3 list is left.
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · D-4 (early prep: place-search bias)
 
 **Did:** The code part of D-4. Neither app sends its position with a place search (the user
