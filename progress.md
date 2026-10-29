@@ -3,6 +3,25 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · D-3 (Umesh's request)
+
+**Did:** Backend side of D-3: a driver's own vehicle and plate are optional.
+- `profile_complete` now checks only `full_name`, in both `GET /v1/driver/profile`
+  (`driver-app/service.ts`) and `GET /v1/driver/summary` (`trips/service.ts`).
+- `PATCH /v1/driver/profile` accepts `""` or `null` for `vehicle_model` / `vehicle_plate` and
+  clears the field. A non-empty value is still checked (plate 2–32 chars, model 1–120).
+
+Nothing server-side ever blocked going online on `profile_complete`, so dispatch is unchanged.
+New test in `tests/integration/driver-app.test.ts`; fails without the fix.
+**Checks:** `npm run typecheck` pass · `npm test` 35 files, 404/404 pass (Docker).
+**Commit:** `feat(D-3): vehicle and plate optional on the driver profile`
+**Payload changed:** `PATCH /v1/driver/profile` body: `vehicle_model` / `vehicle_plate` may now be
+`""` or `null` (additive). `profile_complete` is `true` for any driver with a name.
+`api-documentation.md` regenerated.
+**Not done / follow-ups:** Umesh's driver app can now send blank fields to clear them. The
+"Everyone" D-3 line is left for a human to tick.
+**Requests raised:** none.
+
 ## 2026-10-29 · Jaswanth · CR-2
 
 **Did:** Un-approving or suspending a driver from the console no longer leaves their trips

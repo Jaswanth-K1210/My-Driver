@@ -227,12 +227,12 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 
 ### Phase 3: code-review fixes
 Do first, because the apps depend on them:
-- [ ] REQUEST from Umesh (2026-10-29): D-3 is decided: drivers' own vehicle and plate are
+- [x] ~~REQUEST from Umesh (2026-10-29): D-3 is decided: drivers' own vehicle and plate are
       optional, only the name is required. Please (1) make `profile_complete` in
       `driver-app/service.ts` check only `full_name` (the driver app now ignores it, but the
       console and any other reader still see `false`), and (2) let `PATCH` on the driver profile
       accept `""` or `null` for `vehicle_model` / `vehicle_plate` so a driver can clear them
-      (today `min(2)` rejects an empty value, so the app leaves blank fields out).
+      (today `min(2)` rejects an empty value, so the app leaves blank fields out).~~ (`feat(D-3)`, 30 Oct)
 - [x] ~~**M-1 (major)** `GET /v1/driver/offers`: add `stops`, `return_stops`, `vehicle_specs`,
       `vision_mode`, `flight_number`, `requirement`, `trip_type` to the response schema~~
       (`fix(M-1)`, 29 Oct)
@@ -255,7 +255,8 @@ Then:
 - [ ] **CR-8** Do not show transmission/fuel as the plate in `website/src/lib/tripView.js`
 - [ ] **M-7** Active-trip rows clickable in `Board.jsx`
 - [ ] **CR-9 / CR-11** Regenerate `api-documentation.md`
-- [ ] D-3 with Umesh; D-4 Hyderabad setup on staging
+- [x] ~~D-3 with Umesh~~ (backend side done, `feat(D-3)`, 30 Oct)
+- [ ] D-4 Hyderabad setup on staging
 
 ### Phase 4–6
 - [ ] Backend suite on Docker (`infra:up`, `db:migrate`, `npm test`); website lint + both builds

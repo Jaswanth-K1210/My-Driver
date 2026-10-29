@@ -165,8 +165,9 @@ export function registerDriverAppRoutes(app: FastifyInstance): void {
           .object({
             full_name: z.string().trim().min(2).max(120).optional(),
             email: z.union([z.string().trim().email().max(160), z.literal(''), z.null()]).optional(),
-            vehicle_model: z.string().trim().min(1).max(120).optional(),
-            vehicle_plate: z.string().trim().min(2).max(32).optional(),
+            // '' or null clears the field: the vehicle is optional (D-3).
+            vehicle_model: z.union([z.string().trim().min(1).max(120), z.literal(''), z.null()]).optional(),
+            vehicle_plate: z.union([z.string().trim().min(2).max(32), z.literal(''), z.null()]).optional(),
           })
           .strict(),
         response: {

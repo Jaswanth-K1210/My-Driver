@@ -770,11 +770,8 @@ export async function getDriverSummary(driverId: string): Promise<DriverSummary>
        u.email,
        p.vehicle_model,
        p.vehicle_plate,
-       (
-         COALESCE(btrim(u.full_name), '') <> ''
-         AND COALESCE(btrim(p.vehicle_model), '') <> ''
-         AND COALESCE(btrim(p.vehicle_plate), '') <> ''
-       ) AS profile_complete,
+       -- D-3: a driver's own vehicle and plate are optional.
+       COALESCE(btrim(u.full_name), '') <> '' AS profile_complete,
        COALESCE(t.trips_today, 0)::int       AS trips_today,
        COALESCE(t.earnings_today, 0)::float8 AS earnings_today
      FROM driver_profiles p

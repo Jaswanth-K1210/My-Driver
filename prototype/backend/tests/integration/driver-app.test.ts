@@ -177,6 +177,25 @@ describe('driver app: earnings, assessments, profile', () => {
     it('says not qualified when there is no Night Shield record', async () => {
       expect((await get('/v1/driver/profile')).json().night_shield.status).toBe('NOT_QUALIFIED')
     })
+
+    it('is complete with just a name, and the vehicle can be cleared (D-3)', async () => {
+      const patch = (payload: unknown) =>
+        app.inject({
+          method: 'PATCH', url: '/v1/driver/profile', headers: bearer(driver.accessToken), payload,
+        })
+
+      const named = await patch({ full_name: 'Ramesh Kumar', vehicle_model: 'Swift', vehicle_plate: 'ts09ez4412' })
+      expect(named.statusCode).toBe(200)
+      expect(named.json()).toMatchObject({ vehicle_plate: 'TS09EZ4412', profile_complete: true })
+
+      const cleared = await patch({ vehicle_model: '', vehicle_plate: null })
+      expect(cleared.statusCode).toBe(200)
+      expect(cleared.json()).toMatchObject({ vehicle_model: null, vehicle_plate: null, profile_complete: true })
+      expect((await get('/v1/driver/summary')).json().profile_complete).toBe(true)
+
+      // A one-character plate is still a typo, not a clear.
+      expect((await patch({ vehicle_plate: 'X' })).statusCode).toBe(400)
+    })
   })
 
   it('refuses a customer token on all three', async () => {

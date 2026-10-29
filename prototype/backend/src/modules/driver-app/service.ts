@@ -158,11 +158,8 @@ export async function getDriverProfile(driverId: string) {
   const { rows } = await pool.query(
     `SELECT u.full_name, u.email, u.phone_number, u.created_at AS joined_at,
             p.vehicle_model, p.vehicle_plate,
-            (
-              COALESCE(btrim(u.full_name), '') <> ''
-              AND COALESCE(btrim(p.vehicle_model), '') <> ''
-              AND COALESCE(btrim(p.vehicle_plate), '') <> ''
-            ) AS profile_complete,
+            -- D-3: a driver's own vehicle and plate are optional.
+            COALESCE(btrim(u.full_name), '') <> '' AS profile_complete,
             p.mydriver_score::float8 AS mydriver_score, p.rating::float8 AS rating,
             p.rating_count, p.total_trips, p.certifications, p.onboarding_status
        FROM driver_profiles p JOIN users u ON u.id = p.user_id
@@ -212,8 +209,8 @@ export async function getDriverProfile(driverId: string) {
 export type DriverProfilePatch = {
   full_name?: string | undefined
   email?: string | null | undefined
-  vehicle_model?: string | undefined
-  vehicle_plate?: string | undefined
+  vehicle_model?: string | null | undefined
+  vehicle_plate?: string | null | undefined
 }
 
 export async function updateDriverProfile(driverId: string, patch: DriverProfilePatch) {
@@ -240,11 +237,11 @@ export async function updateDriverProfile(driverId: string, patch: DriverProfile
       const sets: string[] = ['updated_at = now()']
       const vals: unknown[] = [driverId]
       if (patch.vehicle_model !== undefined) {
-        vals.push(patch.vehicle_model.trim() || null)
+        vals.push(patch.vehicle_model?.trim() || null)
         sets.push(`vehicle_model = $${vals.length}`)
       }
       if (patch.vehicle_plate !== undefined) {
-        vals.push(patch.vehicle_plate.trim().toUpperCase() || null)
+        vals.push(patch.vehicle_plate?.trim().toUpperCase() || null)
         sets.push(`vehicle_plate = $${vals.length}`)
       }
       const { rowCount } = await client.query(
