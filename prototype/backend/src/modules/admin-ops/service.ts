@@ -17,6 +17,7 @@ import type { Role } from '../auth/otp.js'
 import { raiseEscalation } from '../escalation/service.js'
 import { audit } from '../safety-desk/service.js'
 import { removeDriverFromIndex } from '../trips/geo-index.js'
+import { withdrawUnapprovedDriver } from '../trips/matching.js'
 import { earnedAt, earningTrip } from '../trips/earning.js'
 
 export type OnboardingStatus =
@@ -299,12 +300,9 @@ export async function setOnboardingStatus(
   )
 
   if (status !== 'APPROVED') {
-    await pool.query(
-      `UPDATE trip_offers SET status = 'EXPIRED', responded_at = now()
-        WHERE driver_id = $1 AND status = 'PENDING'`,
-      [driverId],
-    )
+    // Out of the index first, so re-dispatch cannot pick this driver again.
     await removeDriverFromIndex(driverId)
+    await withdrawUnapprovedDriver(driverId, actorId, actorRole)
 
     const { rows: activeTrips } = await pool.query<{ id: string }>(
       `SELECT id FROM trips

@@ -10,7 +10,7 @@ import { bearer, loginAs } from '../helpers/auth.js'
 import { resetDb } from '../helpers/db.js'
 import { resetRedis } from '../helpers/redis.js'
 import { loginAsRole } from '../helpers/safety.js'
-import { BOOK_BODY, HITEC_CITY, makeCustomer, makeOnlineDriver, SELFIE, tripStatus } from '../helpers/trips.js'
+import { BOOK_BODY, GACHIBOWLI, HITEC_CITY, makeCustomer, makeOnlineDriver, SELFIE, tripStatus } from '../helpers/trips.js'
 
 /**
  * The onboarding gate and Night Shield are only controls if dispatch reads
@@ -269,6 +269,76 @@ describe('dispatch eligibility gates', () => {
       )
       expect(prof[0]?.availability).toBe('OFFLINE')
       expect(await nearby()).not.toContain(driver.userId)
+    })
+
+    const suspend = (ops: { accessToken: string }, driverId: string) =>
+      app.inject({
+        method: 'POST',
+        url: `/v1/admin/drivers/${driverId}/status`,
+        headers: bearer(ops.accessToken),
+        payload: { status: 'SUSPENDED' },
+      })
+
+    it('cancels an accepted trip not yet started, with no fee, and releases the hold', async () => {
+      const customer = await makeCustomer(app, '+919700000016')
+      const driver = await makeOnlineDriver(app, '+919700000017')
+      const ops = await loginAsRole(app, '+919700000018', 'OPS_MANAGER')
+
+      const tripId = (
+        await app.inject({
+          method: 'POST', url: '/v1/trips/book', headers: bearer(customer.accessToken), payload: BOOK_BODY,
+        })
+      ).json().id as string
+      await awaitDispatchIdle()
+      await app.inject({
+        method: 'POST', url: `/v1/trips/${tripId}/offer/respond`,
+        headers: bearer(driver.accessToken), payload: { accept: true },
+      })
+      // The driver is at the pickup: a customer cancelling now would pay the fee.
+      await pool.query(`UPDATE trips SET arrived_at = now() WHERE id = $1`, [tripId])
+      expect(await tripStatus(tripId)).toBe('HANDSHAKE_PENDING')
+
+      expect((await suspend(ops, driver.userId)).statusCode).toBe(200)
+
+      expect(await tripStatus(tripId)).toBe('CANCELLED')
+      const { rows: trip } = await pool.query(
+        `SELECT cancellation_fee, cancelled_by FROM trips WHERE id = $1`, [tripId],
+      )
+      expect(trip[0]?.cancellation_fee ?? null).toBeNull()
+      expect(trip[0]?.cancelled_by).toBe(ops.userId)
+      const { rows: pay } = await pool.query(`SELECT status FROM payments WHERE trip_id = $1`, [tripId])
+      for (const p of pay) expect(p.status).toBe('RELEASED')
+      const { rows: prof } = await pool.query(
+        `SELECT availability FROM driver_profiles WHERE user_id = $1`, [driver.userId],
+      )
+      expect(prof[0]?.availability).toBe('OFFLINE')
+    })
+
+    it('sends an offered trip to the next driver instead of leaving it stuck', async () => {
+      const customer = await makeCustomer(app, '+919700000019')
+      const driver = await makeOnlineDriver(app, '+919700000020')
+      const ops = await loginAsRole(app, '+919700000021', 'OPS_MANAGER')
+
+      const tripId = (
+        await app.inject({
+          method: 'POST', url: '/v1/trips/book', headers: bearer(customer.accessToken), payload: BOOK_BODY,
+        })
+      ).json().id as string
+      await awaitDispatchIdle()
+      expect(await tripStatus(tripId)).toBe('MATCHED')
+      // Online only now, so the first round went to `driver`.
+      const second = await makeOnlineDriver(app, '+919700000022', GACHIBOWLI)
+
+      expect((await suspend(ops, driver.userId)).statusCode).toBe(200)
+
+      const { rows } = await pool.query(
+        `SELECT driver_id, status FROM trip_offers WHERE trip_id = $1 ORDER BY round`, [tripId],
+      )
+      expect(rows).toEqual([
+        { driver_id: driver.userId, status: 'EXPIRED' },
+        { driver_id: second.userId, status: 'PENDING' },
+      ])
+      expect(await tripStatus(tripId)).toBe('MATCHED')
     })
   })
 })

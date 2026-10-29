@@ -238,8 +238,9 @@ Do first, because the apps depend on them:
       (`fix(M-1)`, 29 Oct)
 - [x] ~~**M-4 (major)** `resolveEscalation()`: publish `TRIP_STATE_CHANGED → IN_TRIP`~~
       (`fix(M-4)`, 29 Oct)
-- [ ] **CR-2 (major)** `setOnboardingStatus()`: cancel an unapproved driver's `MATCHED` /
-      `HANDSHAKE_PENDING` trips (no arrival fee) before taking them offline
+- [x] ~~**CR-2 (major)** `setOnboardingStatus()`: cancel an unapproved driver's `MATCHED` /
+      `HANDSHAKE_PENDING` trips (no arrival fee) before taking them offline~~ (`fix(CR-2)`,
+      29 Oct; `MATCHED` trips are re-dispatched instead of cancelled, agreed with Jaswanth)
 - [ ] Staging server up on the current code; Firebase config and Maps keys to Sanath and Umesh
 
 Then:

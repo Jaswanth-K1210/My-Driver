@@ -2,6 +2,8 @@ import { pool } from '../../db/client.js'
 import { isNightPickupIST } from '../../lib/time.js'
 import { conflict, notFound } from '../../lib/errors.js'
 import { getPushProvider } from '../../providers/push/index.js'
+import type { Role } from '../auth/otp.js'
+import { revokeLinksForEndedTrip } from '../guardian/service.js'
 import { releaseForTrip } from '../payments/service.js'
 import { broadcastOffer, broadcastStateChange } from './broadcast.js'
 import { findNearbyDrivers, requireApprovedDriver, SEARCH_RADIUS_KM, setAvailability } from './geo-index.js'
@@ -207,4 +209,75 @@ export async function respondToOffer(
   // A decliner is not a participant (driver_id is only set on accept), so the
   // participant-scoped read would 404. They were legitimately shown this trip.
   return getTripById(tripId)
+}
+
+/**
+ * A driver who loses approval keeps no trip that has not started. Offered
+ * (MATCHED) trips go back to dispatch, as if declined; accepted ones still on
+ * the way to the pickup (HANDSHAKE_PENDING) are cancelled with no fee, since
+ * the customer did nothing wrong. Trips already under way are left to the
+ * caller, which escalates them.
+ */
+export async function withdrawUnapprovedDriver(
+  driverId: string,
+  actorId: string,
+  actorRole: Role,
+): Promise<{ redispatched: string[]; cancelled: string[] }> {
+  const redispatched: string[] = []
+  const cancelled: string[] = []
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rows: offers } = await client.query<{ trip_id: string }>(
+      `UPDATE trip_offers SET status = 'EXPIRED', responded_at = now()
+        WHERE driver_id = $1 AND status = 'PENDING'
+        RETURNING trip_id`,
+      [driverId],
+    )
+    for (const { trip_id: tripId } of offers) {
+      const { rows } = await client.query<{ status: TripStatus }>(
+        `SELECT status FROM trips WHERE id = $1 FOR UPDATE`,
+        [tripId],
+      )
+      if (rows[0]?.status !== 'MATCHED') continue
+      await transitionTrip(client, tripId, 'MATCHED', 'REQUESTED')
+      await recordEvent(client, tripId, 'OFFER_WITHDRAWN', actorId, actorRole, { driver_id: driverId })
+      redispatched.push(tripId)
+    }
+
+    const { rows: accepted } = await client.query<{ id: string }>(
+      `SELECT id FROM trips WHERE driver_id = $1 AND status = 'HANDSHAKE_PENDING' FOR UPDATE`,
+      [driverId],
+    )
+    for (const { id: tripId } of accepted) {
+      await transitionTrip(client, tripId, 'HANDSHAKE_PENDING', 'CANCELLED', {
+        cancelled_at: new Date(),
+        cancellation_reason: 'Driver no longer approved',
+        cancelled_by: actorId,
+      })
+      await recordEvent(client, tripId, 'TRIP_CANCELLED', actorId, actorRole, {
+        reason: 'DRIVER_UNAPPROVED',
+        driver_id: driverId,
+      })
+      cancelled.push(tripId)
+    }
+    await client.query('COMMIT')
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
+
+  // After commit: payments, links and broadcasts cannot be rolled back.
+  for (const tripId of cancelled) {
+    await revokeLinksForEndedTrip(tripId).catch(() => undefined)
+    await releaseForTrip(tripId).catch(() => undefined)
+    await broadcastStateChange(tripId, 'CANCELLED').catch(() => undefined)
+  }
+  for (const tripId of redispatched) {
+    await broadcastStateChange(tripId, 'REQUESTED').catch(() => undefined)
+    await startDispatch(tripId).catch(() => undefined)
+  }
+  return { redispatched, cancelled }
 }

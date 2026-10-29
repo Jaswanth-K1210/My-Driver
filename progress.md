@@ -3,6 +3,29 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Jaswanth · CR-2
+
+**Did:** Un-approving or suspending a driver from the console no longer leaves their trips
+hanging. New `withdrawUnapprovedDriver()` in `prototype/backend/src/modules/trips/matching.ts`,
+called from `setOnboardingStatus()` (`admin-ops/service.ts`) after the driver leaves the geo index:
+- `HANDSHAKE_PENDING` (accepted, not started): cancelled with **no fee** even if the driver had
+  arrived; `cancelled_by` is the ops user; hold released; guardian links revoked;
+  `TRIP_STATE_CHANGED → CANCELLED` broadcast (the customer gets the "Trip cancelled" push).
+- `MATCHED` (only offered): the offer expires and the trip goes back to `REQUESTED` and is
+  re-dispatched to the next driver, like a decline. **This differs from the CR-2 wording**
+  ("cancel"); Jaswanth chose re-dispatch so the customer's booking carries on. Before this fix the
+  offer was expired but the trip stayed `MATCHED` forever (the sweeper only looks at `PENDING`
+  offers).
+- `IN_TRIP` / `ESCALATED`: unchanged (L2 escalation, finish safely).
+
+Two new tests in `tests/integration/onboarding-gate.test.ts`; both fail without the fix.
+**Checks:** `npm run typecheck` pass · `npm test` 35 files, 403/403 pass (Docker).
+**Commit:** `fix(CR-2): withdraw an unapproved driver from trips that have not started`
+**Payload changed:** none (existing `TRIP_STATE_CHANGED` frames). No route changed.
+**Suggestion for `prd.md` §3A:** reword CR-2 to "cancel `HANDSHAKE_PENDING`, re-dispatch
+`MATCHED`" (humans only).
+**Requests raised:** none.
+
 ## 2026-10-29 · Umesh · M-4 follow-up
 
 **Did:** `DriverContext.jsx` re-reads the trip on an `ANOMALY_TRIGGERED` frame for the current
