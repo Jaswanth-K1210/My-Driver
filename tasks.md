@@ -248,7 +248,8 @@ Then:
 - [x] ~~**CR-3 (major, privacy)** `PlacePicker.jsx`: reverse geocoding through
       `api.locations.reverse()` instead of the browser calling public Nominatim~~ (`fix(CR-3)`,
       30 Oct)
-- [ ] **M-3 (major)** Website "Pay ₹X balance" for `amount_due > 0` in `Track.jsx` and `Vault.jsx`
+- [x] ~~**M-3 (major)** Website "Pay ₹X balance" for `amount_due > 0` in `Track.jsx` and `Vault.jsx`~~
+      (`fix(M-3)`, 30 Oct)
 - [ ] **M-6 + D-1** `fcm.ts`: do not delete tokens on a generic `INVALID_ARGUMENT`; add an
       APNs provider for iOS tokens
 - [ ] **CR-5** Guard `a.details?.tracked_km` in `TripDetail.jsx`

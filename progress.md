@@ -3,6 +3,21 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · M-3
+
+**Did:** The website now shows "₹X still to pay" with a **Pay ₹X** button when a finished trip has
+`amount_due > 0`, on the trip-complete screen (`pages/dashboard/Track.jsx`) and in the Trip
+Vault detail (`pages/dashboard/Vault.jsx`). New `components/app/PayDue.jsx` loads
+`api.payments.forTrip()`, opens the same hosted checkout page in a new tab straight from the
+click (so it is not popup-blocked), and polls every 3 s until the balance is paid, then hides
+itself. Matches the user app's `TripCompleteScreen` / `VaultScreen`.
+**Checks:** `npm run lint` 0 errors, 22 warnings (none new) · `npm run build` pass ·
+`npm run build:admin` pass · `npm run check` pass. **Not clicked through in a browser**: needs a
+trip with an amount due (Phase 4 "amount due against Razorpay test mode").
+**Commit:** `fix(M-3): pay the balance due from the website's trip screens`
+**Payload changed:** none. `api.js` not changed.
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · Website booking check
 
 **Did:** `prototype/website/scripts/check-booking.mjs` now expects a 10-hour Within-City trip to

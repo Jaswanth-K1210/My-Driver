@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import PageHeader from '../../components/app/PageHeader.jsx'
+import PayDue from '../../components/app/PayDue.jsx'
 import { Link, useNavigate } from 'react-router-dom'
 import {
   BadgeCheck,
@@ -145,6 +146,10 @@ function TripComplete({ trip, summary, onSave, onRate }) {
             <p className="mt-0.5 text-[10px] text-slate-500">{stat.label}</p>
           </div>
         ))}
+      </div>
+
+      <div className="mt-6">
+        <PayDue tripId={trip.serverId} />
       </div>
 
       <div className="mt-6">

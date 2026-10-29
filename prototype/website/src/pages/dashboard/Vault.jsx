@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import PageHeader from '../../components/app/PageHeader.jsx'
+import PayDue from '../../components/app/PayDue.jsx'
 import { Archive, BadgeCheck, Download } from 'lucide-react'
 import { Modal } from '../../components/app/Primitives.jsx'
 import { useTrip } from '../../context/tripStore.js'
@@ -57,6 +58,8 @@ function TripDetail({ trip }) {
           Driver {trip.driverName} · {formatINR(trip.fare)}
         </p>
       </div>
+
+      <PayDue tripId={trip.serverId} />
 
       <div className="grid grid-cols-3 gap-3">
         {[
