@@ -81,8 +81,7 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
   - [x] CR-1: send stop coordinates {lat, lng} and preserve point-to-point duration (Written — needs phone check)
   - [x] M-2: outstation return_drop and within-city duration > 8h fix (Written — needs phone check)
 - [x] **M-5** Show the "Stops fee" line in the quote breakdown (`HomeScreen.jsx`). Written — needs phone check (`fix(M-5)`, 29 Oct)
-- [ ] **CR-7** Saving safety defaults and `refreshMe()` in their own try/catch so an error never
-      blocks booking
+- [x] **CR-7** Put saving safety defaults and refreshMe in their own try/catch blocks so they never block booking (HomeScreen.jsx). Written — needs phone check (fix(CR-7), 29 Oct)
 - [ ] **CR-8** Do not show transmission/fuel as the plate (`src/lib/tripView.js`)
 - [x] ~~**M-8** Delete `prototype/mobile/user/android` (generated for SDK 54; while it exists EAS
       ignores the icon, permissions and plugins in `app.json`) and `prototype/mobile/proto`

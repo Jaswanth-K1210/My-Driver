@@ -3,6 +3,14 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Sanath · CR-7
+
+**Did:** In `HomeScreen.jsx` `findDriver()`, wrapped `api.me.update` (saving first-time safety defaults) and `await refreshMe()` in separate, independent `try/catch` blocks. If saving safety defaults fails, the failure is caught without blocking `refreshMe()` or `onFindDriver(config)`. `await refreshMe()` is awaited in its own try/catch block with `finally { setSaving(false) }`, preventing unhandled promise rejections and ensuring saving state is always cleaned up and booking proceeds unconditionally.
+**Checks:** `npx expo export --platform android` passed with 0 errors (bundled 2907 modules).
+**Commit:** `fix(CR-7): isolate safety defaults update and refreshMe in separate try-catch blocks`
+**Not done / follow-ups:** Needs phone check in Phase 5.
+**Requests raised:** none.
+
 ## 2026-10-30 · Sanath · CR-1 (Option C refinement)
 
 **Did:** Option C return drop refinement in customer app. In `prototype/mobile/user/src/lib/booking.js`, updated `resolveReturnDrop()` so cleared, missing, or invalid location IDs on two-way round trips resolve to `null` instead of silently falling back, while keeping `'same_as_pickup'` or matching pickup ID falling back to pickup coordinates. In `HomeScreen.jsx` `findDriver()`, added two-way round trip validation: if the resolved `return_drop` is null or missing, booking is blocked and an alert prompts the user to select a valid final return destination.

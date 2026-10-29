@@ -162,9 +162,13 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
             prefer_female_driver: Boolean(config.preferFemaleDriver),
           },
         })
-        void refreshMe()
       } catch {
         // Not saving the defaults must not block the ride; we ask again next time.
+      }
+      try {
+        await refreshMe()
+      } catch {
+        // Refresh failure must not block booking.
       } finally {
         setSaving(false)
       }
