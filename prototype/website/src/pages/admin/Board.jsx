@@ -135,7 +135,22 @@ export default function Board() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {active.map((trip) => (
-                  <tr key={trip.trip_id} className={cn(trip.escalation_level && 'bg-brand-50/40')}>
+                  <tr
+                    key={trip.trip_id}
+                    onClick={() => navigate(`/trips/${trip.trip_id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        navigate(`/trips/${trip.trip_id}`)
+                      }
+                    }}
+                    tabIndex={0}
+                    aria-label={`Open trip for ${trip.customer_name ?? 'customer'}`}
+                    className={cn(
+                      'cursor-pointer hover:bg-slate-50 focus:bg-slate-50 focus:outline-none',
+                      trip.escalation_level && 'bg-brand-50/40',
+                    )}
+                  >
                     <td className="py-3 pr-3"><LevelBadge level={trip.escalation_level} /></td>
                     <td className="py-3 pr-3 font-semibold text-slate-900">{trip.customer_name ?? '—'}</td>
                     <td className="py-3 pr-3 text-slate-700">{trip.driver_name ?? '—'}</td>

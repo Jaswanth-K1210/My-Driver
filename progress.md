@@ -3,6 +3,16 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · M-7
+
+**Did:** On the console's live Board (`prototype/website/src/pages/admin/Board.jsx`), each row in
+"Active trips" opens that trip's page (`/trips/:id`), the same as the Trips list. Rows also open
+with Enter or Space, so the table works from the keyboard.
+**Checks:** `npm run lint` 0 errors, 22 warnings (none new) · `npm run build` pass ·
+`npm run build:admin` pass · `npm run check` pass.
+**Commit:** `fix(M-7): open a trip from the console Board's active-trip rows`
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · CR-8 (website)
 
 **Did:** `prototype/website/src/lib/tripView.js` uses only the car's real `plate` for the trip

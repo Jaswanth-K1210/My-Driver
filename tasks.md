@@ -257,7 +257,7 @@ Then:
 - [x] ~~**CR-6** Block empty or negative inputs in `Pricing.jsx`~~ (`fix(CR-6)`, 30 Oct)
 - [x] ~~**CR-7** Saving safety defaults in its own try/catch in `Book.jsx`~~ (`fix(CR-7)`, 30 Oct)
 - [x] ~~**CR-8** Do not show transmission/fuel as the plate in `website/src/lib/tripView.js`~~ (`fix(CR-8)`, 30 Oct)
-- [ ] **M-7** Active-trip rows clickable in `Board.jsx`
+- [x] ~~**M-7** Active-trip rows clickable in `Board.jsx`~~ (`fix(M-7)`, 30 Oct)
 - [ ] **CR-9 / CR-11** Regenerate `api-documentation.md`
 - [x] ~~D-3 with Umesh~~ (backend side done, `feat(D-3)`, 30 Oct)
 - [ ] D-4 Hyderabad setup on staging
