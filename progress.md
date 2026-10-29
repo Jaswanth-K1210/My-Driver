@@ -3,6 +3,20 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-29 · Umesh · CR-4
+
+**Did:** `toRequest()` and `toOffer()` in `src/context/DriverContext.jsx` now take pickup/drop
+text only from strings, through new `placeText()` / `placeCoords()` helpers in `src/lib/utils.js`.
+A trip with no address now shows "Pickup point on map" / "Destination on map" instead of
+rendering the server's `{lat,lng}` object (which crashed the trip screens), and the map
+coordinates only ever hold a real `{lat,lng}`. Five unit tests in `tests/utils.test.mjs`, added
+to `npm test`. Phone steps in `docs/driver-app-testing.md` §15.
+**Checks:** `npm test` 16/16 (11 gate + 5 new) · `npx expo export --platform android` pass.
+**Commit:** `fix(CR-4): never render {lat,lng} as pickup/drop text`
+**Not done / follow-ups:** Needs phone check in Phase 5. M-1 follow-up still waits on Jaswanth's
+`fix(M-1)`.
+**Requests raised:** none.
+
 ## 2026-10-25: review of `31c72a0`, `bc34996`, `de02abc`; full code review; SDLC plan
 
 Sanath's session. Only docs changed: `prd.md`, `tasks.md` and this file. No source code was touched.

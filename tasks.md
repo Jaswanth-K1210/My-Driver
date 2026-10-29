@@ -135,8 +135,9 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 - [x] ~~Fined trips (arrival cancellation fee) labelled in Earnings (`31c72a0`)~~
 
 ### Phase 3: code-review fixes
-- [ ] **CR-4 (major, crash during live trips)** `DriverContext.jsx` `toRequest()`: never use a
-      `{lat,lng}` object as the pickup/drop text
+- [x] **CR-4 (major, crash during live trips)** `DriverContext.jsx` `toRequest()`: never use a
+      `{lat,lng}` object as the pickup/drop text. Written — needs phone check
+      (`docs/driver-app-testing.md` §15)
 - [ ] **M-1 follow-up** After Jaswanth's M-1 lands: keep the rich offer fields in `toRequest`,
       and check the offer card on both the WebSocket and polling paths
 - [ ] Onboarding: poll `/v1/driver/onboarding` every 10 s while `UNDER_REVIEW`

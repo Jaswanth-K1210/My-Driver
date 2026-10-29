@@ -221,6 +221,21 @@ From `bd0d854` and `52c609f`. Not yet run on a phone.
 8. Fake GPS: with a mock-location app on Android, drive a trip. The fixes are
    dropped and the Safety Desk shows an L1 `MOCK_LOCATION` flag.
 
+## 15. Trips with no address text (CR-4, added 2026-10-29)
+
+Before the fix, a trip whose pickup or drop had no address string showed the
+server's `{lat,lng}` object as text, and React Native crashed on the trip
+screens. Not yet run on a phone.
+
+1. Book a trip whose pickup was chosen on the map (no address), or clear
+   `pickup_address` / `drop_address` on a test trip in the database.
+2. Accept the offer: the offer card shows "Pickup point on map" /
+   "Destination on map", not an object, and nothing crashes.
+3. Handshake, drive and trip summary screens show the same labels; the map
+   still has the pickup/drop pins and Navigate opens Google Maps.
+4. Force-stop and reopen the app mid-drive (trip comes back from the server
+   without the offer's labels): the drive screen still opens without a crash.
+
 ## Needs from Jaswanth
 
 1. A Firebase project with Android apps for `com.mydriver.driver`,

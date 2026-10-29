@@ -11,6 +11,7 @@ import {
   isTrustedInProgressTrip,
 } from '../lib/onboardingGate'
 import * as telemetry from '../lib/telemetry'
+import { placeCoords, placeText } from '../lib/utils'
 import { startTracking, stopTracking } from '../lib/tracking'
 import { useAuth } from './AuthContext'
 
@@ -54,15 +55,15 @@ function toOffer(pending) {
     serverId: pending.trip_id,
     expiresAt: pending.expires_at,
     customer: pending.customer?.name ?? 'Customer',
-    pickup: pending.pickup_address ?? 'Pickup point on map',
-    drop: pending.drop_address ?? 'Destination on map',
+    pickup: placeText(pending.pickup_address) ?? 'Pickup point on map',
+    drop: placeText(pending.drop_address) ?? 'Destination on map',
     skill: pending.required_certification,
     ceiling: pending.speed_ceiling_kmh,
     distanceKm: km,
     fare: Math.round(pending.estimated_fare ?? 0),
     earnings: pending.driver_earnings_estimate,
-    pickupCoords: pending.pickup,
-    dropCoords: pending.drop,
+    pickupCoords: placeCoords(pending.pickup),
+    dropCoords: placeCoords(pending.drop),
     stops: pending.stops,
     returnStops: pending.return_stops,
     vehicleSpecs: pending.vehicle_specs,
@@ -83,10 +84,10 @@ function toRequest(trip, prevInspected = undefined) {
     driverId: trip.driver_id ?? trip.driverId ?? null,
     status: trip.status,
     customer: trip.customer_name ?? trip.customer ?? 'Customer',
-    pickup: trip.pickup_address ?? trip.pickup ?? 'Pickup point on map',
+    // The server sends pickup/drop as {lat,lng}; only an address string is display text (CR-4).
+    pickup: placeText(trip.pickup_address, trip.pickup) ?? 'Pickup point on map',
     drop:
-      trip.drop_address ??
-      trip.drop ??
+      placeText(trip.drop_address, trip.drop) ??
       (trip.booking_type === 'HOURLY' ? `${trip.hourly_package_hours}-hour hire` : 'Destination on map'),
     skill: trip.required_certification ?? trip.skill,
     ceiling: trip.speed_ceiling_kmh ?? trip.ceiling,
@@ -100,8 +101,8 @@ function toRequest(trip, prevInspected = undefined) {
     earnings: trip.driver_earnings ?? trip.earnings,
     requirement: trip.requirement ?? null,
     tripType: trip.trip_type ?? trip.tripType ?? null,
-    pickupCoords: trip.pickupCoords ?? trip.pickup,
-    dropCoords: trip.dropCoords ?? trip.drop,
+    pickupCoords: placeCoords(trip.pickupCoords, trip.pickup),
+    dropCoords: placeCoords(trip.dropCoords, trip.drop),
     inspected: prevInspected !== undefined ? prevInspected : (trip.inspected ?? null),
   }
 }
