@@ -1,6 +1,7 @@
 import { createSign } from 'node:crypto'
 import { env } from '../../config/env.js'
 import { pool } from '../../db/client.js'
+import { apnsFromEnv, type ApnsClient } from './apns.js'
 import type { PushPayload, PushProvider } from './index.js'
 
 type ServiceAccount = {
@@ -16,29 +17,56 @@ const b64url = (input: Buffer | string): string =>
   Buffer.from(input).toString('base64url')
 
 /**
- * Firebase Cloud Messaging over the HTTP v1 API.
+ * True only when FCM says the app is gone from that phone: 404 / UNREGISTERED.
+ * A plain 400 INVALID_ARGUMENT usually means a bad message, or a token FCM
+ * cannot address (an iOS APNs token), and deleting on it silently cut iPhones
+ * off from every push (M-6).
+ */
+export function isDeadFcmToken(status: number, text: string): boolean {
+  if (status === 404) return true
+  try {
+    const body = JSON.parse(text) as {
+      error?: { details?: Array<{ errorCode?: string }> }
+    }
+    return (body.error?.details ?? []).some((d) => d.errorCode === 'UNREGISTERED')
+  } catch {
+    return text.includes('UNREGISTERED')
+  }
+}
+
+/**
+ * Push to phones: Android through Firebase Cloud Messaging (HTTP v1), iOS
+ * straight to Apple (apns.ts, decision D-1), because the iOS apps register
+ * the raw APNs token, which FCM cannot address.
  *
- * Access tokens are minted from the service account with a signed JWT — no
- * extra dependency needed — and cached until shortly before they expire.
+ * FCM access tokens are minted from the service account with a signed JWT —
+ * no extra dependency needed — and cached until shortly before they expire.
  *
  * Device tokens come from the `device_tokens` table, which is populated by
- * POST /v1/me/devices. A token FCM rejects as UNREGISTERED is deleted, because
- * an app that was uninstalled will never come back on that token.
+ * POST /v1/me/devices. A token is deleted only when FCM or Apple says the app
+ * was uninstalled, because it will never come back on that token.
  */
 const SEND_TIMEOUT_MS = 5_000
 
 export class FcmPushProvider implements PushProvider {
   private readonly account: ServiceAccount
+  private readonly apns: ApnsClient | null
   private token: { value: string; expiresAt: number } | null = null
 
-  constructor() {
-    if (!env.FCM_SERVICE_ACCOUNT_JSON) {
-      throw new Error('PUSH_PROVIDER=fcm requires FCM_SERVICE_ACCOUNT_JSON')
-    }
-    try {
-      this.account = JSON.parse(env.FCM_SERVICE_ACCOUNT_JSON) as ServiceAccount
-    } catch {
-      throw new Error('FCM_SERVICE_ACCOUNT_JSON is not valid JSON')
+  /** Tests pass both; otherwise they come from the environment. */
+  constructor(opts: { account?: ServiceAccount; apns?: ApnsClient | null } = {}) {
+    this.apns = opts.apns === undefined ? apnsFromEnv() : opts.apns
+    if (opts.account) {
+      this.account = opts.account
+    } else {
+      if (!env.FCM_SERVICE_ACCOUNT_JSON) {
+        throw new Error('PUSH_PROVIDER=fcm requires FCM_SERVICE_ACCOUNT_JSON')
+      }
+      try {
+        this.account = JSON.parse(env.FCM_SERVICE_ACCOUNT_JSON) as ServiceAccount
+      } catch {
+        throw new Error('FCM_SERVICE_ACCOUNT_JSON is not valid JSON')
+      }
     }
     if (!this.account.client_email || !this.account.private_key || !this.account.project_id) {
       throw new Error('FCM_SERVICE_ACCOUNT_JSON is missing client_email, private_key or project_id')
@@ -85,17 +113,34 @@ export class FcmPushProvider implements PushProvider {
   }
 
   async send(userId: string, payload: PushPayload): Promise<void> {
-    const { rows } = await pool.query<{ token: string }>(
-      `SELECT token FROM device_tokens WHERE user_id = $1`,
+    const { rows } = await pool.query<{ token: string; platform: string }>(
+      `SELECT token, platform FROM device_tokens WHERE user_id = $1`,
       [userId],
     )
+    const drop = (token: string) =>
+      pool.query(`DELETE FROM device_tokens WHERE user_id = $1 AND token = $2`, [userId, token])
+
+    const ios = rows.filter((r) => r.platform === 'ios')
+    for (const { token } of ios) {
+      // No APNs key yet: keep the token for when one is configured. FCM
+      // cannot deliver to it, and would only reject it.
+      if (!this.apns) continue
+      try {
+        if ((await this.apns.send(token, payload)) === 'unregistered') await drop(token)
+      } catch (err) {
+        // Apple unreachable: this user's other phones still get the push.
+        console.error('APNs send failed', err)
+      }
+    }
+
+    const fcm = rows.filter((r) => r.platform !== 'ios')
     // Nobody has registered a device: not an error, just nothing to do.
-    if (rows.length === 0) return
+    if (fcm.length === 0) return
 
     const accessToken = await this.accessToken()
     const url = `https://fcm.googleapis.com/v1/projects/${this.account.project_id}/messages:send`
 
-    for (const { token } of rows) {
+    for (const { token } of fcm) {
       const res = await fetch(url, {
         method: 'POST',
         // Pushes run inside trip transitions (broadcastStateChange): a hung
@@ -123,11 +168,8 @@ export class FcmPushProvider implements PushProvider {
 
       const text = await res.text()
       // A dead token will never revive; drop it rather than retrying forever.
-      if (res.status === 404 || text.includes('UNREGISTERED') || text.includes('INVALID_ARGUMENT')) {
-        await pool.query(`DELETE FROM device_tokens WHERE user_id = $1 AND token = $2`, [
-          userId,
-          token,
-        ])
+      if (isDeadFcmToken(res.status, text)) {
+        await drop(token)
         continue
       }
       throw new Error(`FCM send failed: ${res.status} ${text}`)

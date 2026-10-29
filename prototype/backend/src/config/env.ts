@@ -54,6 +54,14 @@ const EnvSchema = z.object({
 
   PUSH_PROVIDER: z.enum(['console', 'fcm']).default('console'),
   FCM_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  // iOS push straight to Apple (D-1): the .p8 auth key (PEM; "\n" escapes are
+  // fine), its key ID, the team ID, and the apps' bundle IDs, comma separated.
+  APNS_KEY_P8: z.string().optional(),
+  APNS_KEY_ID: z.string().optional(),
+  APNS_TEAM_ID: z.string().optional(),
+  APNS_TOPICS: z.string().optional(),
+  // false = sandbox, for development builds; TestFlight and the App Store use production.
+  APNS_PRODUCTION: boolFromEnv.default(false),
 
   STORAGE_ENDPOINT: z.string().url().default('http://localhost:9000'),
   STORAGE_REGION: z.string().default('us-east-1'),
@@ -144,6 +152,11 @@ export function productionProblems(e: Env): { errors: string[]; warnings: string
 
   if (e.LIVENESS_PROVIDER === 'mock') warnings.push('LIVENESS_PROVIDER=mock: the pickup selfie is captured but not face-matched')
   if (e.PUSH_PROVIDER === 'console') warnings.push('PUSH_PROVIDER=console: no push notifications are delivered')
+  if (e.PUSH_PROVIDER === 'fcm' && !(e.APNS_KEY_P8 && e.APNS_KEY_ID && e.APNS_TEAM_ID && e.APNS_TOPICS)) {
+    warnings.push('APNS_* not set: no push notifications reach iPhones')
+  } else if (e.PUSH_PROVIDER === 'fcm' && !e.APNS_PRODUCTION) {
+    warnings.push('APNS_PRODUCTION=false: iPhone pushes go to the APNs sandbox, which TestFlight and App Store builds do not use')
+  }
   if (e.VOICE_PROVIDER === 'console') warnings.push('VOICE_PROVIDER=console: Safety Desk calls are logged, not placed')
   if (e.MAPS_PROVIDER === 'mock') warnings.push('MAPS_PROVIDER=mock: place search only knows a few built-in places')
   if (e.MAPS_PROVIDER === 'photon') warnings.push('MAPS_PROVIDER=photon uses the public fair-use Photon server; use google or a self-hosted Photon for real traffic')

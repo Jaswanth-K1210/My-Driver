@@ -3,6 +3,35 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · M-6 + D-1
+
+**Did:** Push no longer cuts iPhones off, and iPhones can now be reached.
+- **M-6:** `fcm.ts` deletes a device token only when FCM says the app is gone (`404` /
+  `errorCode: UNREGISTERED`, new `isDeadFcmToken()`). A plain `400 INVALID_ARGUMENT` no longer
+  deletes anything; that is what deleted every iOS token on its first send.
+- **D-1 (backend side):** new `src/providers/push/apns.ts`. Tokens registered with
+  `platform: 'ios'` go straight to Apple over HTTP/2 with token auth (ES256 JWT from a `.p8`
+  key, cached 50 min); Android stays on FCM. No new dependency (`node:http2`, `node:crypto`).
+  `APNS_TOPICS` (bundle IDs) are tried in order, since `device_tokens` does not record which app
+  a token belongs to: `DeviceTokenNotForTopic` moves on to the next. `410 Unregistered` deletes
+  the token; `BadDeviceToken` (usually sandbox vs production) keeps it and logs. An unreachable
+  Apple never stops that user's Android pushes.
+- No APNs key configured: iOS tokens are kept and skipped, never sent to FCM.
+- New env: `APNS_KEY_P8`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPICS`, `APNS_PRODUCTION`
+  (in `.env.example` and `deploy/.env.production.example`). Production start-up warns when
+  APNs is unset or still on the sandbox.
+
+**Checks:** `npm run typecheck` pass · `npm test` 36 files, 410/410 pass (Docker). New
+`tests/integration/push-providers.test.ts` (5 tests: a local HTTP/2 server stands in for Apple
+and verifies the ES256 signature and topic; FCM stubbed) and a config-warning unit test.
+**Not tested against the real Apple or Firebase services:** needs the APNs `.p8` key (X-1,
+Sanath's Apple account) and the Firebase project (X-3). Development builds need
+`APNS_PRODUCTION=false` and the `.dev` bundle IDs in `APNS_TOPICS`; TestFlight needs `true`.
+**Commit:** `fix(M-6): keep iOS device tokens and send iOS push through APNs (D-1)`
+**Payload changed:** none. The apps keep registering the raw device token with `platform`.
+**Not done / follow-ups:** the "Everyone" D-1 decision line is left for a human to tick.
+**Requests raised:** none.
+
 ## 2026-10-29 · Sanath · M-5
 
 **Did:** Displayed "Stops" fee line in `prototype/mobile/user/src/screens/customer/HomeScreen.jsx` quote breakdown when `server.fare.stops_fee > 0`, and subtracted `stops_fee` from the base tier fare line (`server.fare.base - (server.fare.stops_fee ?? 0)`) so the sum of individual rows equals total, matching `prototype/website/src/pages/dashboard/Book.jsx`.

@@ -250,8 +250,9 @@ Then:
       30 Oct)
 - [x] ~~**M-3 (major)** Website "Pay ₹X balance" for `amount_due > 0` in `Track.jsx` and `Vault.jsx`~~
       (`fix(M-3)`, 30 Oct)
-- [ ] **M-6 + D-1** `fcm.ts`: do not delete tokens on a generic `INVALID_ARGUMENT`; add an
-      APNs provider for iOS tokens
+- [x] ~~**M-6 + D-1** `fcm.ts`: do not delete tokens on a generic `INVALID_ARGUMENT`; add an
+      APNs provider for iOS tokens~~ (`fix(M-6)`, 30 Oct; code done, real delivery needs the APNs
+      key from X-1 and the Firebase project from X-3)
 - [ ] **CR-5** Guard `a.details?.tracked_km` in `TripDetail.jsx`
 - [ ] **CR-6** Block empty or negative inputs in `Pricing.jsx`
 - [ ] **CR-7** Saving safety defaults in its own try/catch in `Book.jsx`
