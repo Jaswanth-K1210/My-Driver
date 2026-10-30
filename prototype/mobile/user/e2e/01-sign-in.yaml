@@ -1,0 +1,66 @@
+appId: ${APP_ID || 'com.mydriver.user.dev'}
+env:
+  PHONE: ${PHONE || '9876543210'}
+  BRIDGE_URL: ${BRIDGE_URL || 'http://127.0.0.1:4099'}
+---
+# Layer 3 · Flow 01: Customer Phone OTP Sign-In (docs/testing-plan.md §6 #1)
+# Screen: prototype/mobile/user/src/screens/auth/LoginScreen.jsx
+
+- runScript: scripts/reset-quota.js
+
+- launchApp:
+    clearState: true
+
+- extendedWaitUntil:
+    visible: "MyDriver"
+    timeout: 15000
+- assertVisible: "Welcome back"
+
+# Switch to Phone OTP tab if Google Sign-In is enabled on this build
+- tapOn:
+    text: "Phone OTP"
+    optional: true
+
+- tapOn: "Mobile number, 10 digits"
+- inputText: ${PHONE}
+- hideKeyboard
+
+- tapOn: "Send OTP"
+
+# Dismiss the native "Code sent" alert dialog
+- extendedWaitUntil:
+    visible: "Code sent"
+    timeout: 10000
+- tapOn:
+    text: "OK"
+    optional: true
+
+- extendedWaitUntil:
+    visible: "Code digit 1"
+    timeout: 10000
+
+# Retrieve the 6-digit OTP from the companion bridge (or -e OTP_CODE on staging)
+- runScript: scripts/fetch-otp.js
+
+- tapOn: "Code digit 1"
+- inputText: ${output.d1}
+- tapOn: "Code digit 2"
+- inputText: ${output.d2}
+- tapOn: "Code digit 3"
+- inputText: ${output.d3}
+- tapOn: "Code digit 4"
+- inputText: ${output.d4}
+- tapOn: "Code digit 5"
+- inputText: ${output.d5}
+- tapOn: "Code digit 6"
+- inputText: ${output.d6}
+- hideKeyboard
+
+- tapOn: "Verify"
+
+- extendedWaitUntil:
+    visible: "WHAT DO YOU NEED?"
+    timeout: 15000
+- assertVisible: "Book"
+- assertVisible: "Trips"
+- assertVisible: "Profile"

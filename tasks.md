@@ -105,10 +105,10 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 - [ ] Run all 11 suites of `docs/user-app-testing.md` on Android **and** iOS, including
       Hyderabad routes (within city, RGIA airport, multi-stop, outstation round trip)
 
-- [ ] REQUEST from Jaswanth (2026-10-30): Maestro end-to-end flows for the customer app in
+- [x] REQUEST from Jaswanth (2026-10-30): Maestro end-to-end flows for the customer app in
       `prototype/mobile/user/e2e/`, run on an Android emulator against the desk backend, then on
       preview builds against staging. Flows listed in `docs/testing-plan.md` §6. Agreed with the
-      team on 30 Oct as testing layer 3.
+      team on 30 Oct as testing layer 3. Written — needs emulator/phone check (`test(e2e)`, 30 Oct)
 
 ### Builds and release
 - [ ] Development builds for Android and iOS against staging (Phase 4)

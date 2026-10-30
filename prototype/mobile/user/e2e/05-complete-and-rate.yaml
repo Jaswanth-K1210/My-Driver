@@ -1,0 +1,31 @@
+appId: ${APP_ID || 'com.mydriver.user.dev'}
+env:
+  PHONE: ${PHONE || '9876543210'}
+  BRIDGE_URL: ${BRIDGE_URL || 'http://127.0.0.1:4099'}
+---
+# Layer 3 · Flow 05: Complete Trip & Rate Driver (docs/testing-plan.md §6 #5)
+# Screens: LiveTripScreen.jsx -> TripCompleteScreen.jsx -> HomeScreen.jsx
+
+- assertVisible: "Trip in progress"
+
+# Simulated driver completes the trip at the drop-off
+- runScript: scripts/driver-complete.js
+
+# TripCompleteScreen.jsx: verify completion summary & disabled submit CTA prior to rating
+- extendedWaitUntil:
+    visible: "You have arrived"
+    timeout: 20000
+- assertVisible: "Final fare"
+- assertVisible: "Distance"
+- assertVisible: "Speed limit"
+- assertVisible: "Rate your driver to finish"
+
+# Select 5-star rating and submit
+- tapOn: "5 stars"
+- assertVisible: "Submit & finish"
+- tapOn: "Submit & finish"
+
+# Returns to HomeScreen.jsx (Book tab)
+- extendedWaitUntil:
+    visible: "WHAT DO YOU NEED?"
+    timeout: 15000

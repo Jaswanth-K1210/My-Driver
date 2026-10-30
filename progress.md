@@ -3,6 +3,7 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+<<<<<<< HEAD
 ## 2026-10-30 · Jaswanth · Website load performance
 
 **Did:** Performance audit of the customer site on a throttled phone profile. Two causes of a 1 MB first download:
@@ -24,6 +25,22 @@ dashboard pages that load with the landing page. Lazy routes for Login, Register
 would cut more; not done, as it changes every page's loading path.
 **Requests raised:** none.
 
+=======
+## 2026-10-30 · Sanath · Layer 3 Maestro E2E flows (customer app)
+
+**Did:** Authored the 6 critical Customer App Maestro end-to-end flows in `prototype/mobile/user/e2e/` (`docs/testing-plan.md` §6):
+- `01-sign-in.yaml`: Phone OTP sign-in (`Mobile number, 10 digits`, `Send OTP`, dismiss `Code sent` alert, fill `Code digit 1`–`6`, `Verify`, land on `HomeScreen`).
+- `02-book-within-city.yaml`: Within City booking (`Cyber Towers, HITEC City` -> `Financial District, Gachibowli`), server quote check (`PRICE ESTIMATE`, `Estimated total`), `Find .* Driver`, `PaymentScreen` (`Confirm and pay`, `REFUNDABLE HOLD`), hold approval, and transition to `MatchingScreen` (`Matching a certified driver…`).
+- `03-driver-matched-and-arrived.yaml`: Driver offer acceptance -> `LiveTripScreen` (`PICKUP CODE`), followed by pickup GPS telemetry -> `YOUR DRIVER HAS ARRIVED` and `Driver at pickup`.
+- `04-share-pickup-otp.yaml`: Verify 4-digit `Pickup code .*`, rotate code via `Get a new pickup code`, copy code, complete driver selfie + OTP handshake, and verify `IN_TRIP` state (`Trip in progress`, `MAX SPEED`, `FARE LOCKED`, `Share live link`, `Hold for SOS`).
+- `05-complete-and-rate.yaml`: Driver trip completion -> `TripCompleteScreen` (`You have arrived`, `Final fare`), select `5 stars`, tap `Submit & finish`, return to `Book` tab.
+- `06-cancel-trip.yaml`: Both customer cancellation paths on `LiveTripScreen` — free cancellation before driver arrival (`Cancel this trip?`, full hold release) and paid cancellation after driver arrival (`Your driver is already at the pickup. Cancel anyway?`, `Cancel · pay ₹.*`).
+- `suite.yaml`, `driver-sim.mjs`, `scripts/*.js`, and `README.md`: Companion Node CLI and local HTTP bridge (`127.0.0.1:4099`) adapted from `prototype/website/e2e/helpers.js` to reset Redis OTP quotas, read 6-digit login OTPs, approve mock payment holds, and simulate the full driver lifecycle.
+**Checks:** `node --check` on `driver-sim.mjs` and all `scripts/*.js` passed · `npx expo export --platform android` bundled 2,907 modules with 0 errors.
+**Commit:** `test(e2e): add customer app Maestro flows and driver simulation helper`
+**Not done / follow-ups:** Run `maestro test prototype/mobile/user/e2e/suite.yaml` on a live Android emulator against the desk backend (Phase 4) and on preview builds against staging (Phase 5).
+**Requests raised:** none.
+>>>>>>> 3caa38d (test(e2e): add customer app Maestro flows and driver simulation helper)
 ## 2026-10-30 · Jaswanth · Sentry error budget
 
 **Did:** Recorded the Sentry free-tier limit, 5,000 errors a month shared by the API, website and both

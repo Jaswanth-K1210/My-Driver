@@ -1,0 +1,20 @@
+appId: ${APP_ID || 'com.mydriver.user.dev'}
+env:
+  PHONE: ${PHONE || '9876543210'}
+  BRIDGE_URL: ${BRIDGE_URL || 'http://127.0.0.1:4099'}
+---
+# Master Layer 3 Maestro E2E Suite — Customer Mobile App (docs/testing-plan.md §6)
+# Runs all 6 critical customer flows end-to-end in sequence:
+#   1. Sign in (Phone OTP)
+#   2. Book within city & authorize hold
+#   3. See driver matched and arrived
+#   4. Share pickup OTP & start trip
+#   5. Complete trip and rate 5 stars
+#   6. Cancel trip (free before arrival + arrival fee after arrival)
+
+- runFlow: 01-sign-in.yaml
+- runFlow: 02-book-within-city.yaml
+- runFlow: 03-driver-matched-and-arrived.yaml
+- runFlow: 04-share-pickup-otp.yaml
+- runFlow: 05-complete-and-rate.yaml
+- runFlow: 06-cancel-trip.yaml

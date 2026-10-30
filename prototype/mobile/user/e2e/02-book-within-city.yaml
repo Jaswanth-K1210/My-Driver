@@ -1,0 +1,40 @@
+appId: ${APP_ID || 'com.mydriver.user.dev'}
+env:
+  PHONE: ${PHONE || '9876543210'}
+  BRIDGE_URL: ${BRIDGE_URL || 'http://127.0.0.1:4099'}
+---
+# Layer 3 · Flow 02: Book Within City & Authorize Hold (docs/testing-plan.md §6 #2)
+# Screens: HomeScreen.jsx -> PaymentScreen.jsx -> MatchingScreen.jsx
+
+- extendedWaitUntil:
+    visible: "WHAT DO YOU NEED?"
+    timeout: 15000
+- assertVisible: "Within City"
+
+# Scroll down to verify the live server quote card (Cyber Towers -> Financial District)
+- scrollUntilVisible:
+    element:
+      text: "PRICE ESTIMATE"
+    direction: DOWN
+    timeout: 15000
+- assertVisible: "Estimated total"
+
+# Submit booking via sticky footer CTA (e.g. "Find Standard Driver")
+- tapOn: "Find .* Driver"
+
+# PaymentScreen.jsx: verify refundable hold screen before authorization
+- extendedWaitUntil:
+    visible: "Confirm and pay"
+    timeout: 15000
+- assertVisible: "REFUNDABLE HOLD"
+- assertVisible: "Pay securely"
+- assertVisible: "Cancel booking"
+
+# Approve the mock payment hold & ensure a certified driver is ONLINE at Cyber Towers.
+# TripContext.jsx polls /v1/trips/:id/payment every 2.5s and advances to MatchingScreen.
+- runScript: scripts/approve-payment.js
+
+- extendedWaitUntil:
+    visible: "Matching a certified driver…"
+    timeout: 20000
+- assertVisible: "Cancel request"

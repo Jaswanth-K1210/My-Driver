@@ -1,0 +1,58 @@
+appId: ${APP_ID || 'com.mydriver.user.dev'}
+env:
+  PHONE: ${PHONE || '9876543210'}
+  BRIDGE_URL: ${BRIDGE_URL || 'http://127.0.0.1:4099'}
+---
+# Layer 3 · Flow 06: Cancel Trip — Free Before Arrival & Arrival Fee After Arrival (docs/testing-plan.md §6 #6)
+# Screens: HomeScreen.jsx -> PaymentScreen.jsx -> MatchingScreen.jsx -> LiveTripScreen.jsx
+
+# ── Part A: Free cancellation BEFORE driver arrives at pickup ─────────────────
+- runFlow: 02-book-within-city.yaml
+
+- runScript: scripts/driver-accept.js
+
+- extendedWaitUntil:
+    visible: "PICKUP CODE"
+    timeout: 20000
+- assertVisible: "Cancel trip"
+
+# Open cancel confirmation card before arrival
+- tapOn: "Cancel trip"
+- assertVisible: "Cancel this trip?"
+- assertVisible: "Free until your driver arrives. The hold on your card is released."
+- assertVisible: "Keep riding"
+
+# Confirm free cancellation (index 1 targets the red confirmation CTA inside the card)
+- tapOn:
+    text: "Cancel trip"
+    index: 1
+- extendedWaitUntil:
+    visible: "WHAT DO YOU NEED?"
+    timeout: 15000
+
+# ── Part B: Cancellation with arrival fee AFTER driver arrives at pickup ──────
+- runFlow: 02-book-within-city.yaml
+
+- runScript: scripts/driver-accept.js
+
+- extendedWaitUntil:
+    visible: "PICKUP CODE"
+    timeout: 20000
+
+- runScript: scripts/driver-arrive.js
+
+- extendedWaitUntil:
+    visible: "YOUR DRIVER HAS ARRIVED"
+    timeout: 20000
+
+# Open cancel confirmation card after arrival
+- tapOn: "Cancel trip"
+- assertVisible: "Your driver is already at the pickup. Cancel anyway?"
+- assertVisible: "A cancellation fee.*"
+- assertVisible: "Keep riding"
+
+# Confirm paid cancellation and verify return to HomeScreen
+- tapOn: "Cancel · pay ₹.*"
+- extendedWaitUntil:
+    visible: "WHAT DO YOU NEED?"
+    timeout: 15000

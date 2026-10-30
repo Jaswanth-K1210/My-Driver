@@ -1,0 +1,31 @@
+appId: ${APP_ID || 'com.mydriver.user.dev'}
+env:
+  PHONE: ${PHONE || '9876543210'}
+  BRIDGE_URL: ${BRIDGE_URL || 'http://127.0.0.1:4099'}
+---
+# Layer 3 · Flow 04: Share Pickup OTP & Start Trip (docs/testing-plan.md §6 #4)
+# Screen: LiveTripScreen.jsx (HANDSHAKE_PENDING -> IN_TRIP)
+
+- assertVisible: "YOUR DRIVER HAS ARRIVED"
+- assertVisible: "Pickup code .*"
+- assertVisible: "Get a new pickup code"
+
+# Verify customer can rotate the 4-digit pickup OTP on screen
+- tapOn: "Get a new pickup code"
+- assertVisible: "Pickup code .*"
+
+# Copy the 4-digit pickup code displayed on LiveTripScreen and pass it to the driver handshake
+- copyTextFrom: "Pickup code .*"
+- runScript: scripts/driver-start.js
+
+# LiveTripScreen.jsx transitions to IN_TRIP: pickup OTP & cancel button disappear
+- extendedWaitUntil:
+    visible: "Trip in progress"
+    timeout: 20000
+- assertNotVisible: "PICKUP CODE"
+- assertNotVisible: "YOUR DRIVER HAS ARRIVED"
+- assertNotVisible: "Cancel trip"
+- assertVisible: "MAX SPEED"
+- assertVisible: "FARE LOCKED"
+- assertVisible: "Share live link"
+- assertVisible: "Hold for SOS"
