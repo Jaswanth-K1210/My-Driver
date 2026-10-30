@@ -4,6 +4,31 @@ A log of test runs, newest first. What each layer is and how to run it is in
 [`testing-plan.md`](testing-plan.md). Manual results on phones (layer 4) go in the bug log
 (`prd.md` §3.5) and in the app testing guides.
 
+## 2026-10-30 · Jaswanth · Website load performance
+
+**Change:** the first download no longer carries Sentry or Leaflet. Customer site, production build
+(`vite preview`), Playwright on a Pixel 7 profile with Lighthouse's slow-4G throttling (150 ms RTT,
+1.6 Mbps) and a 4x slower CPU, cold cache, three runs each.
+
+| | Before | After |
+|---|---|---|
+| Main JavaScript | 1,025 kB (317 kB gzip) | 414 kB (119 kB gzip) |
+| LCP (hero text) | 3.17–3.26 s | 2.00–2.08 s |
+| Total blocking time (long tasks) | 539–632 ms | 353–385 ms |
+| CLS | 0 | 0 |
+
+With Sentry off, its chunk is never requested; with a DSN set it loads after the app (158 kB, 54 kB
+gzip, down from 450 kB) and still sends scrubbed errors and spans (checked against a local fake Sentry).
+Leaflet (149 kB) now loads only on Track, the guardian page and the first "Choose on map".
+
+| Check | Result |
+|---|---|
+| CI lint command on `src` | Pass |
+| `npm run check`, `npm run build`, `npm run build:admin` | Pass |
+| `npm run e2e` | **15 / 15 passed** (new test 11: "Choose on map") |
+
+Not measured: INP (needs real interaction), and the console build beyond its size (278 kB main).
+
 ## 2026-10-30 · Jaswanth · Sentry (backend and website)
 
 **Change:** Sentry in the API and the website/console, with the privacy filter (`testing-plan.md` §9).

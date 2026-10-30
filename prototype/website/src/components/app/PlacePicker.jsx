@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, Loader2, LocateFixed, Map as MapIcon, MapPin, PlusCircle, Search } from 'lucide-react'
 import { api } from '../../lib/apiClient.js'
 import { getLocationById, registerPlace } from '../../lib/booking.js'
 import { cn } from '../../lib/utils.js'
-import MapPickerModal from './MapPickerModal.jsx'
 import { useAuth } from '../../context/authStore.js'
+
+// Leaflet loads on first open, so the booking page does not carry the map library.
+const MapPickerModal = lazy(() => import('./MapPickerModal.jsx'))
 
 /** Parse "18.6429, 78.9165" style coordinate input if entered directly. */
 function parseLatLngQuery(q) {
@@ -400,16 +402,20 @@ export default function PlacePicker({
         </div>
       )}
 
-      <MapPickerModal
-        open={mapOpen}
-        title={label ? `${label}: choose on map` : 'Choose on map'}
-        start={selected ?? near}
-        onClose={() => setMapOpen(false)}
-        onPick={(place) => {
-          onChange(registerPlace(place))
-          setMapOpen(false)
-        }}
-      />
+      {mapOpen && (
+        <Suspense fallback={null}>
+          <MapPickerModal
+            open
+            title={label ? `${label}: choose on map` : 'Choose on map'}
+            start={selected ?? near}
+            onClose={() => setMapOpen(false)}
+            onPick={(place) => {
+              onChange(registerPlace(place))
+              setMapOpen(false)
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

@@ -120,3 +120,14 @@ test('5b. a failed safety-defaults save still books the trip', async ({ page, cu
   expect(await tripOf(customer)).toBeTruthy()
   await page.getByRole('button', { name: 'Cancel booking' }).click()
 })
+
+test('11. "Choose on map" loads the map on demand and sets the pickup', async ({ page, customer }) => {
+  void customer
+  await page.goto('/app/book')
+  await page.locator('button[aria-haspopup="listbox"]').first().click()
+  await page.getByRole('button', { name: 'Choose on map' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.locator('.leaflet-container').click({ position: { x: 120, y: 120 } })
+  await dialog.getByRole('button', { name: 'Use this point' }).click()
+  await expect(dialog).toBeHidden()
+})

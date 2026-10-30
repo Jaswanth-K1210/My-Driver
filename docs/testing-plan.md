@@ -94,6 +94,7 @@ counters before each sign-in instead of loosening the limits in the backend. On 
 | 8 | Safety Desk: SOS on the Board, acknowledge, resolve; the trip goes back to in trip and Track follows | `console.spec.js` |
 | 9 | Suspending a driver: a pending offer goes to another driver; an accepted trip is cancelled free. Approval stays blocked until identity checks are done | `console.spec.js` |
 | 10 | Roles: customer, finance, desk and ops tokens refused where they should be; staff login refused from the customer site; desk nav has no Pricing or Audit | `console.spec.js` |
+| 11 | "Choose on map" loads the map on demand; a tapped point becomes the pickup | `customer.spec.js` |
 
 The driver's side runs through the API (`onlineDriver` in `e2e/helpers.js`); the driver app itself
 is covered by layer 3. Tests that change prices (3, 7) restore them in a `finally`.

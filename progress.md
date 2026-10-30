@@ -3,6 +3,27 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · Website load performance
+
+**Did:** Performance audit of the customer site on a throttled phone profile. Two causes of a 1 MB first download:
+- Sentry (mine, from `a654d1b`): `import * as Sentry` kept Replay and the feedback widget in the bundle
+  even with Sentry off. `src/lib/sentry.js` now loads `@sentry/react` with a destructured dynamic import,
+  only when `VITE_SENTRY_DSN` is set. The React root error hooks are gone: the site has no error
+  boundaries, so uncaught errors already reach Sentry through `window.onerror`.
+- Leaflet: `PlacePicker.jsx` imported `MapPickerModal` eagerly, which defeated the lazy Track route.
+  The modal is now `lazy()` and mounted only while open (its map is built on open and removed on close,
+  as before).
+Result: main JavaScript 1,025 kB to 414 kB, LCP 3.2 s to 2.0 s, blocking time about 590 ms to 370 ms
+(`docs/test-results.md`). New e2e test 11 for "Choose on map"; testing-plan §5 table updated.
+nginx caching (immutable `/assets`, `no-cache` HTML) and Caddy compression were already right.
+**Checks:** CI lint command pass · `npm run check` · both builds · `npm run e2e` 15/15 · Sentry-on build
+still sends scrubbed events to a local fake Sentry.
+**Commit:** `perf(website): keep Sentry and Leaflet out of the first download`
+**Not done / follow-ups:** blocking time is still above 200 ms on the slow profile, mostly React and the
+dashboard pages that load with the landing page. Lazy routes for Login, Register and the dashboard
+would cut more; not done, as it changes every page's loading path.
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · Sentry error budget
 
 **Did:** Recorded the Sentry free-tier limit, 5,000 errors a month shared by the API, website and both
