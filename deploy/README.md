@@ -153,7 +153,8 @@ truncate them in production.
   (`staging` or `production`). Events carry the `RELEASE` and, once someone signs in, a `tester`
   tag with their user ID. Before anything is sent, phone numbers, PAN, Aadhaar, OTPs, tokens,
   query strings and coordinates are removed and request bodies are dropped
-  (`src/lib/sentry-scrub.*`). Empty DSNs leave Sentry off.
+  (`src/lib/sentry-scrub.*`). Empty DSNs leave Sentry off. The free tier allows 5,000 errors a
+  month across all projects: set each DSN's daily rate limit as in `docs/testing-plan.md` §9.
 
 ## Known limits at launch
 

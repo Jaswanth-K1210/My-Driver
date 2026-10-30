@@ -185,7 +185,12 @@ With the trip ID from a bug report, the event tables replay what the server saw.
      Aadhaar digits, OTPs, auth headers and exact coordinates in `beforeSend`; never send telemetry
      payloads. Sample performance traces at 10 to 20 percent.
    - Upload source maps from EAS builds so app stack traces are readable.
-   - Check the free tier's monthly error limit before Phase 5.
+   - **Error budget: the free tier allows 5,000 errors a month** for the whole organisation, so the
+     API, website and both apps share it (about 165 a day). One looping bug could use it up in an
+     hour, so give each project's DSN a daily rate limit in Sentry (Project Settings > Client Keys >
+     Rate limit) and keep spike protection on: API 50, website 25, customer app 40, driver app 40 a
+     day (155 a day, about 4,650 a month). Once a project hits its limit, its errors are dropped until
+     the next day, so triage that day's issues first. Traces have their own quota, separate from errors.
 
 ## 10. Daily routine in Phase 5
 

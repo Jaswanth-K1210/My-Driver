@@ -282,7 +282,8 @@ Then:
 - [ ] Searchable logs on staging (Grafana Loki + Grafana) (`docs/testing-plan.md` §9)
 - [x] ~~Sentry in the backend and website, with privacy scrubbing (`docs/testing-plan.md` §9)~~
       Done in code (`@sentry/node`, `@sentry/react`); off until `SENTRY_DSN` / `VITE_SENTRY_DSN` are
-      set at the staging deploy. Sentry projects and the free-tier limit check still to do
+      set at the staging deploy. Free tier: 5,000 errors a month, budget per DSN in
+      `docs/testing-plan.md` §9. Sentry projects and their rate limits still to do
 - [x] ~~Backend suite on Docker (`infra:up`, `db:migrate`, `npm test`); website lint + both builds~~
       (30 Oct on `c44e3f5`: 411/411; re-run after later changes)
 - [ ] Amount due against Razorpay test mode (only the mock provider has been run)

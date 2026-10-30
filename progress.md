@@ -3,6 +3,18 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · Sentry error budget
+
+**Did:** Recorded the Sentry free-tier limit, 5,000 errors a month shared by the API, website and both
+apps, and a daily rate limit for each DSN (API 50, website 25, customer app 40, driver app 40) in
+`docs/testing-plan.md` §9, `deploy/README.md` and `tasks.md`. No code change: the limits are set in
+Sentry's project settings when the projects are created.
+**Checks:** docs only. CI run #41024130574 on `a654d1b` (Sentry): all six jobs green, including `e2e`.
+**Commit:** `docs: Sentry error budget`
+**Not done / follow-ups:** create the Sentry projects and set the rate limits. For Sanath and Umesh:
+the apps' crashes count against the same 5,000.
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · Sentry in the backend and website
 
 **Did:** Sentry, off unless a DSN is set (`docs/testing-plan.md` §9).
