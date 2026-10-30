@@ -18,13 +18,13 @@ env:
 - copyTextFrom: "Pickup code .*"
 - runScript: scripts/driver-start.js
 
-# LiveTripScreen.jsx transitions to IN_TRIP: pickup OTP & cancel button disappear
+# LiveTripScreen.jsx transitions to IN_TRIP ("On the way"): pickup OTP & cancel button disappear
 - extendedWaitUntil:
-    visible: "Trip in progress"
+    notVisible: "YOUR DRIVER HAS ARRIVED"
     timeout: 20000
 - assertNotVisible: "PICKUP CODE"
-- assertNotVisible: "YOUR DRIVER HAS ARRIVED"
 - assertNotVisible: "Cancel trip"
+- assertVisible: "On the way.*"
 - assertVisible: "MAX SPEED"
 - assertVisible: "FARE LOCKED"
 - assertVisible: "Share live link"

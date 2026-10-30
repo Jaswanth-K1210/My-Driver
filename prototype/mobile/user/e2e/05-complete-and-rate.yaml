@@ -6,7 +6,8 @@ env:
 # Layer 3 · Flow 05: Complete Trip & Rate Driver (docs/testing-plan.md §6 #5)
 # Screens: LiveTripScreen.jsx -> TripCompleteScreen.jsx -> HomeScreen.jsx
 
-- assertVisible: "Trip in progress"
+- assertVisible: "On the way.*"
+- assertVisible: "MAX SPEED"
 
 # Simulated driver completes the trip at the drop-off
 - runScript: scripts/driver-complete.js

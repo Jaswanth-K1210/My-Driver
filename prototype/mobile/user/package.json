@@ -6,7 +6,8 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test tests/booking.test.mjs tests/tripView.test.mjs tests/e2eFlows.test.mjs"
   },
   "dependencies": {
     "@react-native-community/slider": "5.2.0",
