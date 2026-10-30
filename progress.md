@@ -3,6 +3,38 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-30 · Jaswanth · Sentry in the backend and website
+
+**Did:** Sentry, off unless a DSN is set (`docs/testing-plan.md` §9).
+- Backend: `@sentry/node` 11.7, loaded by `src/instrument.ts` through `node --import` (`npm start`,
+  `npm run dev`, Dockerfile `CMD`) so http, Fastify and pg are traced. 5xx errors are captured by
+  Sentry's Fastify integration; 4xx are not. New env: `SENTRY_DSN`, `SENTRY_ENVIRONMENT` (default
+  `local`), `SENTRY_RELEASE` (compose sets it from `RELEASE`), `SENTRY_TRACES_SAMPLE_RATE` (0.1).
+  Signed-in requests get a `tester` tag with the user ID (`requireAuth`). Telemetry and
+  health/ready/metrics spans are not sent.
+- Website and console: `@sentry/react` in `src/lib/sentry.js`, React 19 root error hooks, the
+  `tester` tag set on sign-in and cleared on sign-out, an `app` tag (`website` or `console`).
+  `VITE_SENTRY_*` build args in the Dockerfile and `deploy/docker-compose.prod.yml`.
+- Privacy, both sides: `dataCollection` turns off bodies, cookies, query strings, user info, SQL
+  values and stack variables (Sentry 11 collects them by default). Then `scrubSentry` in `beforeSend`
+  and `beforeSendSpan` removes phone numbers, PAN, Aadhaar, OTPs, bearer tokens and JWTs, query
+  strings and coordinates (4+ decimals), redacts keys such as `lat`, `phone`, `otp`, `authorization`,
+  and drops request bodies, so telemetry payloads are never sent. `src/lib/sentry-scrub.*` exists
+  twice (TS and JS); `npm run check` fails if the two drift apart.
+- Env examples (`backend/.env.example`, `website/.env.example`, `deploy/.env.production.example`) and
+  `deploy/README.md` (Monitoring, staging table) updated. No routes changed, so no `api-documentation.md` change.
+
+**Checks:** backend typecheck · `npm test` 422/422 · build + `npm start` `/health` ok · website lint
+0 errors, no new warnings · `npm run check` · both builds · `npm run e2e` 13/14 then 14/14 twice (9b
+failed once right after the backend suite; see `docs/test-results.md`). Against a local fake Sentry,
+the API and the website both sent errors and spans with every planted secret redacted.
+**Commit:** `feat(observability): Sentry in backend and website with privacy scrubbing`
+**Not done / follow-ups:** create the Sentry projects (backend, website) and check the free-tier
+monthly error limit; set the DSNs at the staging deploy. Server-side errors that are only logged
+(sweepers) are not sent to Sentry; add a pino hook if triage needs them. Apps (`@sentry/react-native`)
+are Sanath's and Umesh's; they can copy `prototype/website/src/lib/sentry-scrub.js`.
+**Requests raised:** none.
+
 ## 2026-10-30 · Jaswanth · Session end: test results logged
 
 **Did:** Wrote `docs/test-results.md`, the log of test runs (newest first), with today's results.

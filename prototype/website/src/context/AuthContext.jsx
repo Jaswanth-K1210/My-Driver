@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AuthContext } from './authStore.js'
 import { api } from '../lib/apiClient.js'
+import { setTester } from '../lib/sentry.js'
 import { formatPhone, initialsOf } from '../lib/utils.js'
 
 /**
@@ -42,9 +43,11 @@ export function AuthProvider({ children }) {
   const refreshMe = useCallback(async () => {
     try {
       const me = await api.me.get()
+      setTester(me?.id)
       setUser(toViewUser(me))
       return me
     } catch {
+      setTester(null)
       setUser(null)
       return null
     }
@@ -108,6 +111,7 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(async () => {
     await api.auth.logout()
+    setTester(null)
     setUser(null)
   }, [])
 

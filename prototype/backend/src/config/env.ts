@@ -115,6 +115,12 @@ const EnvSchema = z.object({
 
   // Public base URL of this API, used to build the hosted checkout link.
   PUBLIC_API_URL: z.string().url().default('http://localhost:4000'),
+
+  // Sentry (src/instrument.ts). Empty DSN = off.
+  SENTRY_DSN: z.string().default(''),
+  SENTRY_ENVIRONMENT: z.string().default('local'),
+  SENTRY_RELEASE: z.string().optional(),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
 })
 
 export type Env = z.infer<typeof EnvSchema>

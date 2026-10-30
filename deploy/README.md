@@ -88,6 +88,7 @@ providers, but **test or sandbox** accounts are enough.
 | `APNS_PRODUCTION` | `false` while testers use development builds; `true` once they move to TestFlight |
 | `APNS_TOPICS` | The builds testers actually run, e.g. `com.mydriver.user.dev,com.mydriver.driver.dev` (add the `.preview` IDs for preview builds) |
 | `PLACE_SEARCH_BIAS` | Leave the Hyderabad default (`17.3850,78.4867`) |
+| `SENTRY_ENVIRONMENT` | `staging` (see Monitoring) |
 
 After the first deploy:
 
@@ -147,6 +148,12 @@ truncate them in production.
 - `GET /metrics`: Prometheus format, requires `Authorization: Bearer <METRICS_TOKEN>`.
 - Logs are JSON on stdout (rotated by Docker, 5 × 20 MB per service). Tokens,
   OTPs and signatures are redacted before they are written.
+- **Sentry** (errors, crashes, 10 % of traces): set `SENTRY_DSN` (API) and `VITE_SENTRY_DSN`
+  (website and console, baked in at build time) in `.env.production`, plus `SENTRY_ENVIRONMENT`
+  (`staging` or `production`). Events carry the `RELEASE` and, once someone signs in, a `tester`
+  tag with their user ID. Before anything is sent, phone numbers, PAN, Aadhaar, OTPs, tokens,
+  query strings and coordinates are removed and request bodies are dropped
+  (`src/lib/sentry-scrub.*`). Empty DSNs leave Sentry off.
 
 ## Known limits at launch
 

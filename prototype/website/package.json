@@ -8,12 +8,13 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "check": "node scripts/check-booking.mjs",
+    "check": "node scripts/check-booking.mjs && node scripts/check-sentry-scrub.mjs",
     "dev:admin": "VITE_APP_TARGET=admin vite",
     "build:admin": "VITE_APP_TARGET=admin vite build",
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@sentry/react": "~11.7.0",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.33.0",
     "react": "^19.2.8",

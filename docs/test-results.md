@@ -4,6 +4,26 @@ A log of test runs, newest first. What each layer is and how to run it is in
 [`testing-plan.md`](testing-plan.md). Manual results on phones (layer 4) go in the bug log
 (`prd.md` §3.5) and in the app testing guides.
 
+## 2026-10-30 · Jaswanth · Sentry (backend and website)
+
+**Change:** Sentry in the API and the website/console, with the privacy filter (`testing-plan.md` §9).
+
+| Check | Result |
+|---|---|
+| Backend `npm run typecheck` | Pass |
+| Backend `npm test` | **422 / 422 passed**, 37 files (11 new: `tests/unit/sentry-scrub.test.ts`) |
+| Backend `npm run build`, then `npm start` (`node --import ./dist/instrument.js`) | `/health` ok |
+| Website `npm run lint` | 0 errors, no new warnings |
+| Website `npm run check` | Pass (now also `scripts/check-sentry-scrub.mjs`) |
+| Website `npm run build`, `npm run build:admin` | Pass |
+| Website `npm run e2e` (Sentry off) | Run 1: **13 / 14**, 9b failed. Runs 2 and 3: **14 / 14** |
+| API against a local fake Sentry | Error event and spans received, tagged `environment` and `release`; a planted phone number, PAN, OTP, coordinates, bearer token, cookie and query string all arrived as `[redacted]` or not at all |
+| Website against a local fake Sentry | Same result for a thrown browser error and page-load spans; tagged `app: website` |
+
+**Open:** the one failure in 9b ("suspending a driver on the way to pickup cancels the trip")
+came right after the backend suite had run against the same local Postgres and Redis. Two clean
+reruns followed. Cause not confirmed; watch it in CI.
+
 ## 2026-10-30 · Jaswanth · Layers 1 and 2
 
 **Commit:** `f93c26c` on `production-p1`. **CI run:** GitHub Actions #40956914501, every job green.

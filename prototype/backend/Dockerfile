@@ -30,4 +30,4 @@ HEALTHCHECK --interval=15s --timeout=3s --start-period=20s --retries=3 \
 # One-off release steps, run before rolling out a new version:
 #   docker run --rm --env-file .env mydriver-api node dist/db/migrate.js
 #   docker run --rm --env-file .env mydriver-api node dist/db/seed.js
-CMD ["node", "dist/index.js"]
+CMD ["node", "--import", "./dist/instrument.js", "dist/index.js"]

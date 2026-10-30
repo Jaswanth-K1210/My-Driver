@@ -1,3 +1,4 @@
+import { getIsolationScope } from '@sentry/node'
 import type { FastifyReply, FastifyRequest } from 'fastify'
 import { forbidden, unauthorized } from '../../lib/errors.js'
 import type { Role } from './otp.js'
@@ -12,6 +13,8 @@ export async function requireAuth(request: FastifyRequest, _reply: FastifyReply)
   try {
     const claims = await request.jwtVerify<{ sub: string; role: Role }>()
     request.auth = { userId: claims.sub, role: claims.role }
+    // Sentry: filter one tester's session in triage (no-op when Sentry is off).
+    getIsolationScope().setTag('tester', claims.sub)
   } catch {
     throw unauthorized('UNAUTHENTICATED', 'A valid access token is required')
   }
