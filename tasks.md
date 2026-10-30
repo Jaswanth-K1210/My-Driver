@@ -109,6 +109,9 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       `prototype/mobile/user/e2e/`, run on an Android emulator against the desk backend, then on
       preview builds against staging. Flows listed in `docs/testing-plan.md` §6. Agreed with the
       team on 30 Oct as testing layer 3. Written — needs emulator/phone check (`test(e2e)`, 30 Oct)
+- [x] **Step 5 (Sentry):** `@sentry/react-native` with `src/lib/sentry.js` and `src/lib/sentry-scrub.js`
+      privacy scrubbing (`docs/testing-plan.md` §9), `tester` session tagging in `AuthContext.jsx`,
+      and parity tests in `tests/sentryScrub.test.mjs`. Written — needs phone check (`feat(user)`, 31 Oct)
 
 ### Builds and release
 - [ ] Development builds for Android and iOS against staging (Phase 4)

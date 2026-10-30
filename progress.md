@@ -3,6 +3,18 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Sanath · Sentry observability and privacy scrubbing in the customer app
+
+**Did:** Added `@sentry/react-native` (~7.11.0) to `prototype/mobile/user` (`docs/testing-plan.md` §9):
+- `src/lib/sentry.js`: Off unless `EXPO_PUBLIC_SENTRY_DSN` is set and the app is running outside Expo Go (`Constants.executionEnvironment !== 'storeClient'`). Configures `environment`, `release`, `tracesSampleRate` (default `0.1`), `sendDefaultPii: false`, `initialScope.tags.app = 'customer'`, and attaches `scrubSentry` to `beforeSend` and `beforeSendSpan`.
+- `src/lib/sentry-scrub.js`: Exact copy of `prototype/website/src/lib/sentry-scrub.js` and `prototype/backend/src/lib/sentry-scrub.ts` — strips request bodies and cookies, redacts secret keys (`otp`, `pan`, `aadhaar`, `phone`, `lat`, `lng`, `coords`, `telemetry`, `token`, `authorization`, etc.), and scrubs phone numbers, PAN, Aadhaar, OTPs, bearer tokens, JWTs, query strings, and 4+ decimal coordinates.
+- `App.js`, `src/context/AuthContext.jsx`, `app.config.js`, `.env.example`: Wrapped root `App` with `wrapApp(App)`, set/cleared `tester` user ID tag in `refreshMe()` and `signOut()`, registered `@sentry/react-native/expo` source-map plugin when `SENTRY_AUTH_TOKEN` is present, and documented `EXPO_PUBLIC_SENTRY_*` and the 40 errors/day rate limit in `.env.example`.
+- `tests/sentryScrub.test.mjs`: Added automated privacy-scrubber and cross-surface parity tests to `npm test`.
+**Checks:** `npm test` 22/22 passed across 4 suites (`booking.test.mjs`, `tripView.test.mjs`, `e2eFlows.test.mjs`, `sentryScrub.test.mjs`) · `npx expo export --platform android` bundled 3,304 modules with 0 errors.
+**Commit:** `feat(user): add Sentry observability with privacy scrubbing`
+**Not done / follow-ups:** Create the customer-app Sentry project, set its DSN rate limit to 40 errors/day, and set `EXPO_PUBLIC_SENTRY_DSN` on staging/preview builds.
+**Requests raised:** none.
+
 ## 2026-10-30 · Sanath · Layer 3 Maestro E2E flows (customer app)
 
 **Did:** Authored the 6 critical Customer App Maestro end-to-end flows in `prototype/mobile/user/e2e/` (`docs/testing-plan.md` §6):

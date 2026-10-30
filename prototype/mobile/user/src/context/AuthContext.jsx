@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { api } from '../lib/apiClient'
 import { APP_ROLE } from '../lib/config'
 import { unregisterPush } from '../lib/push'
+import { setTester } from '../lib/sentry'
 
 const AuthCtx = createContext(null)
 
@@ -25,9 +26,11 @@ export function AuthProvider({ children }) {
   const refreshMe = useCallback(async () => {
     try {
       const me = await api.me.get()
+      setTester(me?.id)
       setUser(me)
       return me
     } catch {
+      setTester(null)
       setUser(null)
       return null
     }
@@ -77,6 +80,7 @@ export function AuthProvider({ children }) {
     // receiving this account's trip notifications.
     await unregisterPush()
     await api.auth.logout()
+    setTester(null)
     setUser(null)
   }, [])
 
