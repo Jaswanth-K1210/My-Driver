@@ -727,7 +727,9 @@ export async function serverQuote(api, config, skills = SKILLS) {
     delete quoteBody.prefer_female_driver
     delete quoteBody.share_with_guardians
     return await api.trips.quote(quoteBody)
-  } catch {
+  } catch (err) {
+    // A trip the server refuses outright: the page must say why, not spin.
+    if (err?.code === 'OUTSIDE_CITY') throw err
     return null
   }
 }

@@ -75,6 +75,7 @@ export default function Book() {
   }
 
   const [server, setServer] = useState(null)
+  const [quoteError, setQuoteError] = useState(null)
   // Pay-after-trip and the urgent fee are server settings, not constants here.
   const [tripConfig, setTripConfig] = useState(null)
   useEffect(() => {
@@ -93,16 +94,21 @@ export default function Book() {
   useEffect(() => {
     if (!local.ready) {
       setServer(null)
+      setQuoteError(null)
       return undefined
     }
     let cancelled = false
     const timer = setTimeout(() => {
       serverQuote(api, config, skills)
         .then((q) => {
-          if (!cancelled && q) setServer(q)
+          if (cancelled) return
+          setQuoteError(null)
+          if (q) setServer(q)
         })
-        .catch(() => {
-          if (!cancelled) setServer(null)
+        .catch((err) => {
+          if (cancelled) return
+          setServer(null)
+          setQuoteError(err)
         })
     }, 250)
     return () => {
@@ -483,6 +489,18 @@ export default function Book() {
                   <dd className="text-3xl font-black tracking-tight text-brand-600">{formatINR(fare.total)}</dd>
                 </div>
               </dl>
+            ) : quoteError ? (
+              <div role="alert" className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm">
+                <p className="font-bold text-amber-900">This trip goes outside the city</p>
+                <p className="mt-1 text-amber-800">{quoteError.message}</p>
+                <button
+                  type="button"
+                  onClick={() => setConfig((prev) => ({ ...prev, requirement: 'inter_city' }))}
+                  className="mt-3 rounded-xl bg-amber-500 px-4 py-2 text-xs font-black text-white hover:bg-amber-600"
+                >
+                  Switch to Outstation
+                </button>
+              </div>
             ) : (
               <p className="mt-4 text-sm text-slate-500">
                 {local.ready ? 'Calculating your fare…' : 'Complete your trip details to see the fare.'}

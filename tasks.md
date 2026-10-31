@@ -126,6 +126,10 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       While `needs_driver_since` is set, show "A driver will be assigned within 30 minutes, we'll
       notify you" with a Cancel button instead of the matching spinner (website: `WaitingForDriver`
       in `Track.jsx`). The existing push on driver accept covers "we'll notify you".
+- [ ] REQUEST from Jaswanth (2026-10-31): Within city trips to another city are now refused
+      (`fix(booking)`, 31 Oct). Quote and book return 400 `OUTSIDE_CITY` when `requirement` is
+      `within_city` and the drop, a stop or the return drop is over 50 km (straight line) from the
+      pickup. Show the error message with a "Switch to Outstation" action instead of a spinner.
 
 ### Builds and release
 - [ ] Development builds for Android and iOS against staging (Phase 4)
@@ -252,6 +256,7 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       `PAY_AFTER_TRIP` (off by default) on backend, website and console (`feat(booking)`, 31 Oct)~~
 - [x] ~~Extended driver search: 30 min of retries instead of an instant "no driver", a "Waiting for
       a driver" alert list on the live board, and a waiting screen on the website (`feat(dispatch)`, 31 Oct)~~
+- [x] ~~Refuse Within city trips to another city (`OUTSIDE_CITY`, 50 km from pickup) (`fix(booking)`, 31 Oct)~~
 
 ### Infrastructure: done
 - [x] ~~Dockerfiles, `deploy/docker-compose.prod.yml`, Caddy auto-TLS, `.env.production.example`~~

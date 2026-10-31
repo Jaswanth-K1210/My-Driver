@@ -2,7 +2,7 @@ import { randomInt } from 'node:crypto'
 import type { PoolClient } from 'pg'
 import { pool } from '../../db/client.js'
 import { AppError, badRequest, conflict, forbidden, notFound } from '../../lib/errors.js'
-import { estimateRoadDistanceKm, trackDistanceKm, type LatLng } from '../../lib/geo.js'
+import { estimateRoadDistanceKm, haversineMeters, trackDistanceKm, type LatLng } from '../../lib/geo.js'
 import { peppered } from '../../lib/hash.js'
 import { getTelemetryWriter, readTripTrack } from '../../telemetry/batch-writer.js'
 import type { Role } from '../auth/otp.js'
@@ -232,6 +232,29 @@ export type PriceInput = Pick<
 >
 
 /**
+ * How far from the pickup a Within city trip may go (straight line). Covers
+ * Hyderabad to RGIA and the Outer Ring Road; another city needs Outstation.
+ * ponytail: a radius around the pickup, not a city boundary. Replace with the
+ * Hyderabad service area once D-4 defines it.
+ */
+export const WITHIN_CITY_MAX_KM = 50
+
+function assertWithinCity(input: PriceInput): void {
+  if (input.requirement !== 'within_city') return
+  const points = [
+    input.drop,
+    ...extractValidStopCoords(input.stops),
+    ...(input.tripType === 'two_way' ? [...extractValidStopCoords(input.returnStops), input.returnDrop] : []),
+  ].filter((p): p is LatLng => Boolean(p))
+  if (points.some((p) => haversineMeters(input.pickup, p) / 1000 > WITHIN_CITY_MAX_KM)) {
+    throw badRequest(
+      'OUTSIDE_CITY',
+      `Within city trips stay within ${WITHIN_CITY_MAX_KM} km of the pickup. For a trip to another city, choose Outstation.`,
+    )
+  }
+}
+
+/**
  * The one pricing path: the quote shows exactly what booking will charge, and
  * both read the admin's live rate card and fees.
  */
@@ -240,6 +263,8 @@ export async function priceTrip(input: PriceInput): Promise<{
   distanceKm: number
   fare: FareBreakdown
 }> {
+  // Here, not in the routes: the quote and the booking both come through.
+  assertWithinCity(input)
   const wanted = input.requiredCertification || tierForCar(input.carDetails)
   // A tier ops have hidden falls back to Standard rather than refusing the car.
   const card = await getRateCard(wanted).catch((err) => {

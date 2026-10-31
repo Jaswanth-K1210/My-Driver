@@ -3,6 +3,15 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Jaswanth · Within city trips could go to another city
+
+**Did:** Nothing stopped a Within city booking to another city (seen: Habsiguda → Vijayawada). `priceTrip` (`trips/service.ts`), which both quote and book go through, now refuses `requirement: within_city` with 400 `OUTSIDE_CITY` when the drop, a stop, or (round trip) a return stop or return drop is more than `WITHIN_CITY_MAX_KM` (50 km, straight line) from the pickup. 50 km keeps HITEC City → RGIA and the Outer Ring Road inside. The website Book page shows the message and a "Switch to Outstation" button instead of "Calculating your fare…", and booking stays disabled.
+**Checks:** backend `npm run typecheck` pass · `npm test` 428/428 (new: Vijayawada refused as Within city on quote and book, allowed as Outstation, RGIA allowed) · website `npm run lint` 0 errors, no new warnings · `npm run build` · `npm run build:admin` · `npm run check` pass.
+**Commit:** `fix(booking): refuse Within city trips to another city`
+**Payload changed:** new error code `OUTSIDE_CITY` (400) on `/v1/trips/quote` and `/v1/trips/book`. No schema change.
+**Not done / follow-ups:** The 50 km radius is a stand-in for the Hyderabad service area in decision D-4; replace it with the real area once it is defined.
+**Requests raised:** Sanath: show `OUTSIDE_CITY` in the customer app (tasks.md).
+
 ## 2026-10-31 · Jaswanth · Extended driver search and "waiting for a driver" alerts
 
 **Did:**

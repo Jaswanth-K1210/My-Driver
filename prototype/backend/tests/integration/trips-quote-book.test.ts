@@ -71,6 +71,18 @@ describe('quote and booking', () => {
       expect(res.json().error.code).toBe('DROP_REQUIRED')
     })
 
+    it('refuses a Within city trip to another city, and books it as Outstation', async () => {
+      const VIJAYAWADA = { lat: 16.5062, lng: 80.648 }
+      const body = { booking_type: 'POINT_TO_POINT', pickup: HITEC_CITY, drop: VIJAYAWADA, required_certification: 'MD-Standard' }
+      const res = await quote({ ...body, requirement: 'within_city' })
+      expect(res.statusCode).toBe(400)
+      expect(res.json().error.code).toBe('OUTSIDE_CITY')
+      expect((await book({ ...body, requirement: 'within_city', speed_ceiling_kmh: 80 })).json().error.code).toBe('OUTSIDE_CITY')
+      expect((await quote({ ...body, requirement: 'inter_city' })).statusCode).toBe(200)
+      // RGIA is Within city from HITEC City.
+      expect((await quote({ ...body, drop: { lat: 17.2403, lng: 78.4294 }, requirement: 'within_city' })).statusCode).toBe(200)
+    })
+
     it('rejects an unknown certification', async () => {
       const res = await quote({
         booking_type: 'POINT_TO_POINT', pickup: HITEC_CITY, drop: GACHIBOWLI,
