@@ -4,6 +4,24 @@ A log of test runs, newest first. What each layer is and how to run it is in
 [`testing-plan.md`](testing-plan.md). Manual results on phones (layer 4) go in the bug log
 (`prd.md` §3.5) and in the app testing guides.
 
+## 2026-11-01 · Jaswanth · Website lazy routes
+
+**Change:** Login, Register and the dashboard pages (Overview, Book, Vault, Profile) load when
+visited; only Landing is in the first download. Same profile as the 30 Oct performance run.
+
+| | 30 Oct (after Sentry and Leaflet fix) | Now |
+|---|---|---|
+| Main JavaScript | 414 kB (119 kB gzip) | 371 kB (110 kB gzip) |
+| LCP (hero text) | 2.00–2.08 s | 1.75–1.91 s |
+| Total blocking time | 353–385 ms | 257–374 ms |
+| CLS | 0 | 0 |
+
+| Check | Result |
+|---|---|
+| CI lint command on `src`, `npm run check`, `npm run build`, `npm run build:admin` | Pass |
+| Production preview: `/login`, `/register`, `/` render; signed-out `/app/book` goes to `/login`; no page errors | Pass |
+| `npm run e2e` locally | **Not run**: another backend dev server (started 31 Oct, not by this session) held port 4000, and the suite starts its own API there. CI's `e2e` job runs it on this push. |
+
 ## 2026-10-30 · Jaswanth · Website load performance
 
 **Change:** the first download no longer carries Sentry or Leaflet. Customer site, production build

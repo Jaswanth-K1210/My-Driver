@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { Archive, CarFront, LayoutDashboard, Radio, UserRound } from 'lucide-react'
 import Navbar, { PAGE_X } from '../marketing/Navbar.jsx'
@@ -52,7 +53,16 @@ export default function DashboardLayout() {
 
       <main className="flex-1">
         <div className={cn(PAGE_X, 'py-8 lg:py-10')}>
-          <Outlet />
+          {/* Pages load on demand; keep the navbar up while one does. */}
+          <Suspense
+            fallback={
+              <div className="flex justify-center py-24">
+                <span className="h-8 w-8 animate-spin rounded-full border-2 border-slate-200 border-t-brand-500" />
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </div>
       </main>
       <Footer />

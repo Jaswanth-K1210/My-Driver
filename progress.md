@@ -3,6 +3,20 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-11-01 · Jaswanth · Website lazy routes
+
+**Did:** Login, Register and the dashboard pages (Overview, Book, Vault, Profile) are `lazy()` in
+`src/CustomerApp.jsx`, like Track and the guardian page already were. `DashboardLayout` stays in the
+main bundle (it shares Navbar and Footer with Landing) and now wraps its `Outlet` in `Suspense`, so the
+navbar stays up while a tab's code loads. Main JavaScript 414 kB to 371 kB, LCP about 2.0 s to 1.8 s on
+the slow-4G profile (`docs/test-results.md`). What remains in the first download is mostly React,
+the router and what Landing itself uses.
+**Checks:** CI lint command pass · `npm run check` · both builds · production-preview smoke of `/login`,
+`/register`, `/` and the signed-out redirect, no page errors. `npm run e2e` **not run locally**: a backend
+dev server started on 31 Oct (not by this session) held port 4000; left running. CI's `e2e` job covers it.
+**Commit:** `perf(website): lazy-load sign-in and dashboard pages`
+**Requests raised:** none.
+
 ## 2026-10-31 · Umesh · GATE-1 and a driver-journey check for the demo
 
 **Did:**

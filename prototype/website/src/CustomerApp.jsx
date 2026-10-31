@@ -7,19 +7,20 @@ import { TripProvider } from './context/TripContext.jsx'
 import DashboardLayout from './components/app/DashboardLayout.jsx'
 import { ScrollManager } from './components/marketing/Navbar.jsx'
 import Landing from './pages/Landing.jsx'
-import Login from './pages/Login.jsx'
-import Register from './pages/Register.jsx'
-import Overview from './pages/dashboard/Overview.jsx'
-import Book from './pages/dashboard/Book.jsx'
-import Vault from './pages/dashboard/Vault.jsx'
-import Profile from './pages/dashboard/Profile.jsx'
 import { RequireAuth, SessionLoading } from './routing.jsx'
 
 // The customer website. The admin portal is a separate build (AdminApp.jsx)
 // served on its own subdomain: none of its code is in this bundle.
 
-// Leaflet loads on demand, so the first download does not carry the map library.
+// Only the landing page is in the first download. Sign-in and dashboard pages
+// load when visited, and Leaflet only with Track and the guardian page.
+const Login = lazy(() => import('./pages/Login.jsx'))
+const Register = lazy(() => import('./pages/Register.jsx'))
+const Overview = lazy(() => import('./pages/dashboard/Overview.jsx'))
+const Book = lazy(() => import('./pages/dashboard/Book.jsx'))
 const Track = lazy(() => import('./pages/dashboard/Track.jsx'))
+const Vault = lazy(() => import('./pages/dashboard/Vault.jsx'))
+const Profile = lazy(() => import('./pages/dashboard/Profile.jsx'))
 const GuardianTrack = lazy(() => import('./pages/GuardianTrack.jsx'))
 
 /** Keeps signed-in users out of the auth screens, sending them where they were headed. */
