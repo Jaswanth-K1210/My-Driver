@@ -3,6 +3,21 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Jaswanth · Extended driver search and "waiting for a driver" alerts
+
+**Did:**
+- Dispatch (`trips/matching.ts`): when the first rounds find nobody (no candidates, or all declined), the trip no longer ends at once. It stays `REQUESTED`, gets `trips.needs_driver_since` (migration `0022_needs_driver.sql`) and a `TRIP_NEEDS_DRIVER` event, and is broadcast so the customer's screen and the console refresh. The sweeper retries these trips every 30 s (`retryWaitingTrips`), offering to drivers who came online, past the 3-round cap. `EXTENDED_SEARCH_MINUTES` (30) after booking it ends as `NO_DRIVERS_FOUND` as before (hold released, customer push).
+- Console: `GET /v1/admin/trips/waiting` (desk roles) lists these bookings. The live board shows a highlighted "Waiting for a driver" list (customer, phone, route, tier, urgent, minutes left) and a toast for each new one.
+- Website: while `needs_driver_since` is set, Track shows an illustration and "A driver will be assigned within 30 minutes", the expected time, "We'll notify you", a "Notify me in this browser" option and Cancel. A browser notification fires when a driver accepts while the tab is hidden.
+- `trip-config.driver_eta_minutes.normal` now comes from `EXTENDED_SEARCH_MINUTES`.
+**Checks:** backend `npm run typecheck` pass · `npm test` 427/427 (new: flags for ops, retry offers a late driver, ends after the window; updated the no-driver tests) · website `npm run lint` 0 errors, no new warnings · `npm run build` · `npm run build:admin` · `npm run check` pass · driver app `npm test` pass · `npx expo export --platform android` pass for both apps (user app needed `npm ci` locally for Sanath's new Sentry dependency) · `npm run docs:api` regenerated. Playwright not run: test 1b is updated for the waiting screen, and `playwright.config.js` pins `PAY_AFTER_TRIP=false` for its backend.
+**Commit:** `feat(dispatch): keep searching for 30 min and alert the desk`
+**Payload changed:** additive. `needs_driver_since` on trip views; new `GET /v1/admin/trips/waiting`; `api.admin.waitingTrips()` added to `shared/api-client.js` and synced to the website and **both mobile apps' `src/lib/api.js`** (Sanath, Umesh: your copy changed, one added method).
+**Not done / follow-ups:**
+- Behaviour change: a customer with no nearby driver now waits up to 30 min (hold kept) instead of getting "no driver" in about a minute. `prd.md` §6 targets "booking to matched under 2 minutes"; worth noting there if Sanath agrees.
+- Desk staff can't assign a driver to a waiting trip from the console yet; they can only see the list and call.
+**Requests raised:** Sanath: waiting screen in the customer app (tasks.md).
+
 ## 2026-10-31 · Jaswanth · Urgent booking and pay-after-trip (behind a toggle)
 
 **Did:**

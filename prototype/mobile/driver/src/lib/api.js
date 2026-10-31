@@ -407,6 +407,8 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
     admin: {
       stats: () => request('/v1/admin/stats'),
       activeTrips: () => request('/v1/admin/trips/active'),
+      // Bookings the first dispatch rounds could not place, still searching.
+      waitingTrips: () => request('/v1/admin/trips/waiting'),
       liveDrivers: () => request('/v1/admin/drivers/live'),
 
       escalations: (includeResolved = false) =>

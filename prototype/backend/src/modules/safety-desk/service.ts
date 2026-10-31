@@ -88,6 +88,24 @@ export async function activeTrips(): Promise<LiveTrip[]> {
   return rows
 }
 
+/**
+ * Bookings the first dispatch rounds could not place: still searching, and
+ * shown on the live board so ops can find a driver or call the customer.
+ */
+export async function waitingForDriver() {
+  const { rows } = await pool.query(
+    `SELECT t.id AS trip_id, t.status, cu.full_name AS customer_name, cu.phone_number AS customer_phone,
+            t.pickup_address, t.drop_address, t.required_certification,
+            (t.urgent_fee IS NOT NULL) AS urgent, t.requested_at, t.needs_driver_since
+       FROM trips t JOIN users cu ON cu.id = t.customer_id
+      WHERE t.needs_driver_since IS NOT NULL AND t.status IN ('REQUESTED', 'MATCHED')
+        ${hideDemo('cu.is_demo')}
+      ORDER BY t.requested_at
+      LIMIT 200`,
+  )
+  return rows
+}
+
 export type LiveDriver = {
   driver_id: string
   name: string | null

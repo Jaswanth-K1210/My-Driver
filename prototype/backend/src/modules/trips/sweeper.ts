@@ -4,7 +4,7 @@ import { setAvailability } from './geo-index.js'
 import { recordMissedOffer } from './offer-hint.js'
 import { expireUnpaidTrips } from '../payments/service.js'
 import { broadcastStateChange } from './broadcast.js'
-import { startDispatch } from './matching.js'
+import { retryWaitingTrips, startDispatch } from './matching.js'
 import { recordEvent, transitionTrip } from './service.js'
 
 /**
@@ -70,7 +70,10 @@ export async function expireStaleOffers(): Promise<number> {
 }
 
 export function startSweeper(intervalMs = 5_000): () => void {
+  let tick = 0
   const timer = setInterval(() => {
+    // Waiting trips are retried every 30 s, not every tick: few drivers come online that fast.
+    if (++tick % 6 === 0) void retryWaitingTrips().catch((err) => console.error('waiting retry failed', err))
     void expireStaleOffers().catch((err) => console.error('sweeper failed', err))
     void expireUnpaidTrips().catch((err) => console.error('unpaid sweep failed', err))
   }, intervalMs)

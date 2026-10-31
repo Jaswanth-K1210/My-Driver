@@ -22,6 +22,7 @@ import {
 } from '../guardian/service.js'
 import {
   activeTrips,
+  waitingForDriver,
   audit,
   auditView,
   callParty,
@@ -254,6 +255,33 @@ export function registerSafetyRoutes(app: FastifyInstance): void {
       await auditView(request.auth!.userId, request.auth!.role, 'VIEW_DRIVER_MAP')
       return liveDrivers()
     },
+  )
+
+  r.get(
+    '/v1/admin/trips/waiting',
+    {
+      logLevel: 'warn', // polled by every open console tab
+      onRequest: [requireAuth, requireRole(...DESK_ROLES)],
+      schema: {
+        response: {
+          200: z.array(
+            z.object({
+              trip_id: z.string().uuid(),
+              status: z.string(),
+              customer_name: z.string().nullable(),
+              customer_phone: z.string().nullable(),
+              pickup_address: z.string().nullable(),
+              drop_address: z.string().nullable(),
+              required_certification: z.string(),
+              urgent: z.boolean(),
+              requested_at: z.coerce.string(),
+              needs_driver_since: z.coerce.string(),
+            }),
+          ),
+        },
+      },
+    },
+    async () => waitingForDriver(),
   )
 
   r.get(

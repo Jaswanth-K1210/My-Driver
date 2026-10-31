@@ -23,6 +23,8 @@ describe('payments: authorize at booking, capture at completion', () => {
     await resetDb(); await resetRedis(); await seed()
     mock = new MockPaymentProvider()
     setPaymentProvider(mock)
+    // These tests are about the booking hold, whatever the local .env says.
+    setPayAfterTrip(false)
     customer = await makeCustomer(app, '+919876500001')
     driver = await makeOnlineDriver(app, '+919876500002')
   })

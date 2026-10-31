@@ -59,6 +59,8 @@ export type TripView = {
   fare_amount: number | null
   platform_fee?: number | null
   night_fee?: number | null
+  /** Set when the first search found nobody: still searching, ops are alerted. */
+  needs_driver_since?: string | null
   /** Set on an urgent booking: the extra paid for a driver in 5-10 minutes. */
   urgent_fee?: number | null
   /** Set when the customer cancelled after the driver arrived and was charged. */
@@ -100,6 +102,7 @@ const TRIP_SELECT = `
     t.platform_fee::float8          AS platform_fee,
     t.night_fee::float8             AS night_fee,
     t.urgent_fee::float8            AS urgent_fee,
+    t.needs_driver_since,
     t.driver_earnings::float8       AS driver_earnings,
     t.requested_at, t.arrived_at, t.started_at, t.completed_at,
     t.stops, t.return_stops, t.vehicle_specs, t.vision_mode, t.flight_number, t.requirement, t.trip_type,

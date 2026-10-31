@@ -99,6 +99,8 @@ export function toViewTrip(trip, config) {
     arrivedAt: trip.arrived_at ?? null,
     cancellationFee: trip.cancellation_fee ?? null,
     urgent: trip.urgent_fee > 0,
+    // Set when the first search found nobody: still searching for up to 30 min.
+    needsDriverSince: trip.needs_driver_since ?? null,
     ceiling: trip.speed_ceiling_kmh,
     visionMode: config?.visionMode ?? 'R',
     fare: Math.round(trip.fare_amount ?? trip.estimated_fare ?? 0),

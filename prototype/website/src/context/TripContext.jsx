@@ -101,7 +101,15 @@ export function TripProvider({ children }) {
     conn.on('TRIP_STATE_CHANGED', async (frame) => {
       if (frame.trip_id !== tripIdRef.current) return
       try {
-        applyTrip(await api.trips.get(frame.trip_id))
+        const next = await api.trips.get(frame.trip_id)
+        applyTrip(next)
+        // The waiting screen promised a notification once a driver accepts.
+        if (
+          next.status === 'HANDSHAKE_PENDING' && next.needs_driver_since && document.hidden &&
+          typeof Notification !== 'undefined' && Notification.permission === 'granted'
+        ) {
+          new Notification('Your MyDriver driver is on the way', { body: next.driver?.name ? `${next.driver.name} accepted your booking.` : 'A driver accepted your booking.' })
+        }
       } catch {
         // The refetch can lose a race with cancellation; the next frame fixes it.
       }

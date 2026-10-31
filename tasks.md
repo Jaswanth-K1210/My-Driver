@@ -120,6 +120,12 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       `payment: null` (no payment screen); after the trip `GET /v1/trips/:id/payment` has a `CREATED`
       payment for the final fare: show "Pay ₹`amount_authorized`" with the same checkout URL.
       Also please decide on the `prd.md` §3.2/§6 change (see progress.md, 31 Oct).
+- [ ] REQUEST from Jaswanth (2026-10-31): "waiting for a driver" screen (`feat(dispatch)`, 31 Oct).
+      When the first search finds nobody the trip now stays `REQUESTED` with `needs_driver_since` set
+      (new field on trip views) and dispatch keeps retrying for 30 min before `NO_DRIVERS_FOUND`.
+      While `needs_driver_since` is set, show "A driver will be assigned within 30 minutes, we'll
+      notify you" with a Cancel button instead of the matching spinner (website: `WaitingForDriver`
+      in `Track.jsx`). The existing push on driver accept covers "we'll notify you".
 
 ### Builds and release
 - [ ] Development builds for Android and iOS against staging (Phase 4)
@@ -244,6 +250,8 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       today's requested/completed/lost, drivers online/on trip (`feat(console)`, 31 Oct)~~
 - [x] ~~Urgent booking (+`urgent_fee`, ₹49, editable in Pricing) and pay-after-trip behind
       `PAY_AFTER_TRIP` (off by default) on backend, website and console (`feat(booking)`, 31 Oct)~~
+- [x] ~~Extended driver search: 30 min of retries instead of an instant "no driver", a "Waiting for
+      a driver" alert list on the live board, and a waiting screen on the website (`feat(dispatch)`, 31 Oct)~~
 
 ### Infrastructure: done
 - [x] ~~Dockerfiles, `deploy/docker-compose.prod.yml`, Caddy auto-TLS, `.env.production.example`~~

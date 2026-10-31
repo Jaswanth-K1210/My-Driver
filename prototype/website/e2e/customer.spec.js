@@ -12,13 +12,15 @@ test('1. a customer signs in with the OTP from the SMS', async ({ page }) => {
   await expect(page).toHaveURL(/\/app$/)
 })
 
-test('1b. booking with no driver online ends in "no driver" and releases the hold', async ({ page, customer }) => {
+test('1b. booking with no driver online waits up to 30 min and keeps the hold', async ({ page, customer }) => {
   await bookAndPay(page)
-  await expect(page.getByRole('heading', { name: 'No nearby driver available right now' })).toBeVisible({ timeout: 30_000 })
-  await expect(page.getByText('has been released')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'A driver will be assigned within 30 minutes' })).toBeVisible({ timeout: 30_000 })
   const trip = await tripOf(customer)
-  expect(trip.status).toBe('NO_DRIVERS_FOUND')
-  expect((await customer.api.get(`/v1/trips/${trip.id}/payment`)).body.payment.status).toBe('RELEASED')
+  expect(trip.status).toBe('REQUESTED')
+  expect(trip.needs_driver_since).toBeTruthy()
+  // The customer can still back out; that releases the hold.
+  await page.getByRole('button', { name: 'Cancel booking' }).click()
+  await expect.poll(async () => (await customer.api.get(`/v1/trips/${trip.id}/payment`)).body.payment.status).toBe('RELEASED')
 })
 
 test('2. the Track page follows the trip from matched to complete', async ({ page, customer, driver }) => {

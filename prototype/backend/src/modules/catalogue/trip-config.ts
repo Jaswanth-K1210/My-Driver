@@ -1,4 +1,5 @@
 import { payAfterTrip } from '../payments/service.js'
+import { EXTENDED_SEARCH_MINUTES } from '../trips/matching.js'
 import { getFees } from '../trips/fees.js'
 import { listRateCards } from '../trips/rate-cards.js'
 
@@ -61,6 +62,6 @@ export async function getTripConfig() {
     // true: nothing is charged at booking; the customer pays the final fare after the trip.
     pay_after_trip: payAfterTrip(),
     // Shown at booking. Urgent costs fees.urgent_fee.
-    driver_eta_minutes: { normal: 30, urgent: { min: 5, max: 10 } },
+    driver_eta_minutes: { normal: EXTENDED_SEARCH_MINUTES, urgent: { min: 5, max: 10 } },
   }
 }

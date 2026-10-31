@@ -111,6 +111,7 @@ const TripViewSchema = z.object({
   platform_fee: z.number().nullable().optional(),
   night_fee: z.number().nullable().optional(),
   urgent_fee: z.number().nullable().optional(),
+  needs_driver_since: z.coerce.string().nullable().optional(),
   driver_earnings: z.number().nullable(),
   requested_at: z.coerce.string(),
   arrived_at: z.coerce.string().nullable(),

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, Activity, Car, Radio, Timer } from 'lucide-react'
+import { AlertTriangle, Activity, Car, Clock, Radio, Timer, Zap } from 'lucide-react'
 import { api } from '../../lib/apiClient.js'
 import PageHeader from '../../components/admin/PageHeader.jsx'
 import { reasonLabel } from '../../components/admin/format.js'
@@ -9,6 +9,7 @@ import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
 import { useOpsFeed } from '../../components/admin/useOpsFeed.js'
 import { Empty, LevelBadge, relative, SlaTimer } from '../../components/admin/Indicators.jsx'
 import { cn } from '../../lib/utils.js'
+import { useToast } from '../../context/toastStore.js'
 
 /**
  * The live board.
@@ -22,6 +23,10 @@ const BOARD_POLL_MS = 10_000
 // With the live feed up, polling is only a backstop for a missed frame, and
 // for the SLA-breached count, which changes with time rather than an event.
 const BOARD_BACKSTOP_MS = 30_000
+
+// Dispatch keeps retrying for 30 minutes from booking (EXTENDED_SEARCH_MINUTES).
+const searchMinutesLeft = (requestedAt) =>
+  Math.max(0, 30 - Math.floor((Date.now() - new Date(requestedAt).getTime()) / 60_000))
 
 export default function Board() {
   const navigate = useNavigate()
@@ -41,9 +46,24 @@ export default function Board() {
   const { data: stats, refresh: refreshStats } = useAdminPoll(() => api.admin.stats(), every)
   const { data: queue, refresh: refreshQueue } = useAdminPoll(() => api.admin.escalations(false), every)
   const { data: trips, loading, refresh: refreshTrips } = useAdminPoll(() => api.admin.activeTrips(), every)
+  const { data: waitingData, refresh: refreshWaiting } = useAdminPoll(() => api.admin.waitingTrips(), every)
   useEffect(() => {
-    refreshers.current = [refreshStats, refreshQueue, refreshTrips]
+    refreshers.current = [refreshStats, refreshQueue, refreshTrips, refreshWaiting]
   })
+
+  // A booking nobody accepted is a message for the desk: say so once per trip.
+  const { toast } = useToast()
+  const waiting = waitingData ?? []
+  const seenWaiting = useRef(null)
+  useEffect(() => {
+    if (!waitingData) return
+    const ids = new Set(waitingData.map((t) => t.trip_id))
+    if (seenWaiting.current) {
+      const fresh = waitingData.filter((t) => !seenWaiting.current.has(t.trip_id))
+      if (fresh.length) toast(`${fresh.length} new booking${fresh.length > 1 ? 's' : ''} waiting for a driver`, 'error')
+    }
+    seenWaiting.current = ids
+  }, [waitingData, toast])
 
   const items = queue?.items ?? []
   const active = trips ?? []
@@ -73,6 +93,43 @@ export default function Board() {
           danger={((stats?.by_level?.L4 ?? 0) + (stats?.by_level?.L5 ?? 0)) > 0}
         />
       </div>
+
+      {waiting.length > 0 && (
+        <SectionCard title={`Waiting for a driver (${waiting.length})`} icon={Clock} className="ring-2 ring-brand-400">
+          <p className="-mt-1 mb-3 text-xs text-slate-600">
+            No nearby driver accepted these bookings. Dispatch keeps retrying for 30 minutes after booking; find a driver or call the customer.
+          </p>
+          <ul className="divide-y divide-slate-100">
+            {waiting.map((t) => {
+              const minsLeft = searchMinutesLeft(t.requested_at)
+              return (
+                <li key={t.trip_id}>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/trips/${t.trip_id}`)}
+                    className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 py-3 text-left text-sm hover:bg-slate-50"
+                  >
+                    <span className="font-bold text-slate-900">{t.customer_name ?? 'Customer'}</span>
+                    <span className="font-mono text-xs text-slate-600">{t.customer_phone}</span>
+                    {t.urgent && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-bold text-white">
+                        <Zap className="h-3 w-3" aria-hidden="true" /> Urgent
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-slate-600">
+                      {t.pickup_address ?? 'Pickup'} → {t.drop_address ?? 'Drop'}
+                    </span>
+                    <span className="text-xs font-bold text-slate-500">{t.required_certification}</span>
+                    <span className={cn('text-xs font-bold', minsLeft <= 5 ? 'text-brand-600' : 'text-slate-500')}>
+                      booked {relative(t.requested_at)} · {minsLeft} min left
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </SectionCard>
+      )}
 
       <SectionCard title="Escalation queue" icon={AlertTriangle}>
         {items.length === 0 ? (

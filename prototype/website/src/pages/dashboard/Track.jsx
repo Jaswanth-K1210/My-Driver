@@ -72,6 +72,66 @@ function Matching({ label }) {
   )
 }
 
+/** A car with a clock: the search goes on in the background. */
+function WaitingArt() {
+  return (
+    <svg viewBox="0 0 240 150" className="h-36 w-56" aria-hidden="true">
+      <ellipse cx="120" cy="132" rx="96" ry="8" className="fill-slate-100" />
+      <path d="M40 104 L58 70 Q63 60 75 60 L145 60 Q157 60 163 70 L182 104 Z" className="fill-brand-100" />
+      <rect x="28" y="100" width="168" height="26" rx="10" className="fill-brand-500" />
+      <path d="M68 96 L79 72 L114 72 L114 96 Z M122 96 L122 72 L148 72 L162 96 Z" className="fill-white" />
+      <circle cx="70" cy="128" r="13" className="fill-slate-800" />
+      <circle cx="70" cy="128" r="5" className="fill-slate-300" />
+      <circle cx="158" cy="128" r="13" className="fill-slate-800" />
+      <circle cx="158" cy="128" r="5" className="fill-slate-300" />
+      <circle cx="196" cy="42" r="30" className="fill-white stroke-brand-500" strokeWidth="5" />
+      <path d="M196 26 L196 42 L208 50" className="stroke-slate-800" strokeWidth="5" strokeLinecap="round" fill="none" />
+    </svg>
+  )
+}
+
+/**
+ * The first search found nobody. The server keeps looking for up to 30 min and
+ * the console has been alerted, so this is a wait, not a dead end.
+ */
+function WaitingForDriver({ trip, onCancel }) {
+  const [notify, setNotify] = useState(() => typeof Notification !== 'undefined' && Notification.permission === 'granted')
+  const by = trip.requestedAt ? new Date(new Date(trip.requestedAt).getTime() + 30 * 60_000) : null
+  return (
+    <div className="mx-auto max-w-2xl">
+      <div className="flex flex-col items-center rounded-3xl border border-slate-200 bg-white px-6 py-12 text-center">
+        <WaitingArt />
+        <h2 className="mt-6 text-xl font-black text-slate-900">A driver will be assigned within 30 minutes</h2>
+        <p className="mt-2 max-w-md text-sm text-slate-500">
+          All nearby drivers are busy right now. We're still contacting drivers for you and our team has been alerted.
+          {by && <> Expect a driver by <span className="font-bold text-slate-700">{by.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })}</span>.</>}
+        </p>
+        <p className="mt-4 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+          We'll notify you as soon as a driver accepts. You can leave this page.
+        </p>
+        <div className="mt-6 flex w-full max-w-sm flex-col gap-2 sm:flex-row">
+          {typeof Notification !== 'undefined' && !notify && Notification.permission !== 'denied' && (
+            <button
+              type="button"
+              onClick={() => Notification.requestPermission().then((p) => setNotify(p === 'granted'))}
+              className="flex-1 rounded-2xl bg-brand-500 px-4 py-3 text-sm font-black text-white hover:bg-brand-600"
+            >
+              Notify me in this browser
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 hover:bg-slate-100"
+          >
+            Cancel booking
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PaymentStep({ payment, trip, onPay, onCancel }) {
   const failed = payment.status === 'FAILED'
   return (
@@ -341,6 +401,9 @@ export default function Track() {
   if (phase === 'idle') return shell('Your current trip appears here, with its live map and safety controls.', <EmptyState />)
   if (phase === 'payment' && payment) {
     return shell('Confirm the fare hold to send your request to drivers.', <PaymentStep payment={payment} trip={trip} onPay={openCheckout} onCancel={() => cancelTrip('Payment not completed')} />)
+  }
+  if (phase === 'matching' && trip?.needsDriverSince) {
+    return shell('Your booking is confirmed. We are still finding your driver.', <WaitingForDriver trip={trip} onCancel={() => cancelTrip('Cancelled while waiting for a driver')} />)
   }
   if (phase === 'matching') return shell(`We are finding you a verified driver: ${trip?.urgent ? 'urgent, usually within 5–10 minutes' : 'usually within 30 minutes'}.`, <Matching label={trip?.statusLabel} />)
   if (phase === 'no_drivers') {

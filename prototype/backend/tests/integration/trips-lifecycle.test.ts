@@ -4,12 +4,14 @@ import { buildApp } from '../../src/app.js'
 import { pool } from '../../src/db/client.js'
 import { seed } from '../../src/db/seed.js'
 import { awaitDispatchIdle } from '../../src/modules/trips/dispatch-tracker.js'
+import { EXTENDED_SEARCH_MINUTES, retryWaitingTrips } from '../../src/modules/trips/matching.js'
 import { detectArrivals } from '../../src/modules/trips/arrival.js'
 import { expireStaleOffers } from '../../src/modules/trips/sweeper.js'
 import { redis } from '../../src/redis/client.js'
 import { ConsolePushProvider, setPushProvider } from '../../src/providers/push/index.js'
 import { bearer, loginAs } from '../helpers/auth.js'
 import { resetDb } from '../helpers/db.js'
+import { loginAsRole } from '../helpers/safety.js'
 import { resetRedis } from '../helpers/redis.js'
 import {
   BOOK_BODY, eventTypes, GACHIBOWLI, HITEC_CITY, makeCustomer, makeOnlineDriver, SELFIE, tripStatus,
@@ -92,12 +94,48 @@ describe('trip lifecycle', () => {
       })
     })
 
-    it('ends as NO_DRIVERS_FOUND when nobody is nearby', async () => {
-      await app.inject({
+    const goOffline = () =>
+      app.inject({
         method: 'POST', url: '/v1/driver/availability',
         headers: bearer(driver.accessToken), payload: { availability: 'OFFLINE' },
       })
+    const needsDriver = async (tripId: string) =>
+      (await pool.query(`SELECT needs_driver_since FROM trips WHERE id = $1`, [tripId])).rows[0].needs_driver_since
+
+    it('keeps searching and flags the trip for ops when nobody is nearby', async () => {
+      await goOffline()
       const tripId = await bookAndDispatch()
+
+      expect(await tripStatus(tripId)).toBe('REQUESTED')
+      expect(await needsDriver(tripId)).not.toBeNull()
+      expect(await eventTypes(tripId)).toContain('TRIP_NEEDS_DRIVER')
+      const ops = await loginAsRole(app, '+919800000071', 'SAFETY_DESK_AGENT')
+      const waiting = await app.inject({ method: 'GET', url: '/v1/admin/trips/waiting', headers: bearer(ops.accessToken) })
+      expect(waiting.json().map((t: { trip_id: string }) => t.trip_id)).toEqual([tripId])
+    })
+
+    it('offers a waiting trip to a driver who comes online later', async () => {
+      await goOffline()
+      const tripId = await bookAndDispatch()
+      const late = await makeOnlineDriver(app, '+919848012399')
+
+      await retryWaitingTrips()
+      await awaitDispatchIdle()
+
+      const { rows } = await pool.query(`SELECT driver_id FROM trip_offers WHERE trip_id = $1`, [tripId])
+      expect(rows.map((r) => r.driver_id)).toEqual([late.userId])
+      expect(await tripStatus(tripId)).toBe('MATCHED')
+    })
+
+    it('ends as NO_DRIVERS_FOUND once the extended search window has passed', async () => {
+      await goOffline()
+      const tripId = await bookAndDispatch()
+      await pool.query(
+        `UPDATE trips SET requested_at = now() - make_interval(mins => $2) WHERE id = $1`,
+        [tripId, EXTENDED_SEARCH_MINUTES + 1],
+      )
+
+      await retryWaitingTrips()
 
       expect(await tripStatus(tripId)).toBe('NO_DRIVERS_FOUND')
       expect(await eventTypes(tripId)).toContain('TRIP_NO_DRIVERS_FOUND')
@@ -108,7 +146,8 @@ describe('trip lifecycle', () => {
         .id as string
       await awaitDispatchIdle()
 
-      expect(await tripStatus(tripId)).toBe('NO_DRIVERS_FOUND')
+      expect(await tripStatus(tripId)).toBe('REQUESTED')
+      expect(await needsDriver(tripId)).not.toBeNull()
     })
 
     it('re-dispatches to the next driver when the first declines', async () => {
@@ -131,12 +170,13 @@ describe('trip lifecycle', () => {
       expect(await tripStatus(tripId)).toBe('MATCHED')
     })
 
-    it('gives up after every nearby driver has declined', async () => {
+    it('moves to the extended search after every nearby driver has declined', async () => {
       const tripId = await bookAndDispatch()
       await respond(tripId, false)
       await awaitDispatchIdle()
 
-      expect(await tripStatus(tripId)).toBe('NO_DRIVERS_FOUND')
+      expect(await tripStatus(tripId)).toBe('REQUESTED')
+      expect(await needsDriver(tripId)).not.toBeNull()
     })
 
     it('embeds the driver name, vehicle and rating once one is assigned', async () => {
@@ -537,7 +577,9 @@ describe('trip lifecycle', () => {
           method: 'POST', url: '/v1/driver/availability',
           headers: bearer(driver.accessToken), payload: { availability: 'OFFLINE' },
         })
-        await bookAndDispatch()
+        const tripId = await bookAndDispatch()
+        await pool.query(`UPDATE trips SET requested_at = now() - interval '1 hour' WHERE id = $1`, [tripId])
+        await retryWaitingTrips()
         expect(toCustomer()).toEqual(['NO_DRIVERS_FOUND'])
       })
 

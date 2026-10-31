@@ -21,7 +21,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'cd ../backend && MAPS_PROVIDER=mock npx tsx src/index.ts > ../website/e2e/.api.log 2>&1',
+      command: 'cd ../backend && MAPS_PROVIDER=mock PAY_AFTER_TRIP=false npx tsx src/index.ts > ../website/e2e/.api.log 2>&1',
       url: 'http://localhost:4000/health',
       reuseExistingServer: false,
       timeout: 60_000,
