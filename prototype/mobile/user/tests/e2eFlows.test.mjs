@@ -69,8 +69,8 @@ describe('Customer App · Layer 3 Maestro E2E Suite & Driver Simulation', () => 
     const tripViewSrc = readScreen('src/lib/tripView.js')
     const flow02 = readFileSync(resolve(E2E_DIR, '02-book-within-city.yaml'), 'utf8')
     for (const selector of [
-      'WHAT DO YOU NEED?',
-      'PRICE ESTIMATE',
+      'What do you need?',
+      'Price estimate',
       'Estimated total',
       'Confirm and pay',
       'REFUNDABLE HOLD',
@@ -81,9 +81,8 @@ describe('Customer App · Layer 3 Maestro E2E Suite & Driver Simulation', () => 
     ]) {
       assert.ok(flow02.includes(selector), `02-book-within-city.yaml missing selector "${selector}"`)
     }
-    // HomeScreen SectionHeader converts "What do you need?" via String(children).toUpperCase()
-    assert.ok(homeSrc.includes('What do you need?') && homeSrc.includes('.toUpperCase()'))
-    assert.ok(homeSrc.includes('PRICE ESTIMATE'))
+    assert.ok(homeSrc.includes('title="What do you need?"'))
+    assert.ok(homeSrc.includes('title="Price estimate"'))
     assert.ok(homeSrc.includes('Estimated total'))
     assert.ok(paymentSrc.includes('Confirm and pay'))
     assert.ok(paymentSrc.includes('REFUNDABLE HOLD'))

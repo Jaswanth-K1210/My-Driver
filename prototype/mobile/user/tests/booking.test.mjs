@@ -207,7 +207,7 @@ describe('Customer App · src/lib/booking.js', () => {
     )
     assert.equal(q.ready, true)
     assert.ok(q.total > q.base)
-    assert.ok(q.lines.some((l) => l.label === 'Stops convenience fee' && l.value === '₹60'))
+    assert.ok(q.lines.some((l) => l.label.startsWith('Stops convenience fee') && l.value === '₹60'))
   })
 
   it('enforces minimum 2-hour floor on getMinDurationForConfig for short city trips', () => {

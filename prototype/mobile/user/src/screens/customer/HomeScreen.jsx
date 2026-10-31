@@ -8,6 +8,7 @@
  *   Your driver         — the tier the server picks from the car
  *   Safety              — speed limit, guardians, female driver;
  *                         asked once, then pre-filled from /v1/me
+ *   When                — standard or urgent (urgent fee from trip-config)
  *   Price estimate      — server total, with the line breakdown on demand
  *
  * Sticky bar: estimated total + "Find [Tier] Driver" — disabled until quote.ready
@@ -15,7 +16,7 @@
 import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Slider from '@react-native-community/slider'
-import { ChevronDown, ChevronUp, Gauge, Search, UserCheck } from 'lucide-react-native'
+import { ChevronDown, ChevronUp, Clock, Gauge, Search, UserCheck, Zap } from 'lucide-react-native'
 import { useTrip } from '../../context/TripContext'
 import { useAuth } from '../../context/AuthContext'
 import { useEffect, useState } from 'react'
@@ -84,9 +85,19 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
   // only supplies the words (route, trip type, duration) and tells us the
   // form is complete enough to ask for a price.
   const [server, setServer] = useState(null)
-  const [priceStatus, setPriceStatus] = useState('idle') // 'idle' | 'loading' | 'ready' | 'error'
+  const [priceStatus, setPriceStatus] = useState('idle') // 'idle' | 'loading' | 'ready' | 'error' | 'outside'
+  const [quoteError, setQuoteError] = useState(null)
   const [priceAttempt, setPriceAttempt] = useState(0)
   const [showFare, setShowFare] = useState(false)
+
+  // The urgent fee and driver ETAs are server settings, as on the website.
+  const [tripConfig, setTripConfig] = useState(null)
+  useEffect(() => {
+    api.catalogue.tripConfig().then(setTripConfig).catch(() => undefined)
+  }, [])
+  const eta = tripConfig?.driver_eta_minutes ?? { normal: 30, urgent: { min: 5, max: 10 } }
+  // Shown only when the server sends it; an older backend has no urgent fee.
+  const urgentFee = Number.isFinite(tripConfig?.fees?.urgent_fee) ? tripConfig.fees.urgent_fee : null
 
   const local = quoteFor(config, skills)
 
@@ -99,13 +110,22 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
     let cancelled = false
     setPriceStatus('loading')
     const timer = setTimeout(() => {
-      serverQuote(api, config).then((q) => {
-        if (cancelled) return
-        // serverQuote resolves to null when the request failed. A price from
-        // an earlier form state must not stay on screen as if it were current.
-        setServer(q)
-        setPriceStatus(q ? 'ready' : 'error')
-      })
+      serverQuote(api, config)
+        .then((q) => {
+          if (cancelled) return
+          // serverQuote resolves to null when the request failed. A price from
+          // an earlier form state must not stay on screen as if it were current.
+          setQuoteError(null)
+          setServer(q)
+          setPriceStatus(q ? 'ready' : 'error')
+        })
+        .catch((err) => {
+          // Only a trip the server refuses outright is thrown (OUTSIDE_CITY).
+          if (cancelled) return
+          setServer(null)
+          setQuoteError(err)
+          setPriceStatus('outside')
+        })
     }, 250)
     return () => {
       cancelled = true
@@ -131,7 +151,10 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
             { label: `${server.tier_label} fare`, value: formatINR(server.fare.base - (server.fare.stops_fee ?? 0)) },
             ...(server.fare.stops_fee > 0 ? [{ label: 'Stops', value: formatINR(server.fare.stops_fee) }] : []),
             { label: 'Platform fee', value: formatINR(server.fare.platform_fee) },
-            ...(server.fare.night_fee > 0 ? [{ label: 'Night fee', value: formatINR(server.fare.night_fee) }] : []),
+            ...(server.fare.night_fee > 0 ? [{ label: 'Night fee (10 pm – 5 am)', value: formatINR(server.fare.night_fee) }] : []),
+            ...(server.fare.urgent_fee > 0
+              ? [{ label: `Urgent (driver in ${eta.urgent.min}–${eta.urgent.max} min)`, value: formatINR(server.fare.urgent_fee) }]
+              : []),
           ]
         : []),
     ],
@@ -340,6 +363,49 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
           </Panel>
         </Section>
 
+        {/* ── When (standard or urgent, priced by the server) ── */}
+        <Section title="When do you need the driver?">
+          <View style={{ flexDirection: 'row', gap: space.md }}>
+            {[
+              { urgent: false, icon: Clock, title: 'Standard', hint: `Driver assigned within ${eta.normal} min` },
+              {
+                urgent: true,
+                icon: Zap,
+                title: 'Urgent',
+                hint: `Driver in ${eta.urgent.min}–${eta.urgent.max} min${urgentFee != null ? ` · +${formatINR(urgentFee)}` : ''}`,
+              },
+            ].map((o) => {
+              const selected = Boolean(config.urgent) === o.urgent
+              const Icon = o.icon
+              return (
+                <Pressable
+                  key={o.title}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${o.title}: ${o.hint}`}
+                  onPress={() => onChange({ ...config, urgent: o.urgent })}
+                  style={{
+                    flex: 1,
+                    gap: 4,
+                    borderRadius: radius.lg,
+                    borderWidth: selected ? 1.5 : 1,
+                    borderColor: selected ? colors.red : colors.border,
+                    backgroundColor: selected ? colors.redSofter : colors.surface,
+                    paddingHorizontal: space.md,
+                    paddingVertical: 14,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Icon size={16} color={colors.brand} />
+                    <Text style={{ ...type.bodyBold, color: colors.text }}>{o.title}</Text>
+                  </View>
+                  <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 16 }}>{o.hint}</Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        </Section>
+
         {/* ── Price estimate ── */}
         <Section title="Price estimate">
           <Panel style={{ gap: space.md }}>
@@ -385,7 +451,19 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
               </View>
             ) : null}
 
-            {priceStatus === 'error' ? (
+            {priceStatus === 'outside' ? (
+              <View style={{ gap: space.sm }}>
+                <Text style={{ ...type.bodyBold, color: colors.text }}>This trip goes outside the city</Text>
+                <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>
+                  {quoteError?.message ?? 'Within City trips stay inside the city. Book it as Outstation instead.'}
+                </Text>
+                <Button
+                  label="Switch to Outstation"
+                  variant="outline"
+                  onPress={() => onChange({ ...config, requirement: 'inter_city' })}
+                />
+              </View>
+            ) : priceStatus === 'error' ? (
               <View style={{ gap: space.sm }}>
                 <Text style={{ ...type.caption, color: colors.redPressed }}>
                   Could not get a price. Check your connection and try again.

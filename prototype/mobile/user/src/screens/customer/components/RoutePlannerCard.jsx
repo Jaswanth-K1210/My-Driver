@@ -321,6 +321,8 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
               title="Pickup location"
               searchable
               placeSearch
+              currentLocation
+              autoDetect
             />
           </View>
         </TimelineRow>
@@ -338,6 +340,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
                 title={`Stop ${i + 1}`}
                 searchable
                 placeSearch
+                currentLocation
               />
             </View>
             <StopRemoveButton onPress={() => removeStop(stop.id)} />
@@ -356,6 +359,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
               title="Destination"
               searchable
               placeSearch
+              currentLocation
             />
           </View>
         </TimelineRow>
@@ -401,6 +405,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
                   title={`Return stop ${i + 1}`}
                   searchable
                   placeSearch
+                  currentLocation
                 />
               </View>
               <StopRemoveButton onPress={() => removeReturnStop(stop.id)} />
@@ -422,6 +427,7 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
                 title="Return drop"
                 searchable
                 placeSearch
+                currentLocation
               />
             </View>
           </TimelineRow>

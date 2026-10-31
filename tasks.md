@@ -118,6 +118,11 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       the total in the sticky bar; larger small text sizes in `src/theme/tokens.js`. Maestro flows
       and `docs/user-app-testing.md` updated to the new wording. Written — needs phone check
       (`feat(UI-1)`, 31 Oct)
+- [x] **UI-2** Booking in step with the website (done by Umesh for Sanath, 31 Oct): `src/lib/booking.js`
+      now matches the website's (distance rounding, labels, airport distance, `urgent` in the
+      payload, `OUTSIDE_CITY` passed up); "Use my current location" (GPS via `expo-location`, named
+      through `/v1/locations/reverse`) on every location field, auto-filled for the default pickup;
+      airport "Pickup from / Drop at" field. Written — needs phone check (`feat(UI-2)`, 31 Oct)
 - [ ] REQUEST from Jaswanth (2026-10-31): urgent booking and pay-after-trip, to keep the app in step
       with the website (`feat(booking)`, 31 Oct). (1) Booking screen: "Standard — driver within 30 min"
       / "Urgent — driver in 5–10 min, +₹`fees.urgent_fee`"; send `urgent: true` on `/v1/trips/quote`
@@ -126,16 +131,20 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       `payment: null` (no payment screen); after the trip `GET /v1/trips/:id/payment` has a `CREATED`
       payment for the final fare: show "Pay ₹`amount_authorized`" with the same checkout URL.
       Also please decide on the `prd.md` §3.2/§6 change (see progress.md, 31 Oct).
+  - [x] Part (1), urgent booking: Standard / Urgent choice on Home, `urgent` sent on quote and
+        book, urgent fee in the breakdown. Written — needs phone check (`feat(UI-2)`, 31 Oct)
+  - [ ] Part (2), pay-after-trip: not done
 - [ ] REQUEST from Jaswanth (2026-10-31): "waiting for a driver" screen (`feat(dispatch)`, 31 Oct).
       When the first search finds nobody the trip now stays `REQUESTED` with `needs_driver_since` set
       (new field on trip views) and dispatch keeps retrying for 30 min before `NO_DRIVERS_FOUND`.
       While `needs_driver_since` is set, show "A driver will be assigned within 30 minutes, we'll
       notify you" with a Cancel button instead of the matching spinner (website: `WaitingForDriver`
       in `Track.jsx`). The existing push on driver accept covers "we'll notify you".
-- [ ] REQUEST from Jaswanth (2026-10-31): Within city trips to another city are now refused
+- [x] REQUEST from Jaswanth (2026-10-31): Within city trips to another city are now refused
       (`fix(booking)`, 31 Oct). Quote and book return 400 `OUTSIDE_CITY` when `requirement` is
       `within_city` and the drop, a stop or the return drop is over 50 km (straight line) from the
       pickup. Show the error message with a "Switch to Outstation" action instead of a spinner.
+      Written — needs phone check (`feat(UI-2)`, 31 Oct)
 
 ### Builds and release
 - [ ] Development builds for Android and iOS against staging (Phase 4)

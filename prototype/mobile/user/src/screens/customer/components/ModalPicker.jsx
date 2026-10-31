@@ -11,9 +11,13 @@
  *   searchable   — show a search input (for long lists)
  *   placeSearch  — also search live places through the backend (location pickers only)
  *   label        — optional small label shown inside the field, above the value
+ *   currentLocation — offer "Use my current location" at the top of the sheet
+ *   autoDetect   — fill in the current location once on first show, while the
+ *                  value is still the default pickup (pickup field only)
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  ActivityIndicator,
   FlatList,
   Modal,
   Pressable,
@@ -21,10 +25,32 @@ import {
   TextInput,
   View,
 } from 'react-native'
-import { Check, ChevronDown, X } from 'lucide-react-native'
+import * as Location from 'expo-location'
+import { Check, ChevronDown, LocateFixed, X } from 'lucide-react-native'
 import { colors, radius, space, type } from '../../../theme/tokens'
 import { api } from '../../../lib/apiClient'
-import { getLocationById, registerPlace } from '../../../lib/booking'
+import { DEFAULT_CONFIG, getLocationById, registerPlace } from '../../../lib/booking'
+
+/**
+ * Names a GPS position through the backend's locations proxy, as the website
+ * does: the phone never calls a geocoder directly. If the lookup fails, the
+ * coordinates themselves are the label.
+ */
+async function reverseGeocode(lat, lng) {
+  try {
+    const place = await api.locations.reverse({ lat, lng })
+    return { name: `Current location (${place.name})`, address: place.address }
+  } catch {
+    return {
+      name: `Current location (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+      address: `GPS: ${lat.toFixed(5)}, ${lng.toFixed(5)}`,
+    }
+  }
+}
+
+// Kept across re-renders so the customer is only asked once automatically.
+let cachedGpsPlace = null
+let autoDetectAttempted = false
 
 export default function ModalPicker({
   value,
@@ -35,10 +61,59 @@ export default function ModalPicker({
   searchable = false,
   placeSearch = false,
   label,
+  currentLocation = false,
+  autoDetect = false,
 }) {
   const [visible, setVisible] = useState(false)
   const [query, setQuery] = useState('')
   const [remoteOptions, setRemoteOptions] = useState(null)
+  const [locating, setLocating] = useState(false)
+  const [locateError, setLocateError] = useState(null)
+
+  const locateMe = useCallback(
+    async ({ silent = false } = {}) => {
+      setLocating(true)
+      setLocateError(null)
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync()
+        if (status !== 'granted') {
+          if (!silent) {
+            setLocateError('Location permission was denied. Allow it in Settings, or search for your pickup.')
+          }
+          return
+        }
+        const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
+        const { latitude: lat, longitude: lng } = pos.coords
+        const geo = await reverseGeocode(lat, lng)
+        const place = { id: `gps_${lat.toFixed(5)}_${lng.toFixed(5)}`, name: geo.name, address: geo.address, lat, lng }
+        cachedGpsPlace = place
+        onChange(registerPlace(place))
+        setVisible(false)
+        setQuery('')
+      } catch {
+        if (!silent) setLocateError('Could not read your location. Search for your pickup instead.')
+      } finally {
+        setLocating(false)
+      }
+    },
+    [onChange],
+  )
+
+  // Once per mount, and only over the untouched default: re-running on `value`
+  // would undo a deliberate pick.
+  const autoAppliedRef = useRef(false)
+  useEffect(() => {
+    if (!autoDetect || autoAppliedRef.current) return
+    autoAppliedRef.current = true
+    if (value !== DEFAULT_CONFIG.pickupId) return
+    if (cachedGpsPlace) {
+      onChange(registerPlace(cachedGpsPlace))
+      return
+    }
+    if (autoDetectAttempted) return
+    autoDetectAttempted = true
+    void locateMe({ silent: true })
+  }, [autoDetect, onChange, locateMe, value])
 
   useEffect(() => {
     if (!placeSearch || query.trim().length < 2) {
@@ -66,7 +141,7 @@ export default function ModalPicker({
   }, [query, placeSearch])
 
   // A searched place is not in `options`, so resolve its label from the registry.
-  const searchedPlace = placeSearch && value ? getLocationById(value) : null
+  const searchedPlace = (placeSearch || currentLocation) && value ? getLocationById(value) : null
   const selected =
     options.find((o) => o.id === value) ||
     (searchedPlace ? { id: searchedPlace.id, label: searchedPlace.name, sublabel: searchedPlace.address } : null)
@@ -81,6 +156,7 @@ export default function ModalPicker({
 
   const open = () => {
     setQuery('')
+    setLocateError(null)
     setVisible(true)
   }
 
@@ -205,6 +281,41 @@ export default function ModalPicker({
               />
             </View>
           )}
+
+          {/* Current location */}
+          {currentLocation ? (
+            <View style={{ borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Use my current location"
+                accessibilityState={{ busy: locating, disabled: locating }}
+                disabled={locating}
+                onPress={() => locateMe()}
+                style={({ pressed }) => ({
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: space.md,
+                  paddingHorizontal: space.lg,
+                  paddingVertical: 14,
+                  backgroundColor: pressed ? colors.surfaceAlt : 'transparent',
+                })}
+              >
+                {locating ? (
+                  <ActivityIndicator size="small" color={colors.brand} />
+                ) : (
+                  <LocateFixed size={18} color={colors.brand} />
+                )}
+                <Text style={{ ...type.bodyBold, color: colors.brand }}>
+                  {locating ? 'Finding your location…' : 'Use my current location'}
+                </Text>
+              </Pressable>
+              {locateError ? (
+                <Text style={{ ...type.tiny, color: colors.redPressed, paddingHorizontal: space.lg, paddingBottom: space.md }}>
+                  {locateError}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
 
           {/* Options */}
           {filtered.length === 0 ? (

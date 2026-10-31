@@ -30,7 +30,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "During a trip MyDriver compares your location with your driver's, so the Safety Desk can step in if the car goes somewhere you are not. Location is only shared while a trip is in progress."
+          "locationWhenInUsePermission": "MyDriver uses your location to fill in your pickup when you book. During a trip it compares your location with your driver's, so the Safety Desk can step in if the car goes somewhere you are not. Location is only shared while you book or a trip is in progress."
         }
       ],
       [

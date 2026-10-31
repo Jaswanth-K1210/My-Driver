@@ -3,10 +3,12 @@
  */
 import { TextInput, View } from 'react-native'
 import { Plane } from 'lucide-react-native'
-import { AIRPORT_LOCATIONS } from '../../../data/mock'
+import { AIRPORT_LOCATIONS, CITY_LOCATIONS } from '../../../data/mock'
 import { colors, radius, space, type } from '../../../theme/tokens'
 import { FieldLabel, Segmented } from '../../../components/Form'
 import ModalPicker from './ModalPicker'
+
+const CITY_OPTS = CITY_LOCATIONS.map((l) => ({ id: l.id, label: l.name, sublabel: l.address }))
 
 const TERMINAL_OPTS = AIRPORT_LOCATIONS.map((a) => ({
   id: a.id,
@@ -56,6 +58,22 @@ export default function AirportForm({ config, onChange }) {
           onChange={(id) => patchAD({ terminalId: id })}
           placeholder="Select airport terminal"
           title="Airport terminal"
+        />
+      </View>
+
+      {/* The customer's own end of the trip. Without it every airport booking
+          used the default city location, as the website once did. */}
+      <View>
+        <FieldLabel>{ad.flow === 'arrival' ? 'Drop at' : 'Pickup from'}</FieldLabel>
+        <ModalPicker
+          value={config.dropId}
+          options={CITY_OPTS}
+          onChange={(dropId) => onChange({ ...config, dropId })}
+          placeholder={ad.flow === 'arrival' ? 'Where should we drop you?' : 'Where should we pick you up?'}
+          title={ad.flow === 'arrival' ? 'Drop at' : 'Pickup from'}
+          searchable
+          placeSearch
+          currentLocation
         />
       </View>
 

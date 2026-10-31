@@ -3,6 +3,23 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Umesh · UI-2 (user app, for Sanath): booking in step with the website
+
+**Did:**
+- `src/lib/booking.js` rebuilt from the website's, keeping the app-only parts (live tiers, `carDetailsFrom`, safety fields, coordinate stops, the exported `resolveReturnDrop`). Brings over: distance rounding, the website's labels, airport distance from the chosen address, `urgent` in the payload, `serverQuote` rethrowing `OUTSIDE_CITY`, and the end of the old ₹60/hour local add-on.
+- Home: "When do you need the driver?" (Standard / Urgent, ETAs and urgent fee from `trip-config`), urgent and night fee lines in the breakdown, and "This trip goes outside the city" with "Switch to Outstation" instead of a dead price.
+- Location fields: "Use my current location" (GPS through `expo-location`, named through the backend's `/v1/locations/reverse`, coordinates if that fails), as on the website. The pickup fills itself once if it is still the default. The app never had real GPS pickup before: earlier "Current location" was a mock entry in `data/mock.js`.
+- Airport: "Pickup from / Drop at" field; before, every app airport booking used the default city location.
+- `app.json`: the iOS location prompt now also mentions filling in the pickup.
+- `tests/e2eFlows.test.mjs` updated for the UI-1 wording (it failed after UI-1; `npm test` was not run then) and `tests/booking.test.mjs` for the website's stops-fee label.
+**Checks:** `npm test` 22/22 · `npx expo export --platform android` pass. On web at 375 px with a temporary signed-in stub (not committed): urgent choice, airport field and "Use my current location" (browser position stubbed to Jubilee Hills) work, route distance updates from the GPS pickup. A priced quote, the urgent fee and `OUTSIDE_CITY` were not seen: the stub cannot get a quote, and the backend running on this machine predates the urgent fee.
+**Commit:** `feat(UI-2): booking in step with the website`
+**Not done / follow-ups:**
+- Within City and Outstation prices still do not change with duration, in the app or on the website: both send `POINT_TO_POINT`, which the server prices by distance (`computeFare` in `trips/fare.ts`). Making hours count is a backend and pricing decision for Jaswanth and Sanath.
+- Pay-after-trip (part 2 of Jaswanth's request) is not done.
+- Needs phone check, including the location prompt on Android and iPhone.
+**Requests raised:** none.
+
 ## 2026-10-31 · Umesh · UI-1 (user app, agreed with Sanath)
 
 **Did:** Decluttered the customer booking screen; no change to pricing, payloads or flows.
