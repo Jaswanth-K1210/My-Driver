@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Check, KeyRound, ScanFace, ShieldCheck, X } from 'lucide-react-native'
@@ -16,18 +16,45 @@ const OTP_LENGTH = 4
  * The selfie is taken here and judged on the server: the liveness provider and
  * its confidence threshold decide, together with the customer's OTP, whether
  * the trip may start. Nothing on this screen claims a match by itself.
+ *
+ * The selfie and the typed code live in DriverFlow (`draft` / `onDraft`), not
+ * here: returning from the camera re-checks the driver's approval, and while
+ * that runs DriverFlow shows the loading screen in place of this one. State
+ * kept on this screen was thrown away with it, so the selfie came back blank.
  */
 
-export default function HandshakeScreen({ request, onVerified }) {
+/** The base64 photo in a camera result, or null (cancelled, error or no data). */
+function photoFrom(result) {
+  if (!result || 'code' in result || result.canceled) return null
+  return result.assets?.[0]?.base64 ?? null
+}
+
+export default function HandshakeScreen({ request, onVerified, draft, onDraft }) {
   const { submitHandshake, cancelTrip } = useDriver()
   const [submitting, setSubmitting] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const { toast } = useToast()
-  const [selfie, setSelfie] = useState(null)
-  const [otp, setOtp] = useState(['', '', '', ''])
+  const { selfie, otp } = draft
+  const setSelfie = (value) => onDraft(() => ({ selfie: value }))
+  const setOtp = (next) => onDraft((prev) => ({ otp: typeof next === 'function' ? next(prev.otp) : next }))
   const [otpError, setOtpError] = useState(false)
   const inputsRef = useRef([])
   const shake = useRef(new Animated.Value(0)).current
+
+  // Android may close the app while the camera is open (low memory). The photo
+  // then comes back through getPendingResultAsync when the app starts again.
+  useEffect(() => {
+    let cancelled = false
+    ImagePicker.getPendingResultAsync()
+      .then((pending) => {
+        const photo = photoFrom(Array.isArray(pending) ? pending[0] : pending)
+        if (!cancelled && photo) setSelfie(photo)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const takeSelfie = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync()
@@ -35,13 +62,23 @@ export default function HandshakeScreen({ request, onVerified }) {
       toast('Allow camera access to take the pickup selfie', 'warning')
       return
     }
-    const shot = await ImagePicker.launchCameraAsync({
-      base64: true,
-      quality: 0.5,
-      cameraType: ImagePicker.CameraType.front,
-      mediaTypes: ['images'],
-    })
-    if (!shot.canceled && shot.assets?.[0]?.base64) setSelfie(shot.assets[0].base64)
+    let shot
+    try {
+      shot = await ImagePicker.launchCameraAsync({
+        base64: true,
+        quality: 0.5,
+        exif: false,
+        cameraType: ImagePicker.CameraType.front,
+        mediaTypes: ['images'],
+      })
+    } catch (err) {
+      toast(err?.message ?? 'Could not open the camera. Try again.', 'warning')
+      return
+    }
+    if (shot.canceled) return
+    const photo = photoFrom(shot)
+    if (photo) setSelfie(photo)
+    else toast('The photo could not be read. Take the selfie again.', 'warning')
   }
 
   const runShake = () => {

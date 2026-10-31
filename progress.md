@@ -3,6 +3,14 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Umesh · HS-1: pickup selfie came back blank
+
+**Did:** After taking the pickup selfie the driver landed back on the handshake screen with no photo. Cause: opening the camera backgrounds the app; on return `DriverContext` runs `controller.validate()`, and while it is `VALIDATING` the gate reports `LOADING` for a `HANDSHAKE_PENDING` trip, so `DriverFlow` swapped `HandshakeScreen` for `OnboardingLoading` and the selfie in its state was lost. The gate is unchanged (a handshake still needs a fresh approval check). Fix: the selfie and the typed code now live in `DriverFlow` (per trip id) and are passed to `HandshakeScreen` as `draft` / `onDraft`, so they survive the re-check. Also: on mount the screen collects a photo Android kept after closing the app during the camera (`ImagePicker.getPendingResultAsync`), camera errors are caught, and a result with no image data shows "The photo could not be read" instead of failing silently.
+**Checks:** `npm test` 26/26 · `npx expo export --platform android` pass. Not run on a phone.
+**Commit:** `fix(HS-1): keep the pickup selfie across the approval re-check`
+**Not done / follow-ups:** Needs phone check (Android and iPhone, on the new SDK 58 development build). The licence photo in onboarding goes through the same re-check but uploads straight away, so it is not affected the same way. The shared bug log (`prd.md` §3.5) is not set up yet, so this has a task ID instead of a `B-` ID.
+**Requests raised:** none.
+
 ## 2026-10-31 · Umesh · SDK-58: both mobile apps on Expo SDK 58
 
 **Did:** Agreed by all three developers. Moved the customer and driver apps from Expo SDK 57 to SDK 58: `expo` 58.0.22, React Native 0.88.1, React 19.3.0, and every Expo module, `react-native-maps`, safe-area, screens and SVG at the SDK 58 versions (`npx expo install --check` clean; its `--fix` fails on this npm's install-script policy, so the last three patch versions were set in `package.json` and installed with `npm install`). Customer app: `@sentry/react-native` 8.28 and loaded only when Sentry is on; Sentry and volume-button SOS skip their native modules in Expo Go (`isRunningInExpoGo`). The SDK references in the root `AGENTS.md` (agreed change), both apps' `AGENTS.md`, `prototype/README.md` and `docs/user-app-testing.md` now say SDK 58.

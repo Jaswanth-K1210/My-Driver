@@ -19,6 +19,8 @@ import EarningsScreen from './EarningsScreen'
 import AssessmentsScreen from './AssessmentsScreen'
 import ProfileScreen from './ProfileScreen'
 
+const EMPTY_HANDSHAKE = { selfie: null, otp: ['', '', '', ''] }
+
 const TABS = [
   { key: 'home', label: 'Home', icon: House },
   { key: 'earnings', label: 'Earnings', icon: IndianRupee },
@@ -68,6 +70,17 @@ function Flow({ onLogout }) {
   const [result, setResult] = useState(null)
 
   const tripId = trip?.serverId ?? null
+
+  // The handshake's selfie and code. Returning from the camera re-checks
+  // approval, and the loading screen replaces HandshakeScreen meanwhile; kept
+  // here, they survive that. A new trip starts with an empty draft.
+  const [handshake, setHandshake] = useState({ tripId: null, ...EMPTY_HANDSHAKE })
+  const handshakeDraft = handshake.tripId === tripId ? handshake : EMPTY_HANDSHAKE
+  const updateHandshake = (updater) =>
+    setHandshake((prev) => {
+      const base = prev.tripId === tripId ? prev : { tripId, ...EMPTY_HANDSHAKE }
+      return { ...base, ...updater(base) }
+    })
   const preDue = trip?.status === 'IN_TRIP'
 
   useEffect(() => {
@@ -222,6 +235,8 @@ function Flow({ onLogout }) {
     return (
       <HandshakeScreen
         request={trip}
+        draft={handshakeDraft}
+        onDraft={updateHandshake}
         onVerified={() => {
           setInspected(false)
           void updateTripInspected(false)
