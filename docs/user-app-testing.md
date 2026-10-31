@@ -138,7 +138,7 @@ the driver's position, so the driver's phone has to be near the pickup.
 4. Edit a car and change the gearbox: the row updates.
 5. Add a car with a registration number that is already saved: "A car with this
    registration is already in your garage".
-6. Remove a car, confirm. Open the Book tab: it is gone from Saved Garage too.
+6. Remove a car, confirm. Open the Book tab: it is gone from My garage too.
 7. Sign out and in again: the Book tab starts with the default car selected.
 8. Choose "Other / Custom", type a make and model, save, then edit it: the
    typed make and model are still there.

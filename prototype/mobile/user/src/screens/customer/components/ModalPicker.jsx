@@ -10,6 +10,7 @@
  *   title        — modal header title
  *   searchable   — show a search input (for long lists)
  *   placeSearch  — also search live places through the backend (location pickers only)
+ *   label        — optional small label shown inside the field, above the value
  */
 import { useEffect, useState } from 'react'
 import {
@@ -33,6 +34,7 @@ export default function ModalPicker({
   title = 'Select',
   searchable = false,
   placeSearch = false,
+  label,
 }) {
   const [visible, setVisible] = useState(false)
   const [query, setQuery] = useState('')
@@ -87,12 +89,13 @@ export default function ModalPicker({
       {/* ─── Trigger Button ─── */}
       <Pressable
         accessibilityRole="button"
+        accessibilityLabel={`${label ?? title}: ${selected ? selected.label : placeholder}`}
         onPress={open}
         style={({ pressed }) => ({
           flexDirection: 'row',
           alignItems: 'center',
           paddingHorizontal: space.md,
-          paddingVertical: 11,
+          paddingVertical: label ? 9 : 13,
           borderRadius: radius.md,
           borderWidth: 1,
           borderColor: colors.border,
@@ -100,17 +103,19 @@ export default function ModalPicker({
           gap: space.sm,
         })}
       >
-        <Text
-          numberOfLines={1}
-          style={{
-            ...type.body,
-            color: selected ? colors.text : colors.textMuted,
-            flex: 1,
-          }}
-        >
-          {selected ? selected.label : placeholder}
-        </Text>
-        <ChevronDown size={15} color={colors.textMuted} />
+        <View style={{ flex: 1 }}>
+          {label ? <Text style={{ ...type.tiny, color: colors.textMuted }}>{label}</Text> : null}
+          <Text
+            numberOfLines={1}
+            style={{
+              ...type.body,
+              color: selected ? colors.text : colors.textMuted,
+            }}
+          >
+            {selected ? selected.label : placeholder}
+          </Text>
+        </View>
+        <ChevronDown size={16} color={colors.textMuted} />
       </Pressable>
 
       {/* ─── Bottom-Sheet Modal ─── */}

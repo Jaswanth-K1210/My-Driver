@@ -371,7 +371,7 @@ export default function VaultScreen() {
         }
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={colors.red} colors={[colors.red]} />}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.xxl }}
+        contentContainerStyle={{ paddingHorizontal: space.xl, paddingBottom: space.xxl }}
       />
 
       <BottomSheet open={Boolean(detailTrip)} onClose={() => setDetailTrip(null)} title="Trip receipt">

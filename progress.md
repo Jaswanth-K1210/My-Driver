@@ -3,6 +3,22 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Umesh · UI-1 (user app, agreed with Sanath)
+
+**Did:** Decluttered the customer booking screen; no change to pricing, payloads or flows.
+- `HomeScreen.jsx`: "Book a driver" heading; numbered all-caps step labels replaced by plain section titles with more spacing; Your driver, Safety and Price estimate restyled; the price breakdown sits behind "Details" and the server total also shows in the sticky bar next to "Find … Driver".
+- New `src/components/Form.jsx` (field label, segmented control, stepper, chip, note, panel), used by every booking form.
+- Route planner: labels inside each location field, one timeline, a quiet distance/time line per leg, plain round-trip total. Live place search and every accessibility label kept.
+- Duration: Within city is a stepper plus 2/4/8/12 h chips; Outstation is two steppers (days, extra hours) plus a total.
+- Vehicle form: "My garage" / "Another car" tabs, chips for engine, segmented control for transmission; the shared garage, its error and empty states kept.
+- Trip type tiles: icon, label and tagline; two per row, a third tile spans the row while full-time is hidden.
+- `src/theme/tokens.js`: smallest text sizes up 1 px, lighter weights. Vault and Profile side padding matches Home.
+- Maestro flows 01, 02, 05, 06 and `e2e/README.md` updated ("What do you need?", "Price estimate"); `docs/user-app-testing.md` says "My garage".
+**Checks:** `npx expo export --platform android` pass. Rendered Home on web at 375 px with a temporary signed-in stub (not committed): all trip types, round trip, Another car and the price details toggle work with no console errors and no horizontal overflow. The priced state (tier name, total) was not seen, because the stub cannot get a server quote. Maestro flows not run.
+**Commit:** `feat(UI-1): declutter the booking screen`
+**Not done / follow-ups:** Needs phone check (Android and iPhone), including the priced state and a saved-car list. The type-scale change applies to every screen; Live trip and Login were not looked at.
+**Requests raised:** none.
+
 ## 2026-10-31 · Jaswanth · Within city trips could go to another city
 
 **Did:** Nothing stopped a Within city booking to another city (seen: Habsiguda → Vijayawada). `priceTrip` (`trips/service.ts`), which both quote and book go through, now refuses `requirement: within_city` with 400 `OUTSIDE_CITY` when the drop, a stop, or (round trip) a return stop or return drop is more than `WITHIN_CITY_MAX_KM` (50 km, straight line) from the pickup. 50 km keeps HITEC City → RGIA and the Outer Ring Road inside. The website Book page shows the message and a "Switch to Outstation" button instead of "Calculating your fare…", and booking stays disabled.

@@ -82,14 +82,14 @@ export const font = {
 export const type = {
   // React Native has no font-weight shorthand story across platforms, so we
   // keep sizes and weights together and let screens spread them.
-  micro: { fontSize: 10, fontWeight: '700' },
-  tiny: { fontSize: 11, fontWeight: '600' },
-  caption: { fontSize: 12, fontWeight: '600' },
-  body: { fontSize: 14, fontWeight: '600' },
-  bodyBold: { fontSize: 14, fontWeight: '800' },
-  title: { fontSize: 16, fontWeight: '800' },
-  headline: { fontSize: 19, fontWeight: '900' },
-  display: { fontSize: 28, fontWeight: '900' },
+  micro: { fontSize: 11, fontWeight: '700' },
+  tiny: { fontSize: 12, fontWeight: '500' },
+  caption: { fontSize: 13, fontWeight: '600' },
+  body: { fontSize: 15, fontWeight: '500' },
+  bodyBold: { fontSize: 15, fontWeight: '700' },
+  title: { fontSize: 17, fontWeight: '700' },
+  headline: { fontSize: 22, fontWeight: '800' },
+  display: { fontSize: 28, fontWeight: '800' },
 }
 
 export const shadow = {

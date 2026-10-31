@@ -1,21 +1,21 @@
 /**
  * HomeScreen — the complete booking UI for the MyDriver user app.
  *
- * Steps (in scroll order):
- *   1. What do you need?          — RequirementTabs
- *   2. Your Vehicle               — CarDetailsForm (saved garage + new vehicle)
- *   3. Trip Details               — WithinCityForm / InterCityForm / AirportForm / FullTimeForm
- *   4. Your driver                — the tier the server picks from the car
- *   5. Safety                     — speed limit, guardians, female driver;
- *                                   asked once, then pre-filled from /v1/me
- *   6. Price Estimate             — Live quote breakdown
+ * Sections (in scroll order):
+ *   What do you need?   — RequirementTabs
+ *   Your vehicle        — CarDetailsForm (saved garage + another car)
+ *   Trip details        — WithinCityForm / InterCityForm / AirportForm / FullTimeForm
+ *   Your driver         — the tier the server picks from the car
+ *   Safety              — speed limit, guardians, female driver;
+ *                         asked once, then pre-filled from /v1/me
+ *   Price estimate      — server total, with the line breakdown on demand
  *
- * Sticky CTA: "Find [Tier] Driver" — disabled until quote.ready
+ * Sticky bar: estimated total + "Find [Tier] Driver" — disabled until quote.ready
  */
-import { ActivityIndicator, Alert, ScrollView, Text, View } from 'react-native'
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Slider from '@react-native-community/slider'
-import { Gauge, Search, ShieldCheck } from 'lucide-react-native'
+import { ChevronDown, ChevronUp, Gauge, Search, UserCheck } from 'lucide-react-native'
 import { useTrip } from '../../context/TripContext'
 import { useAuth } from '../../context/AuthContext'
 import { useEffect, useState } from 'react'
@@ -25,7 +25,7 @@ import { requirementEnabled } from '../../lib/features'
 import { clamp, formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 import Button from '../../components/Button'
-import Card from '../../components/Card'
+import { Panel } from '../../components/Form'
 import Toggle from '../../components/Toggle'
 
 import RequirementTabs from './components/RequirementTabs'
@@ -37,26 +37,23 @@ import FullTimeForm from './components/FullTimeForm'
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
-function SectionHeader({ step, children }) {
+const TRIP_TITLES = {
+  within_city: 'Route & duration',
+  inter_city: 'Outstation trip',
+  airport: 'Airport transfer',
+  full_time: 'Contract details',
+}
+
+function Section({ title, hint, children }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginBottom: space.sm }}>
-      {step != null && (
-        <View
-          style={{
-            width: 22,
-            height: 22,
-            borderRadius: radius.pill,
-            backgroundColor: colors.graphite,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Text style={{ ...type.micro, color: colors.onGraphite }}>{step}</Text>
-        </View>
-      )}
-      <Text accessibilityRole="header" style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.6 }}>
-        {String(children).toUpperCase()}
-      </Text>
+    <View style={{ gap: space.md }}>
+      <View style={{ gap: 2 }}>
+        <Text accessibilityRole="header" style={{ ...type.title, color: colors.text }}>
+          {title}
+        </Text>
+        {hint ? <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 17 }}>{hint}</Text> : null}
+      </View>
+      {children}
     </View>
   )
 }
@@ -89,6 +86,7 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
   const [server, setServer] = useState(null)
   const [priceStatus, setPriceStatus] = useState('idle') // 'idle' | 'loading' | 'ready' | 'error'
   const [priceAttempt, setPriceAttempt] = useState(0)
+  const [showFare, setShowFare] = useState(false)
 
   const local = quoteFor(config, skills)
 
@@ -178,261 +176,258 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const firstName = (user?.full_name ?? '').trim().split(/\s+/)[0]
+  const initials = (user?.full_name ?? 'MD')
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+  const totalText =
+    priceStatus === 'loading' ? null : quote.ready ? formatINR(quote.total) : '--'
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
-
-      {/* ── App Bar ── */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+      {/* ── Scrollable Content ── */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
           paddingHorizontal: space.xl,
-          paddingBottom: space.md,
+          paddingTop: space.lg,
+          paddingBottom: space.xxxl,
+          gap: space.xxxl,
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+        {/* ── Greeting ── */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>
+              {greeting}
+              {firstName ? `, ${firstName}` : ''}
+            </Text>
+            <Text accessibilityRole="header" style={{ ...type.headline, color: colors.text, marginTop: 2 }}>
+              Book a driver
+            </Text>
+          </View>
           <View
             style={{
-              width: 40,
-              height: 40,
+              width: 44,
+              height: 44,
               borderRadius: radius.pill,
               backgroundColor: colors.brandSoft,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Text style={{ ...type.bodyBold, color: colors.brand }}>{(user?.full_name ?? 'MD').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()}</Text>
-          </View>
-          <View>
-            <Text style={{ ...type.tiny, color: colors.textMuted }}>{greeting}</Text>
-            <Text style={{ ...type.body, color: colors.text }}>{user?.full_name ?? 'MyDriver rider'}</Text>
+            <Text style={{ ...type.bodyBold, color: colors.brand }}>{initials}</Text>
           </View>
         </View>
-      </View>
 
-      {/* ── Scrollable Content ── */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: space.xxl, gap: space.xl }}
-      >
-        {/* ── Step 1: Requirement ── */}
-        <View>
-          <View style={{ paddingHorizontal: space.xl }}>
-            <SectionHeader step={1}>What do you need?</SectionHeader>
-          </View>
+        <Section title="What do you need?">
           <RequirementTabs
             selectedId={config.requirement}
             onChange={(r) => onChange({ ...config, requirement: r })}
           />
-        </View>
+        </Section>
 
-        <View style={{ paddingHorizontal: space.xl, gap: space.xl }}>
-          {/* ── Step 2: Vehicle ── */}
-          <View>
-            <SectionHeader step={2}>Your Vehicle</SectionHeader>
-            <CarDetailsForm config={config} onChange={onChange} />
-          </View>
+        <Section title="Your vehicle">
+          <CarDetailsForm config={config} onChange={onChange} />
+        </Section>
 
-          {/* ── Step 3: Trip Details ── */}
-          <View>
-            <SectionHeader step={3}>
-              {config.requirement === 'within_city'
-                ? 'Route & Duration'
-                : config.requirement === 'inter_city'
-                ? 'Outstation Route & Duration'
-                : config.requirement === 'airport'
-                ? 'Airport Transfer Details'
-                : 'Full-Time Contract Details'}
-            </SectionHeader>
-            {config.requirement === 'within_city' && (
-              <WithinCityForm config={config} onChange={onChange} />
-            )}
-            {config.requirement === 'inter_city' && (
-              <InterCityForm config={config} onChange={onChange} />
-            )}
-            {config.requirement === 'airport' && (
-              <AirportForm config={config} onChange={onChange} />
-            )}
-            {config.requirement === 'full_time' && requirementEnabled('full_time') && (
-              <FullTimeForm config={config} onChange={onChange} />
-            )}
-          </View>
+        <Section title={TRIP_TITLES[config.requirement] ?? TRIP_TITLES.within_city}>
+          {config.requirement === 'within_city' && (
+            <WithinCityForm config={config} onChange={onChange} />
+          )}
+          {config.requirement === 'inter_city' && (
+            <InterCityForm config={config} onChange={onChange} />
+          )}
+          {config.requirement === 'airport' && (
+            <AirportForm config={config} onChange={onChange} />
+          )}
+          {config.requirement === 'full_time' && requirementEnabled('full_time') && (
+            <FullTimeForm config={config} onChange={onChange} />
+          )}
+        </Section>
 
-          {/* ── Step 4: Your driver (picked by the server) ── */}
-          <View>
-            <SectionHeader step={4}>Your Driver</SectionHeader>
-            <Card>
-              {skillsStatus === 'error' && !skills.length ? (
-                <View style={{ gap: space.sm }}>
-                  <Text style={{ ...type.caption, color: colors.textMuted }}>
-                    Could not load driver tiers. Check your connection.
-                  </Text>
-                  <Button label="Try again" variant="subtle" onPress={reloadSkills} />
+        {/* ── Your driver (picked by the server) ── */}
+        <Section title="Your driver" hint="Matched to your car and the time of the trip.">
+          <Panel style={{ gap: space.sm }}>
+            {skillsStatus === 'error' && !skills.length ? (
+              <>
+                <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>
+                  Could not load driver tiers. Check your connection.
+                </Text>
+                <Button label="Try again" variant="subtle" onPress={reloadSkills} />
+              </>
+            ) : tier ? (
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: radius.md,
+                    backgroundColor: colors.surfaceAlt,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <UserCheck size={18} color={colors.text} />
                 </View>
-              ) : tier ? (
-                <View style={{ gap: 4 }}>
+                <View style={{ flex: 1, gap: 2 }}>
                   <Text style={{ ...type.bodyBold, color: colors.text }}>{tier.label}</Text>
                   {tier.description ? (
-                    <Text style={{ ...type.caption, color: colors.textMuted }}>{tier.description}</Text>
+                    <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 17 }}>{tier.description}</Text>
                   ) : null}
-                  <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 4 }}>
-                    Matched to your car and the time of the trip.
-                  </Text>
                 </View>
-              ) : (
-                <Text style={{ ...type.caption, color: colors.textMuted }}>
-                  We pick the right certified driver for your car once the trip details are in.
-                </Text>
-              )}
-            </Card>
-          </View>
-
-          {/* ── Step 5: Safety ── */}
-          <Card>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: space.sm }}>
-              <ShieldCheck size={14} color={colors.textMuted} />
-              <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5 }}>
-                {firstTime ? 'SET YOUR SAFETY PREFERENCES' : 'SAFETY'}
-              </Text>
-            </View>
-            {firstTime ? (
-              <Text style={{ ...type.tiny, color: colors.textMuted, marginBottom: space.sm, lineHeight: 16 }}>
-                We ask once. Your choices are saved for every trip, and you can change them in Profile.
-              </Text>
-            ) : null}
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: space.sm,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Gauge size={14} color={colors.textMuted} />
-                <Text style={{ ...type.caption, color: colors.text }}>Speed limit</Text>
               </View>
-              <View
-                style={{
-                  backgroundColor: colors.brandSoft,
-                  borderRadius: radius.sm,
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                }}
-              >
-                <Text style={{ ...type.caption, color: colors.brand, fontWeight: '900' }}>
-                  {config.ceiling} km/h
-                </Text>
-              </View>
-            </View>
-            <Slider
-              minimumValue={40}
-              maximumValue={120}
-              step={5}
-              value={config.ceiling}
-              onValueChange={(v) => onChange({ ...config, ceiling: clamp(Math.round(v), 40, 120) })}
-              accessibilityLabel="Speed limit for this trip"
-              accessibilityValue={{ min: 40, max: 120, now: config.ceiling, text: `${config.ceiling} kilometres per hour` }}
-              minimumTrackTintColor={colors.brand}
-              maximumTrackTintColor={colors.surfaceSunken}
-              thumbTintColor={colors.brand}
-            />
-            <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 4, marginBottom: space.sm }}>
-              Breaches alert you, your guardians and the Safety Desk instantly.
-            </Text>
-            <Toggle
-              label="Share the trip with my guardians"
-              checked={Boolean(config.shareWithGuardians)}
-              onChange={(v) => onChange({ ...config, shareWithGuardians: v })}
-            />
-            <Toggle
-              label="Prefer a female driver"
-              checked={Boolean(config.preferFemaleDriver)}
-              onChange={(v) => onChange({ ...config, preferFemaleDriver: v })}
-            />
-          </Card>
+            ) : (
+              <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>
+                We pick the right certified driver for your car once the trip details are in.
+              </Text>
+            )}
+          </Panel>
+        </Section>
 
-          {/* ── Step 6: Price Estimate ── */}
-          <Card>
-            <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5, marginBottom: space.md }}>
-              PRICE ESTIMATE
-            </Text>
+        {/* ── Safety ── */}
+        <Section
+          title={firstTime ? 'Set your safety preferences' : 'Safety'}
+          hint={
+            firstTime
+              ? 'We ask once. Your choices are saved for every trip, and you can change them in Profile.'
+              : 'Going over the speed limit alerts you, your guardians and the Safety Desk.'
+          }
+        >
+          <Panel style={{ gap: space.md }}>
             <View style={{ gap: space.sm }}>
-              {quote.lines.map((line) => (
-                <View
-                  key={line.label}
-                  style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space.md }}
-                >
-                  <Text style={{ ...type.caption, color: colors.textMuted, flex: 1 }}>
-                    {line.label}
-                  </Text>
-                  <Text
-                    style={{
-                      ...type.caption,
-                      color: colors.text,
-                      fontWeight: '700',
-                      textAlign: 'right',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {line.value}
-                  </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                  <Gauge size={18} color={colors.textMuted} />
+                  <Text style={{ ...type.body, color: colors.text }}>Speed limit</Text>
                 </View>
-              ))}
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  borderTopWidth: 1,
-                  borderTopColor: colors.border,
-                  marginTop: space.sm,
-                  paddingTop: space.sm,
-                }}
-              >
-                <Text style={{ ...type.bodyBold, color: colors.text }}>Estimated total</Text>
-                {priceStatus === 'loading' ? (
-                  <ActivityIndicator color={colors.brand} accessibilityLabel="Getting your price" />
+                <Text style={{ ...type.bodyBold, color: colors.brand }}>{config.ceiling} km/h</Text>
+              </View>
+              <Slider
+                minimumValue={40}
+                maximumValue={120}
+                step={5}
+                value={config.ceiling}
+                onValueChange={(v) => onChange({ ...config, ceiling: clamp(Math.round(v), 40, 120) })}
+                accessibilityLabel="Speed limit for this trip"
+                accessibilityValue={{ min: 40, max: 120, now: config.ceiling, text: `${config.ceiling} kilometres per hour` }}
+                minimumTrackTintColor={colors.brand}
+                maximumTrackTintColor={colors.surfaceSunken}
+                thumbTintColor={colors.brand}
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ ...type.tiny, color: colors.textMuted }}>40 km/h</Text>
+                <Text style={{ ...type.tiny, color: colors.textMuted }}>120 km/h</Text>
+              </View>
+            </View>
+            <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: space.sm }}>
+              <Toggle
+                label="Share the trip with my guardians"
+                checked={Boolean(config.shareWithGuardians)}
+                onChange={(v) => onChange({ ...config, shareWithGuardians: v })}
+              />
+              <Toggle
+                label="Prefer a female driver"
+                checked={Boolean(config.preferFemaleDriver)}
+                onChange={(v) => onChange({ ...config, preferFemaleDriver: v })}
+              />
+            </View>
+          </Panel>
+        </Section>
+
+        {/* ── Price estimate ── */}
+        <Section title="Price estimate">
+          <Panel style={{ gap: space.md }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={showFare ? 'Hide price details' : 'Show price details'}
+              accessibilityState={{ expanded: showFare }}
+              onPress={() => setShowFare((v) => !v)}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}
+            >
+              <View style={{ flex: 1 }}>
+                {totalText === null ? (
+                  <ActivityIndicator
+                    color={colors.brand}
+                    accessibilityLabel="Getting your price"
+                    style={{ alignSelf: 'flex-start', height: 22 }}
+                  />
                 ) : (
-                  <Text style={{ ...type.bodyBold, color: colors.brand }}>
-                    {quote.ready ? formatINR(quote.total) : '--'}
-                  </Text>
+                  <Text style={{ ...type.title, color: colors.text }}>{totalText}</Text>
+                )}
+                <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 2 }}>Estimated total</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ ...type.caption, color: colors.textMuted }}>{showFare ? 'Hide' : 'Details'}</Text>
+                {showFare ? (
+                  <ChevronUp size={16} color={colors.textMuted} />
+                ) : (
+                  <ChevronDown size={16} color={colors.textMuted} />
                 )}
               </View>
-              {priceStatus === 'error' ? (
-                <View style={{ gap: space.sm, marginTop: space.sm }}>
-                  <Text style={{ ...type.caption, color: colors.redPressed }}>
-                    Could not get a price. Check your connection and try again.
-                  </Text>
-                  <Button label="Try again" variant="subtle" onPress={() => setPriceAttempt((n) => n + 1)} />
-                </View>
-              ) : quote.ready ? (
-                <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 4, lineHeight: 16 }}>
-                  This amount is held when you book. You are charged the final fare when the trip ends.
+            </Pressable>
+
+            {showFare && quote.lines.length > 0 ? (
+              <View style={{ gap: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: space.md }}>
+                {quote.lines.map((line) => (
+                  <View key={line.label} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space.lg }}>
+                    <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>{line.label}</Text>
+                    <Text style={{ ...type.caption, color: colors.text, textAlign: 'right', flex: 1 }} numberOfLines={2}>
+                      {line.value}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {priceStatus === 'error' ? (
+              <View style={{ gap: space.sm }}>
+                <Text style={{ ...type.caption, color: colors.redPressed }}>
+                  Could not get a price. Check your connection and try again.
                 </Text>
-              ) : null}
-            </View>
-          </Card>
-        </View>
+                <Button label="Try again" variant="subtle" onPress={() => setPriceAttempt((n) => n + 1)} />
+              </View>
+            ) : quote.ready ? (
+              <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 17 }}>
+                This amount is held when you book. You are charged the final fare when the trip ends.
+              </Text>
+            ) : null}
+          </Panel>
+        </Section>
       </ScrollView>
 
       {/* ── Sticky CTA ── */}
       <View
         style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: space.lg,
           borderTopWidth: 1,
           borderTopColor: colors.border,
           backgroundColor: colors.surface,
           paddingHorizontal: space.xl,
-          paddingVertical: space.lg,
+          paddingVertical: space.md,
         }}
       >
+        <View style={{ minWidth: 64 }}>
+          <Text style={{ ...type.tiny, color: colors.textMuted }}>Estimated</Text>
+          {totalText === null ? (
+            <ActivityIndicator color={colors.brand} style={{ alignSelf: 'flex-start', height: 22 }} />
+          ) : (
+            <Text style={{ ...type.title, color: colors.text }}>{totalText}</Text>
+          )}
+        </View>
         <Button
           label={quote.skill ? `Find ${quote.skill.label} Driver` : 'Find a driver'}
           icon={Search}
           disabled={!quote.ready || saving}
           onPress={findDriver}
+          style={{ flex: 1 }}
         />
       </View>
     </SafeAreaView>

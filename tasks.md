@@ -112,6 +112,12 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 - [x] **Step 5 (Sentry):** `@sentry/react-native` with `src/lib/sentry.js` and `src/lib/sentry-scrub.js`
       privacy scrubbing (`docs/testing-plan.md` §9), `tester` session tagging in `AuthContext.jsx`,
       and parity tests in `tests/sentryScrub.test.mjs`. Written — needs phone check (`feat(user)`, 31 Oct)
+- [x] **UI-1** Booking screen declutter, agreed with Sanath (done by Umesh, 31 Oct): plain section
+      titles and more spacing on Home; shared form controls (`src/components/Form.jsx`); route
+      planner with labels inside the fields; duration steppers; price breakdown behind "Details" and
+      the total in the sticky bar; larger small text sizes in `src/theme/tokens.js`. Maestro flows
+      and `docs/user-app-testing.md` updated to the new wording. Written — needs phone check
+      (`feat(UI-1)`, 31 Oct)
 - [ ] REQUEST from Jaswanth (2026-10-31): urgent booking and pay-after-trip, to keep the app in step
       with the website (`feat(booking)`, 31 Oct). (1) Booking screen: "Standard — driver within 30 min"
       / "Urgent — driver in 5–10 min, +₹`fees.urgent_fee`"; send `urgent: true` on `/v1/trips/quote`

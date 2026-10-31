@@ -1,8 +1,8 @@
 /**
  * CarDetailsForm — vehicle selector.
  *
- * Tab 1 "Saved Garage": pick from the customer's saved vehicles (/v1/me/vehicles).
- * Tab 2 "New Vehicle": full brand → model → engine type → transmission selectors.
+ * Tab 1 "My garage": pick from the customer's saved vehicles (/v1/me/vehicles).
+ * Tab 2 "Another car": full brand → model → engine type → transmission selectors.
  */
 import { useEffect, useState } from 'react'
 import { Pressable, Text, TextInput, View } from 'react-native'
@@ -15,6 +15,7 @@ import {
 import { carDetailsFrom, getRecommendedSkillId } from '../../../lib/booking'
 import { useTrip } from '../../../context/TripContext'
 import { colors, radius, space, type } from '../../../theme/tokens'
+import { Chip, FieldLabel, Segmented } from '../../../components/Form'
 import ModalPicker from './ModalPicker'
 
 const BRAND_OPTS = CAR_BRANDS.map((b) => ({ id: b.company, label: b.company }))
@@ -24,21 +25,6 @@ function modelOptsFor(company) {
   if (!brand) return []
   if (company === 'Other / Custom') return []
   return brand.models.map((m) => ({ id: m, label: m }))
-}
-
-function SectionLabel({ children }) {
-  return (
-    <Text
-      style={{
-        ...type.micro,
-        color: colors.textMuted,
-        letterSpacing: 0.5,
-        marginBottom: space.sm,
-      }}
-    >
-      {String(children).toUpperCase()}
-    </Text>
-  )
 }
 
 export default function CarDetailsForm({ config, onChange }) {
@@ -79,61 +65,22 @@ export default function CarDetailsForm({ config, onChange }) {
 
   return (
     <View style={{ gap: space.md }}>
-      {/* ─── Tabs ─── */}
-      <View
-        style={{
-          flexDirection: 'row',
-          backgroundColor: colors.surfaceAlt,
-          borderRadius: radius.md,
-          padding: 3,
-        }}
-      >
-        {[
-          { id: 'garage', label: 'Saved Garage' },
-          { id: 'new', label: 'New Vehicle' },
-        ].map((t) => {
-          const active = tab === t.id
-          return (
-            <Pressable
-              accessibilityRole="button"
-              key={t.id}
-              onPress={() => setTab(t.id)}
-              style={{
-                flex: 1,
-                paddingVertical: 8,
-                alignItems: 'center',
-                borderRadius: radius.md - 2,
-                backgroundColor: active ? colors.surface : 'transparent',
-                shadowColor: active ? colors.graphite : 'transparent',
-                shadowOpacity: 0.06,
-                shadowRadius: 4,
-                elevation: active ? 1 : 0,
-              }}
-            >
-              <Text
-                style={{
-                  ...type.caption,
-                  color: active ? colors.text : colors.textMuted,
-                  fontWeight: active ? '800' : '600',
-                }}
-              >
-                {t.label}
-              </Text>
-            </Pressable>
-          )
-        })}
-      </View>
+      <Segmented
+        options={[
+          { id: 'garage', label: 'My garage' },
+          { id: 'new', label: 'Another car' },
+        ]}
+        value={tab}
+        onChange={setTab}
+      />
 
       {/* ─── Saved Garage Tab ─── */}
       {tab === 'garage' && (
         <View style={{ gap: space.sm }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <SectionLabel>My Garage (Saved Vehicles)</SectionLabel>
-          </View>
           {garage === null && garageStatus === 'error' ? (
             <View style={{ gap: space.sm }}>
               <Text style={{ ...type.caption, color: colors.textMuted }}>
-                Could not load your saved cars. Check your connection, or enter the car under New Vehicle.
+                Could not load your saved cars. Check your connection, or enter it under Another car.
               </Text>
               <Pressable
                 accessibilityRole="button"
@@ -146,10 +93,10 @@ export default function CarDetailsForm({ config, onChange }) {
               </Pressable>
             </View>
           ) : garage === null ? (
-            <Text style={{ ...type.caption, color: colors.textMuted }}>Loading your cars…</Text>
+            <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>Loading your cars…</Text>
           ) : garage.length === 0 ? (
             <Text style={{ ...type.caption, color: colors.textMuted }}>
-              No saved cars yet. Add one in Profile, or enter the car under New Vehicle.
+              No saved cars yet. Add one in Profile, or enter it under Another car.
             </Text>
           ) : null}
           {(garage ?? []).map((car) => {
@@ -165,31 +112,31 @@ export default function CarDetailsForm({ config, onChange }) {
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: space.md,
-                  padding: space.md,
-                  borderRadius: radius.md,
-                  borderWidth: 1,
+                  padding: space.lg,
+                  borderRadius: radius.lg,
+                  borderWidth: selected ? 1.5 : 1,
                   borderColor: selected ? colors.brand : colors.border,
-                  backgroundColor: selected ? colors.brandSoft : colors.surfaceAlt,
+                  backgroundColor: selected ? colors.redSofter : colors.surface,
                 }}
               >
                 <View
                   style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: radius.sm,
-                    backgroundColor: selected ? colors.brand : colors.border,
+                    width: 40,
+                    height: 40,
+                    borderRadius: radius.md,
+                    backgroundColor: selected ? colors.brand : colors.surfaceAlt,
                     alignItems: 'center',
                     justifyContent: 'center',
                     flexShrink: 0,
                   }}
                 >
-                  <Car size={16} color={selected ? colors.onRed : colors.textMuted} />
+                  <Car size={18} color={selected ? colors.onRed : colors.text} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text
                     style={{
                       ...type.bodyBold,
-                      color: selected ? colors.brandPressed : colors.text,
+                      color: colors.text,
                     }}
                     numberOfLines={1}
                   >
@@ -199,7 +146,7 @@ export default function CarDetailsForm({ config, onChange }) {
                     {[car.transmission, car.engine_type, car.plate].filter(Boolean).join(' · ')}
                   </Text>
                 </View>
-                {selected ? <Check size={16} color={colors.brand} /> : null}
+                {selected ? <Check size={18} color={colors.brand} /> : null}
               </Pressable>
             )
           })}
@@ -208,32 +155,23 @@ export default function CarDetailsForm({ config, onChange }) {
 
       {/* ─── New Vehicle Tab ─── */}
       {tab === 'new' && (
-        <View
-          style={{
-            borderRadius: radius.lg,
-            borderWidth: 1,
-            borderColor: colors.border,
-            backgroundColor: colors.surfaceAlt,
-            padding: space.md,
-            gap: space.md,
-          }}
-        >
+        <View style={{ gap: space.lg, paddingTop: space.xs }}>
           {/* Brand */}
           <View>
-            <SectionLabel>Car Brand / Company</SectionLabel>
+            <FieldLabel>Brand</FieldLabel>
             <ModalPicker
               value={carDetails.company || CAR_BRANDS[0].company}
               options={BRAND_OPTS}
               onChange={(v) => updateField('company', v)}
               placeholder="Select brand"
-              title="Car Brand / Company"
+              title="Car brand"
               searchable
             />
           </View>
 
           {/* Model */}
           <View>
-            <SectionLabel>Car Model</SectionLabel>
+            <FieldLabel>Model</FieldLabel>
             {isCustomBrand ? (
               <TextInput
                 accessibilityLabel="Car model"
@@ -244,7 +182,7 @@ export default function CarDetailsForm({ config, onChange }) {
                 style={{
                   ...type.body,
                   paddingHorizontal: space.md,
-                  paddingVertical: 11,
+                  paddingVertical: 13,
                   borderRadius: radius.md,
                   borderWidth: 1,
                   borderColor: colors.border,
@@ -258,84 +196,34 @@ export default function CarDetailsForm({ config, onChange }) {
                 options={modelOptsFor(carDetails.company || CAR_BRANDS[0].company)}
                 onChange={(v) => updateField('model', v)}
                 placeholder="Select model"
-                title="Car Model"
+                title="Car model"
               />
             )}
           </View>
 
           {/* Engine Type */}
           <View>
-            <SectionLabel>Engine Type</SectionLabel>
+            <FieldLabel>Engine</FieldLabel>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
-              {ENGINE_TYPES.map((eng) => {
-                const active = carDetails.engineType === eng
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={eng}
-                    onPress={() => updateField('engineType', eng)}
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 7,
-                      borderRadius: radius.sm,
-                      borderWidth: 1,
-                      borderColor: active ? colors.graphite : colors.border,
-                      backgroundColor: active ? colors.graphite : colors.surface,
-                    }}
-                  >
-                    <Text
-                      style={{
-                        ...type.caption,
-                        color: active ? colors.onGraphite : colors.text,
-                        fontWeight: '800',
-                      }}
-                    >
-                      {eng}
-                    </Text>
-                  </Pressable>
-                )
-              })}
+              {ENGINE_TYPES.map((eng) => (
+                <Chip
+                  key={eng}
+                  label={eng}
+                  active={carDetails.engineType === eng}
+                  onPress={() => updateField('engineType', eng)}
+                />
+              ))}
             </View>
           </View>
 
           {/* Transmission */}
           <View>
-            <SectionLabel>Transmission</SectionLabel>
-            <View style={{ flexDirection: 'row', gap: space.sm }}>
-              {TRANSMISSIONS.map((trans) => {
-                const active = carDetails.transmission === trans
-                return (
-                  <Pressable
-                    accessibilityRole="button"
-                    key={trans}
-                    onPress={() => updateField('transmission', trans)}
-                    style={{
-                      flex: 1,
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 5,
-                      paddingVertical: 9,
-                      borderRadius: radius.sm,
-                      borderWidth: 1,
-                      borderColor: active ? colors.brand : colors.border,
-                      backgroundColor: active ? colors.brand : colors.surface,
-                    }}
-                  >
-                    {active ? <Check size={13} color={colors.onGraphite} /> : null}
-                    <Text
-                      style={{
-                        ...type.caption,
-                        color: active ? colors.onGraphite : colors.text,
-                        fontWeight: '800',
-                      }}
-                    >
-                      {trans}
-                    </Text>
-                  </Pressable>
-                )
-              })}
-            </View>
+            <FieldLabel>Transmission</FieldLabel>
+            <Segmented
+              options={TRANSMISSIONS.map((t) => ({ id: t, label: t }))}
+              value={carDetails.transmission}
+              onChange={(t) => updateField('transmission', t)}
+            />
           </View>
         </View>
       )}

@@ -28,5 +28,5 @@ env:
 
 # Returns to HomeScreen.jsx (Book tab)
 - extendedWaitUntil:
-    visible: "WHAT DO YOU NEED?"
+    visible: "What do you need?"
     timeout: 15000

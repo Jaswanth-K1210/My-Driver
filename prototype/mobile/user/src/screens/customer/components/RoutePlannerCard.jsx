@@ -4,10 +4,10 @@
  * Features:
  *   • One-Way / Round-Trip direction toggle
  *   • Outbound leg: pickup → up to 3 intermediate stops → destination
- *   • Visual timeline with dots + connector lines (no z-index glitches)
- *   • Live telemetry footer: distance + estimated drive time
+ *   • Visual timeline: pickup → stops → drop, with labels inside each field
+ *   • Distance + estimated drive time under each leg
  *   • Return leg card (only when Round Trip selected)
- *   • Total round-trip summary banner
+ *   • Round-trip total line
  *
  * Props:
  *   config          — full trip config
@@ -15,7 +15,7 @@
  *   isInterCity     — if true, destination picker uses INTERCITY_DESTINATIONS; affects speed for ETA
  */
 import { Pressable, Text, View } from 'react-native'
-import { Clock, Compass, Minus, Navigation, Plus } from 'lucide-react-native'
+import { Clock, Navigation, Plus, X } from 'lucide-react-native'
 import {
   CITY_LOCATIONS,
   INTERCITY_DESTINATIONS,
@@ -23,6 +23,7 @@ import {
 } from '../../../data/mock'
 import { getRouteLegTelemetry, getLocationById } from '../../../lib/booking'
 import { colors, radius, space, type } from '../../../theme/tokens'
+import { Panel, Segmented } from '../../../components/Form'
 import ModalPicker from './ModalPicker'
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
@@ -55,55 +56,40 @@ function formatDuration(minutes) {
 
 /* ── Sub-components ──────────────────────────────────────────────────────── */
 
-/** One row of the route timeline (dot + optional connector line + content). */
-function TimelineRow({ dotColor = colors.textMuted, dotBorder = colors.surfaceSunken, isLast = false, lineColor = colors.border, children }) {
+/**
+ * One row of the route timeline: a marker on the left, the field on the right,
+ * and a connector running down to the next row's marker. The connector is
+ * absolutely positioned so it bridges the gap between rows exactly.
+ */
+function TimelineRow({ marker = 'stop', isLast = false, children }) {
+  const markerStyle =
+    marker === 'pickup'
+      ? { borderRadius: 6, backgroundColor: colors.surface, borderColor: colors.graphite }
+      : marker === 'drop'
+        ? { borderRadius: 2, backgroundColor: colors.red, borderColor: colors.red }
+        : { borderRadius: 6, backgroundColor: colors.borderStrong, borderColor: colors.borderStrong }
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'stretch' }}>
-      {/* Left: dot + connector */}
-      <View style={{ width: 22, alignItems: 'center' }}>
-        <View
-          style={{
-            width: 12,
-            height: 12,
-            borderRadius: 6,
-            backgroundColor: dotColor,
-            borderWidth: 3,
-            borderColor: dotBorder,
-            marginTop: 13,
-          }}
-        />
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingBottom: isLast ? 0 : space.sm }}>
+      <View style={{ width: 20, alignSelf: 'stretch', alignItems: 'center', justifyContent: 'center' }}>
+        <View style={[{ width: 12, height: 12, borderWidth: 2.5 }, markerStyle]} />
         {!isLast && (
           <View
             style={{
-              flex: 1,
+              position: 'absolute',
+              top: '50%',
+              marginTop: 10,
+              bottom: -space.sm - 20,
               width: 2,
-              backgroundColor: lineColor,
-              marginTop: 3,
-              minHeight: 12,
+              borderRadius: 1,
+              backgroundColor: colors.border,
             }}
           />
         )}
       </View>
-      {/* Right: content */}
-      <View style={{ flex: 1, paddingLeft: 10, paddingBottom: isLast ? 0 : 14 }}>
+      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, paddingLeft: space.md }}>
         {children}
       </View>
     </View>
-  )
-}
-
-function RowLabel({ children }) {
-  return (
-    <Text
-      style={{
-        ...type.micro,
-        color: colors.textMuted,
-        letterSpacing: 0.5,
-        marginBottom: 4,
-      }}
-    >
-      {String(children).toUpperCase()}
-    </Text>
   )
 }
 
@@ -113,67 +99,83 @@ function StopRemoveButton({ onPress }) {
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => ({
-        width: 34,
-        height: 34,
-        borderRadius: radius.sm,
+        width: 46,
+        height: 46,
+        borderRadius: radius.md,
         borderWidth: 1,
-        borderColor: pressed ? colors.red : colors.border,
-        backgroundColor: pressed ? colors.redSofter : colors.surface,
+        borderColor: colors.border,
+        backgroundColor: pressed ? colors.surfaceAlt : colors.surface,
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
       })}
       accessibilityLabel="Remove stop"
     >
-      <Minus size={14} color={colors.textMuted} />
+      <X size={16} color={colors.textMuted} />
     </Pressable>
   )
 }
 
-function TelemetryFooter({ telemetry, style }) {
+function AddStopButton({ onPress, enabled, count, label = 'Add stop' }) {
+  return (
+    <View style={{ paddingLeft: 32, paddingTop: space.xs, paddingBottom: space.md }}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={label}
+        accessibilityState={{ disabled: !enabled }}
+        onPress={onPress}
+        disabled={!enabled}
+        hitSlop={8}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }}
+      >
+        <Plus size={15} color={enabled ? colors.brand : colors.textMuted} />
+        <Text style={{ ...type.caption, color: enabled ? colors.brand : colors.textMuted }}>
+          {label}
+          {count > 0 ? ` · ${count}/3` : ''}
+        </Text>
+      </Pressable>
+      {!enabled && count > 0 && count < 3 ? (
+        <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 4 }}>
+          Choose a place for the last stop first
+        </Text>
+      ) : null}
+    </View>
+  )
+}
+
+/** Distance + time for one leg, as a quiet line under the route. */
+function TelemetryLine({ telemetry }) {
   return (
     <View
-      style={[
-        {
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          backgroundColor: colors.surfaceAlt,
-          borderRadius: radius.md,
-          paddingHorizontal: space.md,
-          paddingVertical: 10,
-          marginTop: space.sm,
-          borderWidth: 1,
-          borderColor: colors.border,
-        },
-        style,
-      ]}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: space.lg,
+        marginTop: space.md,
+        paddingTop: space.md,
+        borderTopWidth: 1,
+        borderTopColor: colors.border,
+      }}
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Navigation size={13} color={colors.graphite} style={{ transform: [{ rotate: '45deg' }] }} />
-          <Text style={{ ...type.caption, color: colors.text, fontWeight: '800' }}>
-            ~{telemetry.distanceKm} km
-          </Text>
-        </View>
-        <Text style={{ color: colors.border, fontSize: 10 }}>|</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <Clock size={13} color={colors.brand} />
-          <Text style={{ ...type.caption, color: colors.text, fontWeight: '800' }}>
-            ~{telemetry.formattedDuration}
-          </Text>
-        </View>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Navigation size={14} color={colors.textMuted} />
+        <Text style={{ ...type.caption, color: colors.text }}>~{telemetry.distanceKm} km</Text>
       </View>
-      <View
-        style={{
-          backgroundColor: colors.surfaceSunken,
-          borderRadius: 6,
-          paddingHorizontal: 8,
-          paddingVertical: 3,
-        }}
-      >
-        <Text style={{ ...type.micro, color: colors.graphite }}>{telemetry.tag}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Clock size={14} color={colors.textMuted} />
+        <Text style={{ ...type.caption, color: colors.text }}>~{telemetry.formattedDuration}</Text>
       </View>
+      <Text style={{ ...type.tiny, color: colors.textMuted, marginLeft: 'auto' }}>{telemetry.tag}</Text>
+    </View>
+  )
+}
+
+/** Small heading shown above each leg in round-trip mode. */
+function LegHeading({ children, meta }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: space.xs }}>
+      <Text style={{ ...type.bodyBold, color: colors.text }}>{children}</Text>
+      {meta ? <Text style={{ ...type.tiny, color: colors.textMuted }}>{meta}</Text> : null}
     </View>
   )
 }
@@ -290,407 +292,172 @@ export default function RoutePlannerCard({ config, onChange, isInterCity = false
   return (
     <View style={{ gap: space.md }}>
       {/* ── Direction Toggle ── */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5 }}>
-          TRIP DIRECTION
-        </Text>
-        <View
-          style={{
-            flexDirection: 'row',
-            backgroundColor: colors.surfaceAlt,
-            borderRadius: radius.md,
-            padding: 3,
-          }}
-        >
-          {[
-            { id: 'one_way', label: 'One Way' },
-            { id: 'two_way', label: 'Round Trip' },
-          ].map((opt) => {
-            const active = config.tripType === opt.id
-            return (
-              <Pressable
-                accessibilityRole="button"
-                key={opt.id}
-                onPress={() => setTripType(opt.id)}
-                style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 6,
-                  borderRadius: radius.md - 2,
-                  backgroundColor: active ? colors.surface : 'transparent',
-                  shadowColor: active ? colors.graphite : 'transparent',
-                  shadowOpacity: 0.06,
-                  shadowRadius: 4,
-                  elevation: active ? 1 : 0,
-                }}
-              >
-                <Text style={{ ...type.caption, color: active ? colors.text : colors.textMuted }}>
-                  {opt.label}
-                </Text>
-              </Pressable>
-            )
-          })}
-        </View>
-      </View>
+      <Segmented
+        options={[
+          { id: 'one_way', label: 'One way' },
+          { id: 'two_way', label: 'Round trip' },
+        ]}
+        value={config.tripType}
+        onChange={setTripType}
+      />
 
       {/* ── Card 1: Outbound Leg ── */}
-      <View
-        style={{
-          borderRadius: radius.lg,
-          borderWidth: 1,
-          borderColor: colors.border,
-          backgroundColor: colors.surface,
-          padding: space.md,
-          gap: 0,
-        }}
-      >
-        {/* Header */}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            paddingBottom: space.sm,
-            marginBottom: space.sm,
-            borderBottomWidth: 1,
-            borderBottomColor: colors.border,
-          }}
-        >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.graphite }} />
-            <Text style={{ ...type.micro, color: colors.graphite, letterSpacing: 0.5, fontWeight: '900' }}>
-              {isTwoWay ? 'LEG 1: OUTBOUND' : 'JOURNEY ROUTE'}
-            </Text>
-          </View>
-          <Text style={{ ...type.micro, color: colors.textMuted }}>
-            {stops.length > 0 ? `${stops.length} stop${stops.length > 1 ? 's' : ''}` : 'Direct'}
-          </Text>
-        </View>
+      <Panel style={{ gap: 0 }}>
+        {isTwoWay ? (
+          <LegHeading meta={stops.length > 0 ? `${stops.length} stop${stops.length > 1 ? 's' : ''}` : 'Direct'}>
+            Going
+          </LegHeading>
+        ) : null}
 
         {/* Pickup */}
-        <TimelineRow dotColor={colors.graphite} dotBorder={colors.surfaceSunken} isLast={false}>
-          <RowLabel>Pickup (From)</RowLabel>
-          <ModalPicker
-            value={pickupId}
-            options={pickupOptions}
-            onChange={handlePickupChange}
-            placeholder="Select pickup location"
-            title="Pickup Location"
-            searchable
-            placeSearch
-          />
+        <TimelineRow marker="pickup">
+          <View style={{ flex: 1 }}>
+            <ModalPicker
+              label="Pickup"
+              value={pickupId}
+              options={pickupOptions}
+              onChange={handlePickupChange}
+              placeholder="Select pickup location"
+              title="Pickup location"
+              searchable
+              placeSearch
+            />
+          </View>
         </TimelineRow>
 
         {/* Outbound Stops */}
         {stops.map((stop, i) => (
-          <TimelineRow
-            key={stop.id}
-            dotColor={colors.textMuted}
-            dotBorder={colors.surfaceSunken}
-            isLast={false}
-          >
-            <RowLabel>Stop {i + 1}</RowLabel>
-            <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' }}>
-              <View style={{ flex: 1 }}>
-                <ModalPicker
-                  value={stop.locationId}
-                  options={CITY_OPTS}
-                  onChange={(id) => updateStop(stop.id, id)}
-                  placeholder={`Select stop ${i + 1}…`}
-                  title={`Stop ${i + 1}`}
-                  searchable
-                  placeSearch
-                />
-              </View>
-              <StopRemoveButton onPress={() => removeStop(stop.id)} />
+          <TimelineRow key={stop.id} marker="stop">
+            <View style={{ flex: 1 }}>
+              <ModalPicker
+                label={`Stop ${i + 1}`}
+                value={stop.locationId}
+                options={CITY_OPTS}
+                onChange={(id) => updateStop(stop.id, id)}
+                placeholder="Choose a place"
+                title={`Stop ${i + 1}`}
+                searchable
+                placeSearch
+              />
             </View>
+            <StopRemoveButton onPress={() => removeStop(stop.id)} />
           </TimelineRow>
         ))}
 
-        {/* Add Stop */}
-        <View style={{ paddingLeft: 32, marginBottom: space.sm }}>
-          <Pressable
-            accessibilityRole="button"
-            onPress={addStop}
-            disabled={!canAddStop}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
-          >
-            <Plus size={13} color={canAddStop ? colors.brand : colors.textMuted} />
-            <Text
-              style={{
-                ...type.caption,
-                color: canAddStop ? colors.brand : colors.textMuted,
-                fontWeight: '800',
-              }}
-            >
-              Add Stop {stops.length > 0 ? `(${stops.length}/3)` : ''}
-            </Text>
-          </Pressable>
-          {!canAddStop && stops.length > 0 && stops.length < 3 ? (
-            <Text style={{ ...type.micro, color: colors.textMuted, marginTop: 3 }}>
-              Select a location above first
-            </Text>
-          ) : null}
-        </View>
-
         {/* Outbound Destination */}
-        <TimelineRow
-          dotColor={colors.graphite}
-          dotBorder={colors.surfaceAlt}
-          isLast
-        >
-          <RowLabel>{isTwoWay ? 'Turnaround (Outbound Destination)' : 'Destination (To)'}</RowLabel>
-          <ModalPicker
-            value={dropId}
-            options={destOptions}
-            onChange={handleDestChange}
-            placeholder="Select destination"
-            title="Destination"
-            searchable
-            placeSearch
-          />
+        <TimelineRow marker="drop" isLast>
+          <View style={{ flex: 1 }}>
+            <ModalPicker
+              label={isTwoWay ? 'Turnaround point' : 'Drop'}
+              value={dropId}
+              options={destOptions}
+              onChange={handleDestChange}
+              placeholder="Select destination"
+              title="Destination"
+              searchable
+              placeSearch
+            />
+          </View>
         </TimelineRow>
 
-        {/* Outbound Telemetry */}
-        <TelemetryFooter telemetry={outboundTelemetry} />
-      </View>
+        <AddStopButton onPress={addStop} enabled={canAddStop} count={stops.length} />
+
+        <TelemetryLine telemetry={outboundTelemetry} />
+      </Panel>
 
       {/* ── Card 2: Return Leg (only in Round Trip) ── */}
       {isTwoWay && (
-        <View
-          style={{
-            borderRadius: radius.lg,
-            borderWidth: 1,
-            borderColor: colors.brandSoft,
-            backgroundColor: colors.redSofter,
-            padding: space.md,
-            gap: 0,
-          }}
-        >
-          {/* Header */}
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingBottom: space.sm,
-              marginBottom: space.sm,
-              borderBottomWidth: 1,
-              borderBottomColor: colors.brandSoft,
-            }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: colors.brand }} />
-              <Text style={{ ...type.micro, color: colors.brand, letterSpacing: 0.5, fontWeight: '900' }}>
-                LEG 2: RETURN JOURNEY
-              </Text>
-            </View>
-            <Text
-              style={{
-                ...type.micro,
-                color: colors.brand,
-                backgroundColor: colors.brandSoft,
-                paddingHorizontal: 8,
-                paddingVertical: 2,
-                borderRadius: radius.pill,
-              }}
-            >
-              From {destName.split(',')[0]}
-            </Text>
-          </View>
+        <Panel style={{ gap: 0 }}>
+          <LegHeading meta={`From ${destName.split(',')[0]}`}>Return</LegHeading>
 
           {/* Return Origin (locked) */}
-          <TimelineRow dotColor={colors.borderStrong} dotBorder={colors.surfaceAlt} isLast={false} lineColor={colors.brandSoft}>
-            <RowLabel>Return Origin (Auto)</RowLabel>
+          <TimelineRow marker="pickup">
             <View
               style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
+                flex: 1,
                 paddingHorizontal: space.md,
-                paddingVertical: 11,
+                paddingVertical: 9,
                 borderRadius: radius.md,
-                borderWidth: 1,
-                borderColor: colors.border,
                 backgroundColor: colors.surfaceAlt,
               }}
             >
-              <Text style={{ ...type.body, color: colors.textMuted, flex: 1 }} numberOfLines={1}>
+              <Text style={{ ...type.tiny, color: colors.textMuted }}>Starts from your turnaround point</Text>
+              <Text style={{ ...type.body, color: colors.textMuted }} numberOfLines={1}>
                 {destName}
-              </Text>
-              <Text
-                style={{
-                  ...type.micro,
-                  color: colors.textMuted,
-                  backgroundColor: colors.border,
-                  paddingHorizontal: 6,
-                  paddingVertical: 2,
-                  borderRadius: 4,
-                }}
-              >
-                AUTO
               </Text>
             </View>
           </TimelineRow>
 
           {/* Return Stops */}
           {returnStops.map((stop, i) => (
-            <TimelineRow
-              key={stop.id}
-              dotColor={colors.brandSoft}
-              dotBorder={colors.surface}
-              isLast={false}
-              lineColor={colors.brandSoft}
-            >
-              <RowLabel>Return Stop {i + 1}</RowLabel>
-              <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' }}>
-                <View style={{ flex: 1 }}>
-                  <ModalPicker
-                    value={stop.locationId}
-                    options={CITY_OPTS}
-                    onChange={(id) => updateReturnStop(stop.id, id)}
-                    placeholder={`Return stop ${i + 1}…`}
-                    title={`Return Stop ${i + 1}`}
-                    searchable
-                    placeSearch
-                  />
-                </View>
-                <StopRemoveButton onPress={() => removeReturnStop(stop.id)} />
+            <TimelineRow key={stop.id} marker="stop">
+              <View style={{ flex: 1 }}>
+                <ModalPicker
+                  label={`Return stop ${i + 1}`}
+                  value={stop.locationId}
+                  options={CITY_OPTS}
+                  onChange={(id) => updateReturnStop(stop.id, id)}
+                  placeholder="Choose a place"
+                  title={`Return stop ${i + 1}`}
+                  searchable
+                  placeSearch
+                />
               </View>
+              <StopRemoveButton onPress={() => removeReturnStop(stop.id)} />
             </TimelineRow>
           ))}
 
-          {/* Add Return Stop */}
-          <View style={{ paddingLeft: 32, marginBottom: space.sm }}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={addReturnStop}
-              disabled={!canAddReturnStop}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}
-            >
-              <Plus size={13} color={canAddReturnStop ? colors.brand : colors.textMuted} />
-              <Text
-                style={{
-                  ...type.caption,
-                  color: canAddReturnStop ? colors.brand : colors.textMuted,
-                  fontWeight: '800',
-                }}
-              >
-                Add Return Stop {returnStops.length > 0 ? `(${returnStops.length}/3)` : ''}
-              </Text>
-            </Pressable>
-            {!canAddReturnStop && returnStops.length > 0 && returnStops.length < 3 ? (
-              <Text style={{ ...type.micro, color: colors.textMuted, marginTop: 3 }}>
-                Select a location above first
-              </Text>
-            ) : null}
-          </View>
-
           {/* Final Return Destination */}
-          <TimelineRow
-            dotColor={colors.brand}
-            dotBorder={colors.brandSoft}
-            isLast
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 4,
-              }}
-            >
-              <RowLabel>Final Return Destination (To)</RowLabel>
-              {returnDropId === pickupId ? (
-                <Text style={{ ...type.micro, color: colors.brand }}>Matches Pickup</Text>
-              ) : null}
+          <TimelineRow marker="drop" isLast>
+            <View style={{ flex: 1 }}>
+              <ModalPicker
+                label={returnDropId === pickupId ? 'Drop · same as pickup' : 'Drop'}
+                value={returnDropId}
+                options={CITY_OPTS.map((l) => ({
+                  ...l,
+                  sublabel: l.id === pickupId ? `Your pickup · ${l.sublabel}` : l.sublabel,
+                }))}
+                onChange={handleReturnDropChange}
+                placeholder="Select return destination"
+                title="Return drop"
+                searchable
+                placeSearch
+              />
             </View>
-            <ModalPicker
-              value={returnDropId}
-              options={CITY_OPTS.map((l) => ({
-                ...l,
-                label: l.id === pickupId ? `${l.label} (Initial Pickup)` : l.label,
-              }))}
-              onChange={handleReturnDropChange}
-              placeholder="Select return destination"
-              title="Final Return Destination"
-              searchable
-              placeSearch
-            />
           </TimelineRow>
 
-          {/* Return Telemetry */}
-          <TelemetryFooter
-            telemetry={returnTelemetry}
-            style={{ borderColor: colors.brandSoft, backgroundColor: colors.redSofter }}
+          <AddStopButton
+            onPress={addReturnStop}
+            enabled={canAddReturnStop}
+            count={returnStops.length}
+            label="Add return stop"
           />
-        </View>
+
+          <TelemetryLine telemetry={returnTelemetry} />
+        </Panel>
       )}
 
-      {/* ── Round Trip Summary Banner ── */}
+      {/* ── Round Trip Summary ── */}
       {isTwoWay && (
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
             justifyContent: 'space-between',
-            backgroundColor: colors.graphite,
-            borderRadius: radius.lg,
+            backgroundColor: colors.surfaceAlt,
+            borderRadius: radius.md,
             paddingHorizontal: space.lg,
-            paddingVertical: 12,
+            paddingVertical: space.md,
             gap: space.md,
           }}
         >
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-            <View
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: radius.sm,
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Compass size={14} color={colors.onGraphite} />
-            </View>
-            <View>
-              <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5 }}>
-                TOTAL ROUND TRIP
-              </Text>
-              <Text style={{ ...type.caption, color: colors.onRed }}>
-                Outbound + Return
-                {stops.length + returnStops.length > 0
-                  ? ` (${stops.length + returnStops.length} stops)`
-                  : ''}
-              </Text>
-            </View>
-          </View>
-          <View style={{ flexDirection: 'row', gap: space.sm }}>
-            <View
-              style={{
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                borderRadius: radius.sm,
-                paddingHorizontal: 10,
-                paddingVertical: 5,
-              }}
-            >
-              <Text style={{ ...type.caption, color: colors.onGraphite, fontWeight: '900' }}>
-                ~{totalKm} km
-              </Text>
-            </View>
-            <View
-              style={{
-                backgroundColor: 'rgba(255,255,255,0.1)',
-                borderRadius: radius.sm,
-                paddingHorizontal: 10,
-                paddingVertical: 5,
-              }}
-            >
-              <Text style={{ ...type.caption, color: colors.onRed, fontWeight: '900' }}>
-                ~{formatDuration(totalMinutes)}
-              </Text>
-            </View>
-          </View>
+          <Text style={{ ...type.caption, color: colors.textMuted }}>
+            Round trip total
+            {stops.length + returnStops.length > 0 ? ` · ${stops.length + returnStops.length} stops` : ''}
+          </Text>
+          <Text style={{ ...type.bodyBold, color: colors.text }}>
+            ~{totalKm} km · ~{formatDuration(totalMinutes)}
+          </Text>
         </View>
       )}
     </View>

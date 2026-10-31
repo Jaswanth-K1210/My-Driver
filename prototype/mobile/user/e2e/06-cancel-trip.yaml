@@ -27,7 +27,7 @@ env:
     text: "Cancel trip"
     index: 1
 - extendedWaitUntil:
-    visible: "WHAT DO YOU NEED?"
+    visible: "What do you need?"
     timeout: 15000
 
 # ── Part B: Cancellation with arrival fee AFTER driver arrives at pickup ──────
@@ -54,5 +54,5 @@ env:
 # Confirm paid cancellation and verify return to HomeScreen
 - tapOn: "Cancel · pay ₹.*"
 - extendedWaitUntil:
-    visible: "WHAT DO YOU NEED?"
+    visible: "What do you need?"
     timeout: 15000

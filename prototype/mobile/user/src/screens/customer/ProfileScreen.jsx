@@ -21,7 +21,7 @@ const inputBase = {
   borderRadius: radius.md,
   backgroundColor: colors.surfaceAlt,
   paddingHorizontal: space.md,
-  paddingVertical: 10,
+  paddingVertical: 13,
   ...type.body,
   color: colors.text,
 }
@@ -329,7 +329,7 @@ export default function ProfileScreen({ onLogout }) {
     borderRadius: radius.md,
     backgroundColor: colors.surfaceAlt,
     paddingHorizontal: space.md,
-    paddingVertical: 10,
+    paddingVertical: 13,
     ...type.body,
     color: colors.text,
   }
@@ -344,7 +344,7 @@ export default function ProfileScreen({ onLogout }) {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.xxl, gap: space.lg }}
+        contentContainerStyle={{ paddingHorizontal: space.xl, paddingBottom: space.xxl, gap: space.xl }}
       >
         <Card style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
           <View

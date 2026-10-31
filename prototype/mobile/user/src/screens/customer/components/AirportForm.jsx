@@ -1,10 +1,11 @@
 /**
  * AirportForm — departure/arrival toggle, terminal selector, round-trip, flight number.
  */
-import { Pressable, Text, TextInput, View } from 'react-native'
+import { TextInput, View } from 'react-native'
 import { Plane } from 'lucide-react-native'
 import { AIRPORT_LOCATIONS } from '../../../data/mock'
 import { colors, radius, space, type } from '../../../theme/tokens'
+import { FieldLabel, Segmented } from '../../../components/Form'
 import ModalPicker from './ModalPicker'
 
 const TERMINAL_OPTS = AIRPORT_LOCATIONS.map((a) => ({
@@ -22,145 +23,65 @@ export default function AirportForm({ config, onChange }) {
   const setTripType = (t) => onChange({ ...config, tripType: t })
 
   return (
-    <View style={{ gap: space.md }}>
-      {/* Flow + Trip-Type toggles */}
-      <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
-        {/* Departure / Arrival */}
-        <View style={{ flex: 1, minWidth: 160 }}>
-          <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5, marginBottom: space.sm }}>
-            TRANSFER TYPE
-          </Text>
-          <View
-            style={{
-              flexDirection: 'row',
-              backgroundColor: colors.surfaceAlt,
-              borderRadius: radius.md,
-              padding: 3,
-            }}
-          >
-            {[
-              { id: 'departure', label: '🛫 Departure' },
-              { id: 'arrival', label: '🛬 Arrival' },
-            ].map((opt) => {
-              const active = ad.flow === opt.id
-              return (
-                <Pressable
-                  accessibilityRole="button"
-                  key={opt.id}
-                  onPress={() => patchAD({ flow: opt.id })}
-                  style={{
-                    flex: 1,
-                    paddingVertical: 7,
-                    alignItems: 'center',
-                    borderRadius: radius.md - 2,
-                    backgroundColor: active ? colors.surface : 'transparent',
-                    elevation: active ? 1 : 0,
-                  }}
-                >
-                  <Text style={{ ...type.caption, color: active ? colors.text : colors.textMuted, fontWeight: active ? '800' : '600' }}>
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              )
-            })}
-          </View>
-        </View>
-
-        {/* One-way / Round-trip */}
-        <View style={{ flex: 1, minWidth: 140 }}>
-          <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5, marginBottom: space.sm }}>
-            ROUTE TYPE
-          </Text>
-          <View
-            style={{
-              flexDirection: 'row',
-              backgroundColor: colors.surfaceAlt,
-              borderRadius: radius.md,
-              padding: 3,
-            }}
-          >
-            {[
-              { id: 'one_way', label: 'One Way' },
-              { id: 'two_way', label: 'Round Trip' },
-            ].map((opt) => {
-              const active = config.tripType === opt.id
-              return (
-                <Pressable
-                  accessibilityRole="button"
-                  key={opt.id}
-                  onPress={() => setTripType(opt.id)}
-                  style={{
-                    flex: 1,
-                    paddingVertical: 7,
-                    alignItems: 'center',
-                    borderRadius: radius.md - 2,
-                    backgroundColor: active ? colors.surface : 'transparent',
-                    elevation: active ? 1 : 0,
-                  }}
-                >
-                  <Text style={{ ...type.caption, color: active ? colors.text : colors.textMuted, fontWeight: active ? '800' : '600' }}>
-                    {opt.label}
-                  </Text>
-                </Pressable>
-              )
-            })}
-          </View>
-        </View>
+    <View style={{ gap: space.lg }}>
+      <View>
+        <FieldLabel>Transfer</FieldLabel>
+        <Segmented
+          options={[
+            { id: 'departure', label: 'To airport' },
+            { id: 'arrival', label: 'From airport' },
+          ]}
+          value={ad.flow}
+          onChange={(flow) => patchAD({ flow })}
+        />
       </View>
 
-      {/* Terminal Selector */}
       <View>
-        <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5, marginBottom: space.sm }}>
-          AIRPORT TERMINAL
-        </Text>
+        <FieldLabel>Route</FieldLabel>
+        <Segmented
+          options={[
+            { id: 'one_way', label: 'One way' },
+            { id: 'two_way', label: 'Round trip' },
+          ]}
+          value={config.tripType}
+          onChange={setTripType}
+        />
+      </View>
+
+      <View>
+        <FieldLabel>Terminal</FieldLabel>
         <ModalPicker
           value={ad.terminalId}
           options={TERMINAL_OPTS}
           onChange={(id) => patchAD({ terminalId: id })}
           placeholder="Select airport terminal"
-          title="Airport Terminal"
+          title="Airport terminal"
         />
       </View>
 
-      {/* Flight Number */}
       <View>
-        <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5, marginBottom: space.sm }}>
-          FLIGHT NUMBER{' '}
-          <Text style={{ fontWeight: '600', letterSpacing: 0 }}>
-            (Optional — for automated flight tracking)
-          </Text>
-        </Text>
-        <View style={{ position: 'relative' }}>
-          <View
-            style={{
-              position: 'absolute',
-              left: space.md,
-              top: 0,
-              bottom: 0,
-              justifyContent: 'center',
-              zIndex: 1,
-            }}
-          >
-            <Plane size={15} color={colors.textMuted} />
+        <FieldLabel hint="Optional · we track delays for you">Flight number</FieldLabel>
+        <View style={{ justifyContent: 'center' }}>
+          <View style={{ position: 'absolute', left: space.md, zIndex: 1 }}>
+            <Plane size={16} color={colors.textMuted} />
           </View>
           <TextInput
             accessibilityLabel="Flight number"
             value={ad.flightNumber}
             onChangeText={(v) => patchAD({ flightNumber: v.toUpperCase() })}
-            placeholder="e.g. 6E-2415 / AI-840"
+            placeholder="e.g. 6E-2415"
             placeholderTextColor={colors.textMuted}
             autoCapitalize="characters"
             autoCorrect={false}
             style={{
+              ...type.body,
               paddingLeft: 40,
               paddingRight: space.md,
-              paddingVertical: 11,
+              paddingVertical: 13,
               borderRadius: radius.md,
               borderWidth: 1,
               borderColor: colors.border,
               backgroundColor: colors.surface,
-              fontSize: 14,
-              fontWeight: '700',
               color: colors.text,
               letterSpacing: 0.5,
             }}

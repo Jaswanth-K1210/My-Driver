@@ -7,14 +7,14 @@ env:
 # Screens: HomeScreen.jsx -> PaymentScreen.jsx -> MatchingScreen.jsx
 
 - extendedWaitUntil:
-    visible: "WHAT DO YOU NEED?"
+    visible: "What do you need?"
     timeout: 15000
 - assertVisible: "Within City"
 
 # Scroll down to verify the live server quote card (Cyber Towers -> Financial District)
 - scrollUntilVisible:
     element:
-      text: "PRICE ESTIMATE"
+      text: "Price estimate"
     direction: DOWN
     timeout: 15000
 - assertVisible: "Estimated total"
