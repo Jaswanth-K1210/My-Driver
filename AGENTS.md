@@ -127,7 +127,7 @@ Add a new entry **directly under the file's intro paragraph**, above all older e
 Read your area's file at the start of every session. If an area file ever conflicts with this one, this file wins. Each owner may edit their own area file. Changing this root file needs all three developers to agree.
 
 - If a check can't run (for example, Docker isn't available), say so in `progress.md`. Never claim it passed.
-- **Mobile apps use Expo SDK 57.** Check the versioned docs at https://docs.expo.dev/versions/v57.0.0/ before using any Expo API.
+- **Mobile apps use Expo SDK 58.** Check the versioned docs at https://docs.expo.dev/versions/v58.0.0/ before using any Expo API.
 - **Native modules don't work in Expo Go.** Maps, push, background location and volume-button SOS need a development build. Don't "fix" this by removing them.
 
 ---

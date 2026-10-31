@@ -1,5 +1,8 @@
 import { useEffect, useRef } from 'react'
+import { isRunningInExpoGo } from 'expo'
+import Constants from 'expo-constants'
 import * as SecureStore from 'expo-secure-store'
+import { NativeModules } from 'react-native'
 
 /**
  * Silent SOS by pressing a volume button three times.
@@ -37,8 +40,13 @@ export async function setVolumeSosEnabled(enabled) {
   }
 }
 
+const isExpoGo =
+  (typeof isRunningInExpoGo === 'function' && isRunningInExpoGo()) ||
+  Constants.executionEnvironment === 'storeClient'
+
 /** Loaded on first use: the native module is missing in Expo Go. */
 function volumeManager() {
+  if (isExpoGo || !NativeModules?.VolumeManager) return null
   try {
     return require('react-native-volume-manager').VolumeManager
   } catch {

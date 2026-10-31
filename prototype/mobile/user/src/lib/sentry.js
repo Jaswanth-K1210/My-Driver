@@ -1,13 +1,17 @@
 // Sentry: errors and sampled traces (docs/testing-plan.md §9). Off unless
 // EXPO_PUBLIC_SENTRY_DSN is set and the app is running in a development,
 // preview, or production build (not Expo Go).
+import { isRunningInExpoGo } from 'expo'
 import Constants from 'expo-constants'
-import * as Sentry from '@sentry/react-native'
 import { scrubSentry } from './sentry-scrub'
 
 const dsn = process.env.EXPO_PUBLIC_SENTRY_DSN?.trim() || ''
-const isExpoGo = Constants.executionEnvironment === 'storeClient'
+const isExpoGo =
+  (typeof isRunningInExpoGo === 'function' && isRunningInExpoGo()) ||
+  Constants.executionEnvironment === 'storeClient'
 export const sentryEnabled = Boolean(dsn) && !isExpoGo
+
+const Sentry = sentryEnabled ? require('@sentry/react-native') : null
 
 if (sentryEnabled) {
   Sentry.init({

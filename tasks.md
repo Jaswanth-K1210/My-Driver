@@ -172,6 +172,9 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 ### Done
 - [x] ~~Phone OTP and Google sign-in, sign-up~~
 - [x] ~~Expo SDK 57 upgrade (image picker, location, sensors at SDK 57 versions)~~
+- [x] **SDK-58** Both apps on Expo SDK 58 (React Native 0.88, React 19.3, Sentry 8), agreed by all
+      three developers (31 Oct). Customer app's Sentry and volume-button SOS skip their native
+      modules in Expo Go. Written — needs phone check on new development builds (`chore(SDK-58)`, 31 Oct)
 - [x] ~~Onboarding: PAN + Aadhaar OTP verification, driving licence upload, status and blockers~~
 - [x] ~~Go online/offline with the current position~~
 - [x] ~~Trip offers: view, accept, decline~~

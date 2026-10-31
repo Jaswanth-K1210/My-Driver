@@ -8,7 +8,7 @@ what to do and what you should see.
 ## Before you start
 
 1. **Delete the old native project.** `prototype/mobile/user/android` was
-   generated for Expo SDK 54 and the app is now SDK 57. While it exists, EAS
+   generated for Expo SDK 54 and the app is now SDK 58. While it exists, EAS
    builds use it and ignore the icon, permissions and every plugin in
    `app.json` (`npx expo-doctor` reports this). From the repo root:
 

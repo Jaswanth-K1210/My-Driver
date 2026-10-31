@@ -3,8 +3,8 @@
 **Owner: Sanath.** This file adds area-specific rules on top of the team rules in the root [`AGENTS.md`](../../../AGENTS.md). Read that one first; if the two ever conflict, the root file wins. Sanath may change this file; changes to the root file need all three developers to agree.
 
 ## Stack
-- Expo **SDK 57**, React Native (New Architecture), JavaScript (no TypeScript).
-- **Read the versioned Expo docs before using any Expo API:** https://docs.expo.dev/versions/v57.0.0/
+- Expo **SDK 58**, React Native (New Architecture), JavaScript (no TypeScript).
+- **Read the versioned Expo docs before using any Expo API:** https://docs.expo.dev/versions/v58.0.0/
 - Source layout: `src/screens/customer/` (screens and `components/`), `src/context/`, `src/lib/`, `src/components/`, `src/navigation/`, `src/theme/`.
 
 ## Checks before every commit

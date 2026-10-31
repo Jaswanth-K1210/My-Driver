@@ -3,6 +3,17 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Umesh · SDK-58: both mobile apps on Expo SDK 58
+
+**Did:** Agreed by all three developers. Moved the customer and driver apps from Expo SDK 57 to SDK 58: `expo` 58.0.22, React Native 0.88.1, React 19.3.0, and every Expo module, `react-native-maps`, safe-area, screens and SVG at the SDK 58 versions (`npx expo install --check` clean; its `--fix` fails on this npm's install-script policy, so the last three patch versions were set in `package.json` and installed with `npm install`). Customer app: `@sentry/react-native` 8.28 and loaded only when Sentry is on; Sentry and volume-button SOS skip their native modules in Expo Go (`isRunningInExpoGo`). The SDK references in the root `AGENTS.md` (agreed change), both apps' `AGENTS.md`, `prototype/README.md` and `docs/user-app-testing.md` now say SDK 58.
+**Checks:** `npx expo-doctor` 20/20 in both apps · customer app `npm test` 22/22, `npx expo export --platform android` pass · driver app `npm test` 26/26, `npx expo export --platform android` pass. iOS export not run.
+**Commit:** `chore(SDK-58): move both mobile apps to Expo SDK 58`
+**Not done / follow-ups:**
+- New development builds are needed for both apps (`eas build --profile development`): SDK 57 builds and Expo Go for SDK 57 will not load this code.
+- Needs the full phone check on Android and iPhone.
+- `npm install` warns that some packages' install scripts (e.g. `@sentry/cli`) are not approved; approve them with `npm install-scripts approve` if source-map upload is wanted.
+**Requests raised:** none.
+
 ## 2026-10-31 · Jaswanth · Hire by the hour with no destination (website)
 
 **Did:** A customer with no destination couldn't book on the website: Within city always needed a drop, and hourly pricing was only on the Full-time tab. Within city now has a "No destination? Hire by the hour" checkbox. When ticked, only the pickup is asked for, and `bookingPayloadFor` sends `booking_type: HOURLY` with `hours` (at least 2, the server's `MIN_HOURLY_HOURS`) and no drop, stops or return. The fare is the hourly rate × hours (e.g. Standard 4 h: ₹960 + ₹19 = ₹979) and shows "4 h booked, charged by time". The distance row is hidden for it. No backend change: `HOURLY` with no drop was already supported.

@@ -18,8 +18,8 @@ one backend and four clients.
 |---|---|
 | `backend/` | Fastify + TypeScript API on Postgres/TimescaleDB, PgBouncer, Redis and MinIO/S3 |
 | `website/` | One codebase with two builds: the customer site (`dist/`) and the operations console (`dist-admin/`, served at admin.mydriver.in) |
-| `mobile/user/` | Customer app (Expo SDK 57, React Native 0.86) |
-| `mobile/driver/` | Driver app (Expo SDK 57, React Native 0.86) |
+| `mobile/user/` | Customer app (Expo SDK 58, React Native 0.88) |
+| `mobile/driver/` | Driver app (Expo SDK 58, React Native 0.88) |
 | `shared/` | The API client, copied into each app. Edit `shared/api-client.js` and re-sync the copies |
 | `deploy/` | Production Docker Compose, Caddy (automatic TLS), env template |
 | `app/` | Older combined web demo on mock data, kept as a design reference |
