@@ -180,6 +180,11 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       lost. Selfie and code now kept in `DriverFlow`; lost-photo recovery on Android
       (`getPendingResultAsync`) and a message when a photo can't be read. Written — needs phone check
       (`fix(HS-1)`, 31 Oct)
+- [x] **GATE-1** Mid-trip screens flashed to the loading screen and were rebuilt whenever the app came
+      back to the foreground (after each inspection photo, or from Maps): an approval re-check in
+      flight kept status APPROVED, which the continuity exception did not accept. It now does for a
+      trusted `IN_TRIP` / `ESCALATED` trip; pre-handshake trips and confirmed non-approved statuses are
+      unchanged. Test 3b added. Written — needs phone check (`fix(GATE-1)`, 31 Oct)
 - [x] ~~Onboarding: PAN + Aadhaar OTP verification, driving licence upload, status and blockers~~
 - [x] ~~Go online/offline with the current position~~
 - [x] ~~Trip offers: view, accept, decline~~

@@ -195,10 +195,13 @@ export function evaluateOnboardingGate({
 
   const hasInProgressTrip = isTrustedInProgressTrip(activeTrip, userId)
 
+  // A re-check in flight keeps the last status (APPROVED); a network failure
+  // resets it to UNKNOWN. Either way a trusted trip already past the handshake
+  // carries on. A confirmed non-approved status never does (isTrustedActiveTrip).
   const continuityActive =
     !freshlyApproved &&
     (validationState === 'NETWORK_ERROR' || validationState === 'VALIDATING') &&
-    onboardingStatus === 'UNKNOWN' &&
+    (onboardingStatus === 'UNKNOWN' || onboardingStatus === 'APPROVED') &&
     isTrustedActiveTrip({
       trip: activeTrip,
       driverId: userId,

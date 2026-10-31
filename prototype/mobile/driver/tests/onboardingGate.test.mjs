@@ -138,6 +138,45 @@ describe('Driver Onboarding Validation & Active-Trip Continuity Gate', () => {
     }
   })
 
+  it('3b. A re-check in flight (returning from the camera or Maps) keeps a trusted in-progress trip on screen, but not a pre-handshake trip', async () => {
+    for (const [tripStatus, continues] of [['IN_TRIP', true], ['ESCALATED', true], ['HANDSHAKE_PENDING', false]]) {
+      const storage = createMemoryStorage()
+      let answer = null
+      const controller = createOnboardingController({
+        storage,
+        api: {
+          driver: {
+            onboarding: () =>
+              answer ? new Promise((resolve) => (answer.resolve = resolve)) : Promise.resolve({ onboarding_status: 'APPROVED' }),
+          },
+        },
+      })
+
+      await controller.hydrateForUser(DRIVER_ID)
+      await controller.validate()
+      await controller.setActiveTrip({ serverId: TRIP_ID, driverId: DRIVER_ID, status: tripStatus, inspected: true })
+
+      // The app comes back to the foreground: a second check starts and is still in flight.
+      answer = {}
+      const pending = controller.validate()
+      const during = controller.getSnapshot()
+
+      assert.equal(during.validationState, 'VALIDATING')
+      assert.equal(during.onboardingStatus, 'APPROVED')
+      assert.equal(during.freshlyApproved, false)
+      assert.equal(during.canStartOrAcceptNewRide, false)
+      assert.equal(during.canContinueActiveTrip, continues)
+      assert.equal(during.viewMode, continues ? 'ACTIVE_TRIP' : 'LOADING')
+
+      // The server now says the driver is suspended: continuity ends at once.
+      answer.resolve({ onboarding_status: 'SUSPENDED' })
+      const after = await pending
+      assert.equal(after.continuityActive, false)
+      assert.equal(after.canContinueActiveTrip, false)
+      assert.notEqual(after.viewMode, 'ACTIVE_TRIP')
+    }
+  })
+
   it('4. Network failure when no trip is in progress (or when trip is only MATCHED / HANDSHAKE_PENDING) never defaults to APPROVED', async () => {
     for (const nonInProgressTrip of [
       null,

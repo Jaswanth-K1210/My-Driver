@@ -3,6 +3,17 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Umesh · GATE-1 and a driver-journey check for the demo
+
+**Did:**
+- Ran `prototype/shared/smoke-test.mjs` against a temporary backend on port 4100 (stopped afterwards): 69/69, the whole driver journey on the server side (sign-in, online, offer, accept, handshake, telemetry, 8-photo inspection, completion, earnings, certificate, SOS and Safety Desk).
+- Found in the app: every return to the foreground runs `controller.validate()`; while it is in flight the status stays `APPROVED`, and `continuityActive` only accepted `UNKNOWN`. So an `IN_TRIP` trip dropped to `LOADING`: the inspection screen was rebuilt after each photo (the camera backgrounds the app) and the drive screen flashed when the driver came back from Maps. `evaluateOnboardingGate` now accepts `UNKNOWN` or `APPROVED` for continuity; `isTrustedActiveTrip` already refused confirmed non-approved statuses, and new rides still need a fresh check. A pre-handshake trip still waits on the re-check (HS-1 keeps its selfie).
+- Checked trips with no drop (new "hire by the hour"): the offer card and drive screen show "N-hour hire" and the map hides.
+**Checks:** `npm test` 27/27 (new test 3b, confirmed failing without the fix) · `npx expo export --platform android` pass. Not run on a phone.
+**Commit:** `fix(GATE-1): keep an in-progress trip on screen while approval is re-checked`
+**Not done / follow-ups:** Needs phone check on the SDK 58 development build: take all 8 inspection photos, and switch to Maps and back during the drive.
+**Requests raised:** none.
+
 ## 2026-10-31 · Umesh · HS-1: pickup selfie came back blank
 
 **Did:** After taking the pickup selfie the driver landed back on the handshake screen with no photo. Cause: opening the camera backgrounds the app; on return `DriverContext` runs `controller.validate()`, and while it is `VALIDATING` the gate reports `LOADING` for a `HANDSHAKE_PENDING` trip, so `DriverFlow` swapped `HandshakeScreen` for `OnboardingLoading` and the selfie in its state was lost. The gate is unchanged (a handshake still needs a fresh approval check). Fix: the selfie and the typed code now live in `DriverFlow` (per trip id) and are passed to `HandshakeScreen` as `draft` / `onDraft`, so they survive the re-check. Also: on mount the screen collects a photo Android kept after closing the app during the camera (`ImagePicker.getPendingResultAsync`), camera errors are caught, and a result with no image data shows "The photo could not be read" instead of failing silently.
