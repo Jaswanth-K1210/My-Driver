@@ -4,15 +4,18 @@ import { api } from '../../lib/apiClient.js'
 import { formatINR } from '../../lib/utils.js'
 
 /**
- * "Pay ₹X" for what is still owed on a finished trip: the final fare came to
- * more than the amount held at booking. Renders nothing when nothing is due.
+ * "Pay ₹X" for what is still owed on a finished trip: either the final fare
+ * came to more than the amount held at booking, or (pay-after-trip) nothing
+ * was held and the whole fare is owed. Renders nothing when nothing is due.
  * Same hosted checkout page as booking; with money owed it collects the
  * difference, as in the customer app.
  */
 export default function PayDue({ tripId }) {
   const [payment, setPayment] = useState(null)
   const [waiting, setWaiting] = useState(false)
-  const due = payment?.amount_due > 0 ? payment.amount_due : 0
+  // Pay-after-trip: the order opened at the end of the trip, not yet paid.
+  const unpaid = ['CREATED', 'FAILED'].includes(payment?.status)
+  const due = payment?.amount_due > 0 ? payment.amount_due : unpaid ? payment.amount_authorized : 0
   // Stops by itself once the balance is paid.
   const polling = waiting && due > 0
 
@@ -38,7 +41,7 @@ export default function PayDue({ tripId }) {
   return (
     <div className="rounded-2xl border border-brand-200 bg-brand-50 p-4 text-left">
       <p className="text-sm font-black text-brand-700">{formatINR(due)} still to pay</p>
-      <p className="mt-0.5 text-xs text-slate-600">The final fare was more than the amount held at booking.</p>
+      <p className="mt-0.5 text-xs text-slate-600">{unpaid ? 'Your trip is done. Pay the final fare to close it.' : 'The final fare was more than the amount held at booking.'}</p>
       <button
         type="button"
         // Opened straight from the click: a tab opened after an await is popup-blocked.

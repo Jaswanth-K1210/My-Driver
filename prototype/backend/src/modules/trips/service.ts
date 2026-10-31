@@ -8,7 +8,7 @@ import { getTelemetryWriter, readTripTrack } from '../../telemetry/batch-writer.
 import type { Role } from '../auth/otp.js'
 import { recordAnomaly } from '../escalation/service.js'
 import { revokeLinksForEndedTrip } from '../guardian/service.js'
-import { captureForTrip, releaseForTrip } from '../payments/service.js'
+import { chargeForTrip, releaseForTrip } from '../payments/service.js'
 import { broadcastStateChange } from './broadcast.js'
 import { computeFare, estimateTripDistanceKm, extractValidStopCoords, type FareBreakdown } from './fare.js'
 import { getFees } from './fees.js'
@@ -59,6 +59,8 @@ export type TripView = {
   fare_amount: number | null
   platform_fee?: number | null
   night_fee?: number | null
+  /** Set on an urgent booking: the extra paid for a driver in 5-10 minutes. */
+  urgent_fee?: number | null
   /** Set when the customer cancelled after the driver arrived and was charged. */
   cancellation_fee?: number | null
   driver_earnings: number | null
@@ -97,6 +99,7 @@ const TRIP_SELECT = `
     t.cancellation_fee::float8      AS cancellation_fee,
     t.platform_fee::float8          AS platform_fee,
     t.night_fee::float8             AS night_fee,
+    t.urgent_fee::float8            AS urgent_fee,
     t.driver_earnings::float8       AS driver_earnings,
     t.requested_at, t.arrived_at, t.started_at, t.completed_at,
     t.stops, t.return_stops, t.vehicle_specs, t.vision_mode, t.flight_number, t.requirement, t.trip_type,
@@ -217,11 +220,12 @@ export type BookInput = {
   flightNumber?: string | null | undefined
   requirement?: string | null | undefined
   tripType?: string | null | undefined
+  urgent?: boolean | undefined
 }
 
 export type PriceInput = Pick<
   BookInput,
-  'bookingType' | 'hours' | 'pickup' | 'drop' | 'stops' | 'returnStops' | 'returnDrop' | 'carDetails' | 'requirement' | 'tripType' | 'requiredCertification'
+  'bookingType' | 'hours' | 'pickup' | 'drop' | 'stops' | 'returnStops' | 'returnDrop' | 'carDetails' | 'requirement' | 'tripType' | 'requiredCertification' | 'urgent'
 >
 
 /**
@@ -260,6 +264,7 @@ export async function priceTrip(input: PriceInput): Promise<{
     hourlyRate: card.hourly_rate,
     pickupAt: new Date(),
     stopsFee,
+    urgentFee: input.urgent ? fees.urgent_fee : 0,
     fees,
   })
   return { card, distanceKm, fare }
@@ -298,8 +303,8 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
          pickup_handshake_otp_hash, estimated_distance_km, estimated_fare,
          idempotency_key, stops, return_stops, return_drop_lat, return_drop_lng,
          vehicle_specs, vision_mode, flight_number, requirement, trip_type,
-         prefer_female_driver, share_with_guardians
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+         prefer_female_driver, share_with_guardians, urgent_fee
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)
        RETURNING id`,
       [
         input.customerId,
@@ -328,6 +333,7 @@ export async function bookTrip(input: BookInput): Promise<TripView> {
         input.tripType ?? null,
         input.preferFemaleDriver ?? false,
         input.shareWithGuardians ?? false,
+        fare.urgent_fee > 0 ? fare.urgent_fee.toFixed(2) : null,
       ],
     )
     const tripId = rows[0]!.id as string
@@ -406,10 +412,12 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
     return_stops: unknown
     requirement: string | null
     trip_type: string | null
+    customer_id: string
+    urgent_fee: string | null
   }>(
     `SELECT status, booking_type, hourly_package_hours, required_certification,
             started_at, estimated_distance_km, requested_at,
-            stops, return_stops, requirement, trip_type
+            stops, return_stops, requirement, trip_type, customer_id, urgent_fee
        FROM trips WHERE id = $1 AND driver_id = $2`,
     [tripId, driverId],
   )
@@ -454,6 +462,7 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
     hourlyRate: card.hourly_rate,
     pickupAt: startedAt,
     stopsFee,
+    urgentFee: Number(trip.urgent_fee ?? 0),
   })
 
   const client = await pool.connect()
@@ -518,7 +527,7 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
   await revokeLinksForEndedTrip(tripId).catch(() => undefined)
   // After commit and never fatal: the trip did happen. A failed capture
   // leaves the payment AUTHORIZED and visible to Finance for a retry.
-  await captureForTrip(tripId, fare.total).catch((err) => console.error('capture failed', tripId, err))
+  await chargeForTrip(tripId, trip.customer_id, fare.total).catch((err) => console.error('capture failed', tripId, err))
   await broadcastStateChange(tripId, 'COMPLETED')
   return getTripForParticipant(tripId, driverId)
 }
@@ -609,7 +618,7 @@ async function cancelTripOnce(
   if (fee > 0) {
     // Taken from the booking's hold, the rest of which is released. Never
     // fatal: a failed capture stays AUTHORIZED and visible to Finance.
-    await captureForTrip(tripId, fee).catch((err) => console.error('cancellation fee capture failed', tripId, err))
+    await chargeForTrip(tripId, trip.customer_id, fee).catch((err) => console.error('cancellation fee capture failed', tripId, err))
   } else {
     await releaseForTrip(tripId).catch(() => undefined)
   }

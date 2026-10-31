@@ -99,6 +99,7 @@ export function registerAdminSupportRoutes(app: FastifyInstance): void {
             city_stop_fee: z.number().min(0).max(1_000).optional(),
             intercity_stop_fee: z.number().min(0).max(2_000).optional(),
             arrival_cancellation_fee: z.number().min(0).max(2_000).optional(),
+            urgent_fee: z.number().min(0).max(1_000).optional(),
             reason: z.string().trim().max(300).optional(),
           })
           .strict(),

@@ -55,6 +55,15 @@ function requireProvider(): PaymentProvider {
 
 export const paymentsEnabled = (): boolean => getPaymentProvider() !== null
 
+let payAfterOverride: boolean | undefined
+/** No hold at booking; the final fare is paid after the trip (env PAY_AFTER_TRIP). */
+export const payAfterTrip = (): boolean => payAfterOverride ?? env.PAY_AFTER_TRIP
+
+/** Test-only: force pay-after-trip on or off; undefined restores the env. */
+export function setPayAfterTrip(on: boolean | undefined): void {
+  payAfterOverride = on
+}
+
 /**
  * Called right after a booking commits. Idempotent per trip: a booking retried
  * with the same idempotency key gets the same order, never a second hold.
@@ -111,6 +120,7 @@ export async function markAuthorized(orderId: string, paymentId: string): Promis
   )
   if (rows[0]) {
     await dispatchPaidTrip(rows[0].trip_id)
+    await capturePaidAfterTrip(rows[0].trip_id)
     return { tripId: rows[0].trip_id, changed: true, due: false }
   }
   const { rows: found } = await pool.query<{ trip_id: string }>(
@@ -119,6 +129,16 @@ export async function markAuthorized(orderId: string, paymentId: string): Promis
   )
   if (!found[0]) throw notFound('PAYMENT_NOT_FOUND', 'No payment for that order')
   return { tripId: found[0].trip_id, changed: false, due: false }
+}
+
+/** Pay-after-trip: the trip already ended, so the payment is taken in full now. */
+async function capturePaidAfterTrip(tripId: string): Promise<void> {
+  const { rows } = await pool.query<{ status: string }>(`SELECT status FROM trips WHERE id = $1`, [tripId])
+  if (rows[0]?.status !== 'COMPLETED' && rows[0]?.status !== 'CANCELLED') return
+  const { rows: p } = await pool.query<{ amount_authorized: string }>(
+    `SELECT amount_authorized FROM payments WHERE trip_id = $1`, [tripId],
+  )
+  await captureForTrip(tripId, Number(p[0]!.amount_authorized))
 }
 
 async function dispatchPaidTrip(tripId: string): Promise<void> {
@@ -154,6 +174,17 @@ export async function markFailed(orderId: string, reason: string): Promise<void>
  * made before the row changes, so a failed capture leaves the payment
  * AUTHORIZED for the next attempt rather than claiming money we do not have.
  */
+/**
+ * The trip is over and owes `amount`. With a booking hold, capture it. With
+ * PAY_AFTER_TRIP there is no hold: open an order for the amount, which the
+ * customer pays from the same checkout page and markAuthorized captures.
+ */
+export async function chargeForTrip(tripId: string, customerId: string, amount: number): Promise<void> {
+  if (!payAfterTrip()) return captureForTrip(tripId, amount)
+  if (!paymentsEnabled() || amount <= 0) return
+  await createPaymentForTrip(tripId, customerId, amount)
+}
+
 export async function captureForTrip(tripId: string, finalFare: number): Promise<void> {
   const provider = getPaymentProvider()
   if (!provider) return

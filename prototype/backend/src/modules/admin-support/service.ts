@@ -105,7 +105,7 @@ export async function searchTrips(s: TripSearch) {
 export async function getTripDetail(tripId: string, actorId: string, actorRole: Role) {
   const { rows } = await pool.query(
     `SELECT t.*, t.estimated_fare::float8 AS estimated_fare, t.fare_amount::float8 AS fare_amount,
-            t.platform_fee::float8 AS platform_fee, t.night_fee::float8 AS night_fee,
+            t.platform_fee::float8 AS platform_fee, t.night_fee::float8 AS night_fee, t.urgent_fee::float8 AS urgent_fee,
             t.driver_earnings::float8 AS driver_earnings, t.distance_km::float8 AS distance_km,
             t.estimated_distance_km::float8 AS estimated_distance_km,
             cu.full_name AS customer_name, cu.phone_number AS customer_phone, cu.email AS customer_email,

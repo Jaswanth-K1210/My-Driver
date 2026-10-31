@@ -91,6 +91,9 @@ const EnvSchema = z.object({
   // 'none' dispatches at booking with no payment step: the pre-payments
   // behaviour, kept so the trip test suite does not need a checkout per trip.
   PAYMENTS_PROVIDER: z.enum(['none', 'mock', 'razorpay']).default('none'),
+  // true: no hold at booking, dispatch starts at once and the customer pays the
+  // final fare after the trip. Off by default: prd.md 3.2 still requires the hold.
+  PAY_AFTER_TRIP: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),

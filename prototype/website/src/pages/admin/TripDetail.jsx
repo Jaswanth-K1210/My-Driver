@@ -163,6 +163,7 @@ export default function TripDetail() {
               <Row label="Final fare">{rupees(trip.fare_amount)}</Row>
               {trip.platform_fee != null && <Row label="Platform fee">{rupees(trip.platform_fee)}</Row>}
               {trip.night_fee > 0 && <Row label="Night fee">{rupees(trip.night_fee)}</Row>}
+              {trip.urgent_fee > 0 && <Row label="Urgent fee">{rupees(trip.urgent_fee)}</Row>}
               {trip.driver_earnings != null && <Row label="Driver earns">{rupees(trip.driver_earnings)}</Row>}
             </dl>
             {payment ? (

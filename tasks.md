@@ -112,6 +112,14 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 - [x] **Step 5 (Sentry):** `@sentry/react-native` with `src/lib/sentry.js` and `src/lib/sentry-scrub.js`
       privacy scrubbing (`docs/testing-plan.md` §9), `tester` session tagging in `AuthContext.jsx`,
       and parity tests in `tests/sentryScrub.test.mjs`. Written — needs phone check (`feat(user)`, 31 Oct)
+- [ ] REQUEST from Jaswanth (2026-10-31): urgent booking and pay-after-trip, to keep the app in step
+      with the website (`feat(booking)`, 31 Oct). (1) Booking screen: "Standard — driver within 30 min"
+      / "Urgent — driver in 5–10 min, +₹`fees.urgent_fee`"; send `urgent: true` on `/v1/trips/quote`
+      and `/v1/trips/book`; show `fare.urgent_fee` in the breakdown. ETAs come from
+      `trip-config.driver_eta_minutes`. (2) When `trip-config.pay_after_trip` is true, booking returns
+      `payment: null` (no payment screen); after the trip `GET /v1/trips/:id/payment` has a `CREATED`
+      payment for the final fare: show "Pay ₹`amount_authorized`" with the same checkout URL.
+      Also please decide on the `prd.md` §3.2/§6 change (see progress.md, 31 Oct).
 
 ### Builds and release
 - [ ] Development builds for Android and iOS against staging (Phase 4)
@@ -234,6 +242,8 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 - [x] ~~Editable fees in Pricing (`cd9de9c`)~~
 - [x] ~~Overview "Live now": trips waiting for a driver, driver on the way, on a trip, escalated,
       today's requested/completed/lost, drivers online/on trip (`feat(console)`, 31 Oct)~~
+- [x] ~~Urgent booking (+`urgent_fee`, ₹49, editable in Pricing) and pay-after-trip behind
+      `PAY_AFTER_TRIP` (off by default) on backend, website and console (`feat(booking)`, 31 Oct)~~
 
 ### Infrastructure: done
 - [x] ~~Dockerfiles, `deploy/docker-compose.prod.yml`, Caddy auto-TLS, `.env.production.example`~~

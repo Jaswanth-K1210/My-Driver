@@ -14,6 +14,7 @@ import {
   Plane,
   Search,
   ShieldCheck,
+  Zap,
 } from 'lucide-react'
 import {
   CarSpecPicker,
@@ -74,6 +75,13 @@ export default function Book() {
   }
 
   const [server, setServer] = useState(null)
+  // Pay-after-trip and the urgent fee are server settings, not constants here.
+  const [tripConfig, setTripConfig] = useState(null)
+  useEffect(() => {
+    api.catalogue.tripConfig().then(setTripConfig).catch(() => undefined)
+  }, [])
+  const payAfter = tripConfig?.pay_after_trip ?? false
+  const eta = tripConfig?.driver_eta_minutes ?? { normal: 30, urgent: { min: 5, max: 10 } }
   const [busy, setBusy] = useState(false)
 
   const platformFee = server ? server.fare.platform_fee : 19
@@ -390,6 +398,38 @@ export default function Book() {
               </span>
             </div>
 
+            <fieldset className="mt-4">
+              <legend className="text-xs font-bold uppercase tracking-wide text-slate-500">When do you need the driver?</legend>
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {[
+                  { urgent: false, icon: Clock, title: 'Standard', hint: `Driver assigned within ${eta.normal} min` },
+                  {
+                    urgent: true,
+                    icon: Zap,
+                    title: 'Urgent',
+                    hint: `Driver in ${eta.urgent.min}–${eta.urgent.max} min${tripConfig ? ` · +${formatINR(tripConfig.fees.urgent_fee)}` : ''}`,
+                  },
+                ].map((o) => (
+                  <button
+                    key={o.title}
+                    type="button"
+                    aria-pressed={Boolean(config.urgent) === o.urgent}
+                    onClick={() => setConfig((prev) => ({ ...prev, urgent: o.urgent }))}
+                    className={cn(
+                      'rounded-2xl border p-3 text-left transition-colors',
+                      Boolean(config.urgent) === o.urgent ? 'border-brand-500 bg-brand-50' : 'border-slate-200 hover:border-slate-300',
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5 text-sm font-black text-slate-900">
+                      <o.icon className="h-4 w-4 text-brand-600" aria-hidden="true" />
+                      {o.title}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] font-medium text-slate-500">{o.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
             {ready ? (
               <dl className="mt-4 space-y-2.5 text-sm">
                 <div className="flex justify-between">
@@ -425,10 +465,20 @@ export default function Book() {
                     <dd className="font-semibold text-slate-800">{formatINR(fare.night_fee)}</dd>
                   </div>
                 )}
+                {fare.urgent_fee > 0 && (
+                  <div className="flex justify-between">
+                    <dt className="text-slate-500">Urgent (driver in {eta.urgent.min}–{eta.urgent.max} min)</dt>
+                    <dd className="font-semibold text-slate-800">{formatINR(fare.urgent_fee)}</dd>
+                  </div>
+                )}
                 <div className="flex items-baseline justify-between border-t border-slate-200 pt-3.5">
                   <div>
                     <dt className="font-black text-base text-slate-900">Estimated total</dt>
-                    <span className="text-[11px] text-slate-400">Nothing is charged now. We place a hold for this amount and charge only the final fare, on the distance actually driven, when the trip ends.</span>
+                    <span className="text-[11px] text-slate-400">
+                      {payAfter
+                        ? 'Nothing is charged now. You pay the final fare, on the distance actually driven, after the trip ends.'
+                        : 'Nothing is charged now. We place a hold for this amount and charge only the final fare, on the distance actually driven, when the trip ends.'}
+                    </span>
                   </div>
                   <dd className="text-3xl font-black tracking-tight text-brand-600">{formatINR(fare.total)}</dd>
                 </div>

@@ -98,6 +98,7 @@ export function toViewTrip(trip, config) {
     // Once set, cancelling costs the arrival fee (see Track.jsx).
     arrivedAt: trip.arrived_at ?? null,
     cancellationFee: trip.cancellation_fee ?? null,
+    urgent: trip.urgent_fee > 0,
     ceiling: trip.speed_ceiling_kmh,
     visionMode: config?.visionMode ?? 'R',
     fare: Math.round(trip.fare_amount ?? trip.estimated_fare ?? 0),

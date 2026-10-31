@@ -1,3 +1,4 @@
+import { payAfterTrip } from '../payments/service.js'
 import { getFees } from '../trips/fees.js'
 import { listRateCards } from '../trips/rate-cards.js'
 
@@ -6,7 +7,7 @@ import { listRateCards } from '../trips/rate-cards.js'
  * any change so clients can cache the payload and refetch only when it moves.
  * Car makes, models and fuel types stay in the apps on purpose.
  */
-export const CONFIG_VERSION = '2026-10-24'
+export const CONFIG_VERSION = '2026-10-31'
 
 const REQUIREMENTS = [
   { id: 'within_city', label: 'Within city', tagline: 'Point-to-point and errands', badge: 'Local', description: 'Hourly or multi-stop trips across the city.', min_hours: 2, max_stops: 3, duration_rule: 'drive_time_plus_buffer' },
@@ -57,5 +58,9 @@ export async function getTripConfig() {
     // Live from the admin console's Pricing page.
     fees: { ...fees, night_window_ist: { start: '22:00', end: '05:00' } },
     rate_cards: cards,
+    // true: nothing is charged at booking; the customer pays the final fare after the trip.
+    pay_after_trip: payAfterTrip(),
+    // Shown at booking. Urgent costs fees.urgent_fee.
+    driver_eta_minutes: { normal: 30, urgent: { min: 5, max: 10 } },
   }
 }

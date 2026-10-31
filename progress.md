@@ -3,6 +3,23 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Jaswanth · Urgent booking and pay-after-trip (behind a toggle)
+
+**Did:**
+- Urgent booking: new optional `urgent` on `/v1/trips/quote` and `/v1/trips/book`. Adds `fees.urgent_fee` (migration `0021_urgent_fee.sql`, default ₹49, editable from console Pricing, audited like the other fees). The fee is stored on the trip at booking (`trips.urgent_fee`) and kept at completion, so a later price change doesn't reprice a booked trip. It goes into `driver_earnings` like the rest of the fare; only the platform fee is kept.
+- Pay-after-trip: new env `PAY_AFTER_TRIP` (default `false`). When on, booking creates no hold and dispatch starts at once; at completion (or an arrival cancellation fee) a payment order is created for the amount owed, and paying it through the existing checkout captures it in full (`chargeForTrip`, `capturePaidAfterTrip` in `payments/service.ts`). The unpaid-trip sweep only touches REQUESTED trips, so these orders aren't cancelled.
+- `trip-config` now has `pay_after_trip` and `driver_eta_minutes` (`normal: 30`, `urgent: 5–10`); `CONFIG_VERSION` is `2026-10-31`.
+- Website: "Standard / Urgent" choice on Book with the ETA and fee, an urgent fee line in the fare, pay-after wording, ETA on the matching screen, and `PayDue` shows "Pay ₹X" for an unpaid pay-after order. Console: urgent fee in Pricing and on trip detail.
+**Checks:** `npm run typecheck` pass · `npm test` 425/425 (new: pay-after flow, urgent fee in quote/book/fare) · website `npm run lint` 0 errors (no new warnings) · `npm run build` · `npm run build:admin` · `npm run check` pass · `npm run docs:api` regenerated. Playwright e2e not run.
+**Commit:** `feat(booking): urgent option and pay-after-trip toggle`
+**Payload changed:** additive only. `urgent` (request) on quote/book; `fare.urgent_fee` on quotes; `urgent_fee` on trip views; `fees.urgent_fee`, `pay_after_trip`, `driver_eta_minutes` on `trip-config`; `urgent_fee` accepted by `PATCH /v1/admin/pricing/fees`.
+**Not done / follow-ups:**
+- **prd.md suggestion (Sanath to decide):** §3.2 says the fare is held at booking and dispatch waits for the hold; §6 says "zero trips start without an authorised payment hold". Pay-after-trip contradicts both, which is why it is off by default. If adopted, update §3.2/§6 and turn on `PAY_AFTER_TRIP`.
+- Pay-after has no guard against non-payment yet (e.g. blocking a new booking while a trip is unpaid).
+- The 30 min / 5–10 min times are shown only; dispatch doesn't put urgent trips first yet.
+- The driver app shows the fare as before; no change is needed there.
+**Requests raised:** Sanath: urgent option and pay-after screens in the customer app (tasks.md).
+
 ## 2026-10-31 · Jaswanth · Console Overview: live status counts
 
 **Did:** `GET /v1/admin/overview` returns a new `live` block (current, not tied to the 7/30/90-day range): `waiting` (REQUESTED + MATCHED), `driver_en_route` (HANDSHAKE_PENDING), `in_trip`, `escalated`, `requested_today`, `completed_today`, `lost_today` (cancelled or no driver, IST day), `drivers_online`, `drivers_on_trip`. Demo data follows `ADMIN_DEMO_DATA`. The console Overview shows them as a "Live now" card row at the top and now polls every 15 s (was 60 s).

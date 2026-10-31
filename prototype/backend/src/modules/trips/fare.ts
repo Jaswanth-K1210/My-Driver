@@ -8,6 +8,7 @@ export const NIGHT_FEE = 30
 export const CITY_STOP_FEE = 60
 export const INTERCITY_STOP_FEE = 100
 export const ARRIVAL_CANCELLATION_FEE = 100
+export const URGENT_FEE = 49
 
 export type Fees = {
   platform_fee: number
@@ -16,6 +17,8 @@ export type Fees = {
   intercity_stop_fee: number
   /** Charged when the customer cancels after the driver has arrived. */
   arrival_cancellation_fee: number
+  /** Added when the customer asks for a driver in 5-10 minutes. */
+  urgent_fee: number
 }
 
 export const DEFAULT_FEES: Fees = {
@@ -24,6 +27,7 @@ export const DEFAULT_FEES: Fees = {
   city_stop_fee: CITY_STOP_FEE,
   intercity_stop_fee: INTERCITY_STOP_FEE,
   arrival_cancellation_fee: ARRIVAL_CANCELLATION_FEE,
+  urgent_fee: URGENT_FEE,
 }
 
 export type BookingType = 'POINT_TO_POINT' | 'HOURLY'
@@ -36,6 +40,8 @@ export type FareInput = {
   hourlyRate: number
   pickupAt: Date
   stopsFee?: number | undefined
+  /** The urgent fee charged on this trip, 0 for a normal booking. */
+  urgentFee?: number | undefined
   fees?: Fees | undefined
 }
 
@@ -45,6 +51,7 @@ export type FareBreakdown = {
   stops_fee: number
   platform_fee: number
   night_fee: number
+  urgent_fee: number
   total: number
   driver_earnings: number
 }
@@ -140,13 +147,15 @@ export function computeFare(input: FareInput): FareBreakdown {
   )
 
   const night_fee = isNightPickupIST(input.pickupAt) ? fees.night_fee : 0
-  const total = round2(base + fees.platform_fee + night_fee)
+  const urgent_fee = input.urgentFee ?? 0
+  const total = round2(base + fees.platform_fee + night_fee + urgent_fee)
 
   return {
     base,
     stops_fee: round2(stopsFee),
     platform_fee: fees.platform_fee,
     night_fee,
+    urgent_fee,
     total,
     driver_earnings: round2(total - fees.platform_fee),
   }

@@ -6,7 +6,7 @@ import { estimateRoadDistanceKm } from '../../lib/geo.js'
 import { issueTicket, TICKET_TTL_SECONDS } from '../../realtime/ticket.js'
 import { requireAuth, requireRole } from '../auth/rbac.js'
 import { PaymentSchema } from '../payments/routes.js'
-import { createPaymentForTrip, paymentsEnabled } from '../payments/service.js'
+import { createPaymentForTrip, paymentsEnabled, payAfterTrip } from '../payments/service.js'
 import { trackDispatch } from './dispatch-tracker.js'
 import { setAvailability } from './geo-index.js'
 import { performHandshake } from './handshake.js'
@@ -35,6 +35,7 @@ const FareSchema = z.object({
   stops_fee: z.number(),
   platform_fee: z.number(),
   night_fee: z.number(),
+  urgent_fee: z.number(),
   total: z.number(),
   driver_earnings: z.number(),
 })
@@ -71,6 +72,8 @@ export const QuoteBody = z
     flight_number: z.string().nullable().optional(),
     requirement: z.string().nullable().optional(),
     trip_type: z.string().nullable().optional(),
+    // Driver in 5-10 minutes for the urgent fee, instead of within 30.
+    urgent: z.boolean().optional(),
   })
   .strict()
 
@@ -107,6 +110,7 @@ const TripViewSchema = z.object({
   cancellation_fee: z.number().nullable().optional(),
   platform_fee: z.number().nullable().optional(),
   night_fee: z.number().nullable().optional(),
+  urgent_fee: z.number().nullable().optional(),
   driver_earnings: z.number().nullable(),
   requested_at: z.coerce.string(),
   arrived_at: z.coerce.string().nullable(),
@@ -193,6 +197,7 @@ export function registerTripRoutes(app: FastifyInstance): void {
         requirement: body.requirement,
         tripType: body.trip_type,
         requiredCertification: body.required_certification,
+        urgent: body.urgent,
       })
       return {
         distance_km: Math.round(distanceKm * 100) / 100,
@@ -246,12 +251,13 @@ export function registerTripRoutes(app: FastifyInstance): void {
         flightNumber: b.flight_number,
         requirement: b.requirement,
         tripType: b.trip_type,
+        urgent: b.urgent,
       })
 
       // With payments on, the trip waits for checkout; authorization is what
       // starts dispatch (payments/service.markAuthorized).
       const payment =
-        paymentsEnabled() && trip.estimated_fare
+        paymentsEnabled() && !payAfterTrip() && trip.estimated_fare
           ? await createPaymentForTrip(trip.id, trip.customer_id, trip.estimated_fare)
           : null
 

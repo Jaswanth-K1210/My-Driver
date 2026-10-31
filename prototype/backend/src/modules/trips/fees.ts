@@ -13,7 +13,8 @@ export async function getFees(): Promise<Fees> {
   const { rows } = await pool.query<Fees>(
     `SELECT platform_fee::float8 AS platform_fee, night_fee::float8 AS night_fee,
             city_stop_fee::float8 AS city_stop_fee, intercity_stop_fee::float8 AS intercity_stop_fee,
-            arrival_cancellation_fee::float8 AS arrival_cancellation_fee
+            arrival_cancellation_fee::float8 AS arrival_cancellation_fee,
+            urgent_fee::float8 AS urgent_fee
        FROM pricing_fees WHERE id`,
   )
   return rows[0] ?? DEFAULT_FEES
@@ -30,12 +31,13 @@ export async function updateFees(
   if (Object.values(fields).every((v) => v === undefined)) throw badRequest('NOTHING_TO_UPDATE', 'Send at least one fee')
   // Upsert: the row is seeded by the migration, but must not be assumed.
   await pool.query(
-    `INSERT INTO pricing_fees (id, platform_fee, night_fee, city_stop_fee, intercity_stop_fee, arrival_cancellation_fee)
-     VALUES (true, $1, $2, $3, $4, $5)
+    `INSERT INTO pricing_fees (id, platform_fee, night_fee, city_stop_fee, intercity_stop_fee, arrival_cancellation_fee, urgent_fee)
+     VALUES (true, $1, $2, $3, $4, $5, $6)
      ON CONFLICT (id) DO UPDATE
         SET platform_fee = EXCLUDED.platform_fee, night_fee = EXCLUDED.night_fee,
             city_stop_fee = EXCLUDED.city_stop_fee, intercity_stop_fee = EXCLUDED.intercity_stop_fee,
             arrival_cancellation_fee = EXCLUDED.arrival_cancellation_fee,
+            urgent_fee = EXCLUDED.urgent_fee,
             updated_at = now()`,
     [
       fields.platform_fee ?? before.platform_fee,
@@ -43,6 +45,7 @@ export async function updateFees(
       fields.city_stop_fee ?? before.city_stop_fee,
       fields.intercity_stop_fee ?? before.intercity_stop_fee,
       fields.arrival_cancellation_fee ?? before.arrival_cancellation_fee,
+      fields.urgent_fee ?? before.urgent_fee,
     ],
   )
   const after = await getFees()

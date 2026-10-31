@@ -342,7 +342,7 @@ export default function Track() {
   if (phase === 'payment' && payment) {
     return shell('Confirm the fare hold to send your request to drivers.', <PaymentStep payment={payment} trip={trip} onPay={openCheckout} onCancel={() => cancelTrip('Payment not completed')} />)
   }
-  if (phase === 'matching') return shell('We are finding you a verified driver.', <Matching label={trip?.statusLabel} />)
+  if (phase === 'matching') return shell(`We are finding you a verified driver: ${trip?.urgent ? 'urgent, usually within 5–10 minutes' : 'usually within 30 minutes'}.`, <Matching label={trip?.statusLabel} />)
   if (phase === 'no_drivers') {
     return shell(
       'No nearby driver accepted your request within the dispatch window.',

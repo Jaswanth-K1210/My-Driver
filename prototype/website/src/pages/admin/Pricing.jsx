@@ -21,6 +21,7 @@ const LIMITS = {
   included_km_per_hour: [0, 100],
   platform_fee: [0, 1_000],
   night_fee: [0, 1_000],
+  urgent_fee: [0, 1_000],
   city_stop_fee: [0, 1_000],
   intercity_stop_fee: [0, 2_000],
   arrival_cancellation_fee: [0, 2_000],
@@ -121,6 +122,7 @@ function TierRow({ card, canEdit, onSaved, platformFee }) {
 const FEES = [
   ['platform_fee', 'Platform fee', 'Added to every trip. Kept by MyDriver, not paid to the driver.'],
   ['night_fee', 'Night fee', 'Added to trips that start between 22:00 and 05:00.'],
+  ['urgent_fee', 'Urgent fee', 'Added when the customer asks for a driver in 5–10 minutes. Paid to the driver.'],
   ['city_stop_fee', 'Stop fee, city', 'Per extra stop on a within-city trip.'],
   ['intercity_stop_fee', 'Stop fee, outstation', 'Per extra stop on an outstation trip.'],
   ['arrival_cancellation_fee', 'Cancellation after arrival', 'Charged when the customer cancels or turns the driver away after the driver has arrived. Paid to the driver in full.'],

@@ -65,6 +65,7 @@ export const DEFAULT_CONFIG = {
   },
   requirement: 'within_city', // 'within_city' | 'inter_city' | 'airport' | 'full_time'
   tripType: 'one_way', // 'one_way' | 'two_way'
+  urgent: false, // true: driver in 5-10 min for the urgent fee, else within 30
   
   // Within-city Route Planner State
   pickupId: 'start_hitec',
@@ -643,6 +644,7 @@ export function bookingPayloadFor(config) {
     flight_number: config.flightNumber || config.airportDetails?.flightNumber,
     requirement: config.requirement,
     trip_type: config.tripType,
+    urgent: Boolean(config.urgent),
   }
 
   if (config.requirement === 'full_time') {

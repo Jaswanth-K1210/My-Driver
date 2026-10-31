@@ -5,6 +5,7 @@ import { pool } from '../../src/db/client.js'
 import { seed } from '../../src/db/seed.js'
 import { awaitDispatchIdle } from '../../src/modules/trips/dispatch-tracker.js'
 import { hmacHex, MOCK_SECRET, MockPaymentProvider, setPaymentProvider } from '../../src/providers/payments/index.js'
+import { setPayAfterTrip } from '../../src/modules/payments/service.js'
 import { bearer } from '../helpers/auth.js'
 import { resetDb } from '../helpers/db.js'
 import { resetRedis } from '../helpers/redis.js'
@@ -25,7 +26,7 @@ describe('payments: authorize at booking, capture at completion', () => {
     customer = await makeCustomer(app, '+919876500001')
     driver = await makeOnlineDriver(app, '+919876500002')
   })
-  afterEach(() => setPaymentProvider(undefined))
+  afterEach(() => { setPaymentProvider(undefined); setPayAfterTrip(undefined) })
   afterAll(async () => { await app.close() })
 
   const book = async () => {
@@ -179,5 +180,41 @@ describe('payments: authorize at booking, capture at completion', () => {
     expect(trip.payment).toBeNull()
     await awaitDispatchIdle()
     expect(await tripStatus(trip.id)).toBe('MATCHED')
+  })
+
+  it('with pay-after-trip, dispatches without a hold and charges the final fare after', async () => {
+    setPayAfterTrip(true)
+    const trip = await book()
+    expect(trip.payment).toBeNull()
+    await awaitDispatchIdle()
+    expect(await tripStatus(trip.id)).toBe('MATCHED')
+
+    await app.inject({ method: 'POST', url: `/v1/trips/${trip.id}/offer/respond`, headers: bearer(driver.accessToken), payload: { accept: true } })
+    const otp = await app.inject({ method: 'POST', url: `/v1/trips/${trip.id}/handshake-otp`, headers: bearer(customer.accessToken) })
+    await app.inject({ method: 'POST', url: `/v1/trips/${trip.id}/handshake`, headers: bearer(driver.accessToken), payload: { driver_selfie_base64: SELFIE, otp: otp.json().otp } })
+    const done = (await app.inject({ method: 'POST', url: `/v1/trips/${trip.id}/complete`, headers: bearer(driver.accessToken) })).json()
+
+    const owed = await paymentRow(trip.id)
+    expect(owed.status).toBe('CREATED')
+    expect(Number(owed.amount_authorized)).toBe(done.fare_amount)
+
+    expect((await approve(owed.id)).statusCode).toBe(200)
+    const paid = await paymentRow(trip.id)
+    expect(paid.status).toBe('CAPTURED')
+    expect(Number(paid.amount_captured)).toBe(done.fare_amount)
+  })
+
+  it('adds the urgent fee to the quote, the booking and the final fare', async () => {
+    const quote = (body: object) => app.inject({ method: 'POST', url: '/v1/trips/quote', headers: bearer(customer.accessToken), payload: body }).then((r) => r.json())
+    const { speed_ceiling_kmh: _s, ...quoteBody } = BOOK_BODY
+    const normal = await quote(quoteBody)
+    const urgent = await quote({ ...quoteBody, urgent: true })
+    expect(normal.fare.urgent_fee).toBe(0)
+    expect(urgent.fare.urgent_fee).toBe(49)
+    expect(urgent.fare.total).toBeCloseTo(normal.fare.total + 49, 2)
+
+    const res = await app.inject({ method: 'POST', url: '/v1/trips/book', headers: bearer(customer.accessToken), payload: { ...BOOK_BODY, urgent: true } })
+    expect(res.json().urgent_fee).toBe(49)
+    expect(res.json().estimated_fare).toBeCloseTo(urgent.fare.total, 2)
   })
 })
