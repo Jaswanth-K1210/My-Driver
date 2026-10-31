@@ -14,7 +14,7 @@ describe('computeFare', () => {
         hourlyRate: 240,
         pickupAt: day,
       }),
-    ).toEqual({ base: 160, stops_fee: 0, platform_fee: 19, night_fee: 0, urgent_fee: 0, total: 179, driver_earnings: 160 })
+    ).toEqual({ base: 160, billed_hours: null, stops_fee: 0, platform_fee: 19, night_fee: 0, urgent_fee: 0, total: 179, driver_earnings: 160 })
   })
 
   it('adds the night fee for a pickup inside the night window', () => {
@@ -27,6 +27,16 @@ describe('computeFare', () => {
     })
     expect(fare.night_fee).toBe(NIGHT_FEE)
     expect(fare.total).toBe(190 + PLATFORM_FEE + NIGHT_FEE)
+  })
+
+  it('bills a Within city trip by the hours booked when that costs more than the distance', () => {
+    const base = { bookingType: 'POINT_TO_POINT' as const, distanceKm: 10, perKmRate: 16, hourlyRate: 240, pickupAt: day, timeFloor: true }
+    expect(computeFare({ ...base, hours: 1 })).toMatchObject({ base: 240, billed_hours: 1 })
+    expect(computeFare({ ...base, hours: 4 })).toMatchObject({ base: 960, billed_hours: 4 })
+    // Long distance, short booking: distance wins.
+    expect(computeFare({ ...base, distanceKm: 100, hours: 2 })).toMatchObject({ base: 1600, billed_hours: null })
+    // Outstation and airport stay per km.
+    expect(computeFare({ ...base, hours: 4, timeFloor: false })).toMatchObject({ base: 160, billed_hours: null })
   })
 
   it('charges the hourly rate for an hourly booking and ignores distance', () => {

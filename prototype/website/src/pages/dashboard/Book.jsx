@@ -452,7 +452,14 @@ export default function Book() {
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <dt className="text-slate-500">Trip fare</dt>
+                  <dt className="text-slate-500">
+                    Trip fare
+                    {fare.billed_hours != null && (
+                      <span className="block text-[11px] font-medium text-slate-400">
+                        {fare.billed_hours} h booked, charged by time
+                      </span>
+                    )}
+                  </dt>
                   <dd className="font-semibold text-slate-800">{formatINR(fare.base - fare.stops_fee)}</dd>
                 </div>
                 {fare.stops_fee > 0 && (

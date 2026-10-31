@@ -40,6 +40,11 @@ export type FareInput = {
   hourlyRate: number
   pickupAt: Date
   stopsFee?: number | undefined
+  /**
+   * Within city: the customer books the driver for `hours`, so a point-to-point
+   * trip costs at least the hourly rate for them (see billsByTime).
+   */
+  timeFloor?: boolean | undefined
   /** The urgent fee charged on this trip, 0 for a normal booking. */
   urgentFee?: number | undefined
   fees?: Fees | undefined
@@ -48,6 +53,8 @@ export type FareInput = {
 export type FareBreakdown = {
   /** Distance or hours, plus stops_fee. */
   base: number
+  /** Set when the hours booked cost more than the distance, so the trip is billed by time. */
+  billed_hours: number | null
   stops_fee: number
   platform_fee: number
   night_fee: number
@@ -130,6 +137,13 @@ export function estimateTripDistanceKm(params: {
   return { distanceKm: totalKm, stopsFee }
 }
 
+/**
+ * Within city trips are a driver hired for a number of hours: the fare is the
+ * higher of the distance fare and the hourly rate for the hours booked.
+ * Outstation and airport stay per km.
+ */
+export const billsByTime = (requirement: string | null | undefined): boolean => requirement === 'within_city'
+
 export function computeFare(input: FareInput): FareBreakdown {
   if (input.bookingType === 'HOURLY' && (!input.hours || input.hours <= 0)) {
     throw new Error('An hourly booking requires a positive number of hours')
@@ -140,10 +154,13 @@ export function computeFare(input: FareInput): FareBreakdown {
 
   const fees = input.fees ?? DEFAULT_FEES
   const stopsFee = input.bookingType === 'HOURLY' ? 0 : (input.stopsFee ?? 0)
+  const byDistance = input.perKmRate * input.distanceKm
+  const byTime = input.timeFloor && input.hours ? input.hourlyRate * input.hours : 0
+  const billed_hours = input.bookingType === 'HOURLY' ? input.hours! : byTime > byDistance ? input.hours! : null
   const base = round2(
     input.bookingType === 'HOURLY'
       ? input.hourlyRate * input.hours!
-      : input.perKmRate * input.distanceKm + stopsFee,
+      : Math.max(byDistance, byTime) + stopsFee,
   )
 
   const night_fee = isNightPickupIST(input.pickupAt) ? fees.night_fee : 0
@@ -152,6 +169,7 @@ export function computeFare(input: FareInput): FareBreakdown {
 
   return {
     base,
+    billed_hours,
     stops_fee: round2(stopsFee),
     platform_fee: fees.platform_fee,
     night_fee,

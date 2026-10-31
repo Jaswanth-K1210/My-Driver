@@ -3,6 +3,17 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Jaswanth · Within city fare follows the duration booked
+
+**Did:** Changing the Duration on a Within city booking didn't change the fare: point-to-point trips were priced per km only and `hours` was ignored. Agreed with Jaswanth: a Within city trip now costs the higher of the distance fare and `hourly_rate × hours` booked (e.g. Standard, 4 km: 2 h → ₹480, 6 h → ₹1,440 before fees). `computeFare` takes `timeFloor` (`billsByTime(requirement)`, Within city only; Outstation and airport stay per km) and returns `billed_hours` when time wins. Quote, booking and completion all use it, so the final fare matches the quote. The website shows "N h booked, charged by time" under the trip fare.
+**Checks:** backend `npm run typecheck` pass · `npm test` 429/429 (new unit test for the time floor) · live quote on the dev server: 2 h ₹499, 6 h ₹1,459 total · website `npm run lint` 0 errors, no new warnings · `npm run build` · `npm run build:admin` · `npm run check` pass · `npm run docs:api` regenerated.
+**Commit:** `feat(pricing): Within city fare is the higher of distance and hours booked`
+**Payload changed:** additive. `fare.billed_hours` (number or null) on quotes. Within city quote totals change when `hours` is sent.
+**Not done / follow-ups:**
+- **prd.md suggestion (Sanath):** §3.1 says "Fare = per-km or hourly rate"; add that Within city takes the higher of the two for the hours booked.
+- Billed on hours booked, not hours used: a trip that runs over isn't charged extra yet.
+**Requests raised:** Sanath: re-quote on duration change and show `billed_hours` in the customer app (tasks.md).
+
 ## 2026-10-31 · Umesh · UI-2 (user app, for Sanath): booking in step with the website
 
 **Did:**

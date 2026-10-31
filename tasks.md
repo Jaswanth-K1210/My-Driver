@@ -145,6 +145,11 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       `within_city` and the drop, a stop or the return drop is over 50 km (straight line) from the
       pickup. Show the error message with a "Switch to Outstation" action instead of a spinner.
       Written — needs phone check (`feat(UI-2)`, 31 Oct)
+- [ ] REQUEST from Jaswanth (2026-10-31): Within city fares now depend on the duration
+      (`feat(pricing)`, 31 Oct). Quotes for `requirement: within_city` are the higher of the
+      per-km fare and `hourly_rate × hours`, so keep sending `hours`, re-quote when the duration
+      changes, and when the new `fare.billed_hours` is set show "N h booked, charged by time"
+      under the trip fare. Please also note the rule in `prd.md` §3.1 if you agree.
 
 ### Builds and release
 - [ ] Development builds for Android and iOS against staging (Phase 4)
@@ -272,6 +277,7 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
 - [x] ~~Extended driver search: 30 min of retries instead of an instant "no driver", a "Waiting for
       a driver" alert list on the live board, and a waiting screen on the website (`feat(dispatch)`, 31 Oct)~~
 - [x] ~~Refuse Within city trips to another city (`OUTSIDE_CITY`, 50 km from pickup) (`fix(booking)`, 31 Oct)~~
+- [x] ~~Within city fare = higher of distance fare and hourly rate × hours booked (`feat(pricing)`, 31 Oct)~~
 
 ### Infrastructure: done
 - [x] ~~Dockerfiles, `deploy/docker-compose.prod.yml`, Caddy auto-TLS, `.env.production.example`~~

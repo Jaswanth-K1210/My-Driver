@@ -10,7 +10,7 @@ import { recordAnomaly } from '../escalation/service.js'
 import { revokeLinksForEndedTrip } from '../guardian/service.js'
 import { chargeForTrip, releaseForTrip } from '../payments/service.js'
 import { broadcastStateChange } from './broadcast.js'
-import { computeFare, estimateTripDistanceKm, extractValidStopCoords, type FareBreakdown } from './fare.js'
+import { billsByTime, computeFare, estimateTripDistanceKm, extractValidStopCoords, type FareBreakdown } from './fare.js'
 import { getFees } from './fees.js'
 import { tierForCar } from './tier.js'
 import { isIndexed, requireApprovedDriver, restoreAvailabilityAfterTrip } from './geo-index.js'
@@ -292,6 +292,7 @@ export async function priceTrip(input: PriceInput): Promise<{
     hourlyRate: card.hourly_rate,
     pickupAt: new Date(),
     stopsFee,
+    timeFloor: billsByTime(input.requirement),
     urgentFee: input.urgent ? fees.urgent_fee : 0,
     fees,
   })
@@ -490,6 +491,8 @@ export async function completeTrip(tripId: string, driverId: string): Promise<Tr
     hourlyRate: card.hourly_rate,
     pickupAt: startedAt,
     stopsFee,
+    // ponytail: billed on the hours booked, not hours used; add overtime here if trips run long.
+    timeFloor: billsByTime(trip.requirement),
     urgentFee: Number(trip.urgent_fee ?? 0),
   })
 

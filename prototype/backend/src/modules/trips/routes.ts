@@ -32,6 +32,7 @@ export const LatLngSchema = z.object({
 
 const FareSchema = z.object({
   base: z.number(),
+  billed_hours: z.number().nullable(),
   stops_fee: z.number(),
   platform_fee: z.number(),
   night_fee: z.number(),
