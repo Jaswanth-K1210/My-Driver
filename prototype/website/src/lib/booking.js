@@ -66,6 +66,7 @@ export const DEFAULT_CONFIG = {
   requirement: 'within_city', // 'within_city' | 'inter_city' | 'airport' | 'full_time'
   tripType: 'one_way', // 'one_way' | 'two_way'
   urgent: false, // true: driver in 5-10 min for the urgent fee, else within 30
+  hireByHour: false, // Within city with no destination: an HOURLY booking from the pickup
   
   // Within-city Route Planner State
   pickupId: 'start_hitec',
@@ -168,6 +169,11 @@ export function getMinDurationForConfig(config) {
       minHours: 3,
       label: 'Airport transfers require at least 3 hours buffer',
     }
+  }
+
+  // 3. Within City, no destination: an hourly hire (MIN_HOURLY_HOURS on the server)
+  if (config.requirement === 'within_city' && config.hireByHour) {
+    return { minHours: 2, label: 'Hourly hire is at least 2 hours' }
   }
 
   // 3. Within City
@@ -657,6 +663,23 @@ export function bookingPayloadFor(config) {
       speed_ceiling_kmh: config.ceiling,
       ...safetyFields(config),
       ...basePayload,
+    }
+  }
+
+  // No destination: the driver is hired by the hour from the pickup.
+  if (config.requirement === 'within_city' && config.hireByHour) {
+    return {
+      booking_type: 'HOURLY',
+      hours: Math.max(2, config.durationHours || 2),
+      pickup: { lat: chosenPickup.lat, lng: chosenPickup.lng },
+      pickup_address: chosenPickup.address || chosenPickup.name,
+      speed_ceiling_kmh: config.ceiling,
+      ...safetyFields(config),
+      ...basePayload,
+      stops: [],
+      return_stops: [],
+      return_drop: null,
+      trip_type: 'one_way',
     }
   }
 

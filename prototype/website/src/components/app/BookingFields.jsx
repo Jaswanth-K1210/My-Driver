@@ -794,7 +794,37 @@ export function TripDetailsForm({ config, setConfig }) {
       {/* ── CASE 1: WITHIN CITY ── */}
       {req === 'within_city' && (
         <div className="space-y-3.5">
-          <RoutePlanner config={config} setConfig={setConfig} isInterCity={false} />
+          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(config.hireByHour)}
+              onChange={(e) => setConfig((c) => ({ ...c, hireByHour: e.target.checked }))}
+              className="mt-0.5 h-4 w-4 accent-brand-500"
+            />
+            <span>
+              <span className="block text-sm font-bold text-slate-900">No destination? Hire by the hour</span>
+              <span className="block text-xs text-slate-500">
+                The driver comes to your pickup and drives you wherever you need, for the hours you choose.
+              </span>
+            </span>
+          </label>
+
+          {config.hireByHour ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">Pickup</label>
+              <PlacePicker
+                value={config.pickupId}
+                onChange={(pickupId) => setConfig((c) => ({ ...c, pickupId }))}
+                options={CITY_LOCATIONS}
+                placeholder="Choose pickup or enter custom location"
+                label="Pickup"
+                showCurrentLocation
+                autoDetectCurrentLocation
+              />
+            </div>
+          ) : (
+            <RoutePlanner config={config} setConfig={setConfig} isInterCity={false} />
+          )}
 
           {/* Duration Presets + Custom Counter */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm">

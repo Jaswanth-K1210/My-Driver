@@ -150,6 +150,10 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       per-km fare and `hourly_rate × hours`, so keep sending `hours`, re-quote when the duration
       changes, and when the new `fare.billed_hours` is set show "N h booked, charged by time"
       under the trip fare. Please also note the rule in `prd.md` §3.1 if you agree.
+- [ ] REQUEST from Jaswanth (2026-10-31): hire by the hour with no destination (`feat(booking)`,
+      31 Oct). The website's Within city tab has a "No destination? Hire by the hour" option that
+      sends `booking_type: HOURLY`, `hours` (2 or more), the pickup and `requirement: within_city`
+      with no drop. The API already supports it; please add the same option to the customer app.
       App already sent `hours` and re-quoted on every change; now shows the line under the trip
       fare and under the total. Written — needs phone check (`feat(UI-3)`, 31 Oct, done by Umesh).
       The `prd.md` §3.1 note is Sanath's to make.
@@ -281,6 +285,7 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       a driver" alert list on the live board, and a waiting screen on the website (`feat(dispatch)`, 31 Oct)~~
 - [x] ~~Refuse Within city trips to another city (`OUTSIDE_CITY`, 50 km from pickup) (`fix(booking)`, 31 Oct)~~
 - [x] ~~Within city fare = higher of distance fare and hourly rate × hours booked (`feat(pricing)`, 31 Oct)~~
+- [x] ~~Website: "No destination? Hire by the hour" on Within city books an `HOURLY` trip from the pickup (`feat(booking)`, 31 Oct)~~
 
 ### Infrastructure: done
 - [x] ~~Dockerfiles, `deploy/docker-compose.prod.yml`, Caddy auto-TLS, `.env.production.example`~~

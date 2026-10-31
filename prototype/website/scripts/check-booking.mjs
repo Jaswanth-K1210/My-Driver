@@ -10,6 +10,11 @@ p = bookingPayloadFor({ ...DEFAULT_CONFIG, pickupId: 'jubilee', durationHours: 1
 // A long Within-City trip stays point-to-point with its hours; only hourly hire is HOURLY.
 assert.equal(p.booking_type, 'POINT_TO_POINT'); assert.equal(p.hours, 10)
 assert.equal(p.pickup.lat, jubilee.lat, 'long trip pickup follows the choice')
+p = bookingPayloadFor({ ...DEFAULT_CONFIG, pickupId: 'jubilee', hireByHour: true, durationHours: 1 })
+assert.equal(p.booking_type, 'HOURLY', 'no destination books an hourly hire')
+assert.equal(p.hours, 2, 'hourly hire is at least 2 hours')
+assert.equal(p.drop, undefined, 'hourly hire sends no drop')
+assert.equal(p.pickup.lat, jubilee.lat)
 if (registerPlace) {
   registerPlace({ id: 'mock:charminar', name: 'Charminar', address: 'Ghansi Bazaar, Hyderabad', lat: 17.3616, lng: 78.4747 })
   p = bookingPayloadFor({ ...DEFAULT_CONFIG, pickupId: 'mock:charminar' })

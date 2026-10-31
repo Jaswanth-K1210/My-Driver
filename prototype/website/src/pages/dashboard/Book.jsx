@@ -445,7 +445,7 @@ export default function Book() {
                     <span className="block text-[11px] font-medium text-slate-400">matched to your car</span>
                   </dd>
                 </div>
-                {config.requirement !== 'full_time' && (
+                {config.requirement !== 'full_time' && !(config.requirement === 'within_city' && config.hireByHour) && (
                   <div className="flex justify-between">
                     <dt className="text-slate-500">Estimated distance</dt>
                     <dd className="font-semibold text-slate-800">~{server.distance_km} km</dd>

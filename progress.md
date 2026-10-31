@@ -3,6 +3,15 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Jaswanth · Hire by the hour with no destination (website)
+
+**Did:** A customer with no destination couldn't book on the website: Within city always needed a drop, and hourly pricing was only on the Full-time tab. Within city now has a "No destination? Hire by the hour" checkbox. When ticked, only the pickup is asked for, and `bookingPayloadFor` sends `booking_type: HOURLY` with `hours` (at least 2, the server's `MIN_HOURLY_HOURS`) and no drop, stops or return. The fare is the hourly rate × hours (e.g. Standard 4 h: ₹960 + ₹19 = ₹979) and shows "4 h booked, charged by time". The distance row is hidden for it. No backend change: `HOURLY` with no drop was already supported.
+**Checks:** website `npm run lint` 0 errors, no new warnings · `npm run build` · `npm run build:admin` · `npm run check` pass (new payload checks: HOURLY, minimum 2 h, no drop) · live quote on the dev server: 4 h, no drop → ₹979.
+**Commit:** `feat(booking): hire a driver by the hour with no destination`
+**Payload changed:** none.
+**Not done / follow-ups:** An hourly hire is billed for the hours booked, with no charge for extra km or overtime yet.
+**Requests raised:** Sanath: the same option in the customer app (tasks.md).
+
 ## 2026-10-31 · Umesh · UI-3 (user app, for Sanath): Within city "charged by time"
 
 **Did:** Jaswanth's request after `feat(pricing)`. `HomeScreen.jsx` shows "N h booked, charged by time" under the trip fare in the price details, and under the total, when the quote's `fare.billed_hours` is set. No payload change: the app already sent `hours` for Within city and re-quoted whenever the duration changed, so its price follows the hours once the backend runs `f29c008`.
