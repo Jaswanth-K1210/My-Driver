@@ -3,6 +3,14 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Umesh · UI-3 (user app, for Sanath): Within city "charged by time"
+
+**Did:** Jaswanth's request after `feat(pricing)`. `HomeScreen.jsx` shows "N h booked, charged by time" under the trip fare in the price details, and under the total, when the quote's `fare.billed_hours` is set. No payload change: the app already sent `hours` for Within city and re-quoted whenever the duration changed, so its price follows the hours once the backend runs `f29c008`.
+**Checks:** `npm test` 22/22 · `npx expo export --platform android` pass. Not seen on screen: it needs a signed-in quote from a backend with the new pricing.
+**Commit:** `feat(UI-3): show when a Within city fare is charged by time`
+**Not done / follow-ups:** Needs phone check. `prd.md` §3.1 note (Within city = higher of distance and hours booked) is for Sanath to add. Outstation is still priced by distance only.
+**Requests raised:** none.
+
 ## 2026-10-31 · Jaswanth · Within city fare follows the duration booked
 
 **Did:** Changing the Duration on a Within city booking didn't change the fare: point-to-point trips were priced per km only and `hours` was ignored. Agreed with Jaswanth: a Within city trip now costs the higher of the distance fare and `hourly_rate × hours` booked (e.g. Standard, 4 km: 2 h → ₹480, 6 h → ₹1,440 before fees). `computeFare` takes `timeFloor` (`billsByTime(requirement)`, Within city only; Outstation and airport stay per km) and returns `billed_hours` when time wins. Quote, booking and completion all use it, so the final fare matches the quote. The website shows "N h booked, charged by time" under the trip fare.

@@ -134,6 +134,8 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
   }, [config, skills, local.ready, priceAttempt])
 
   const priced = priceStatus === 'ready' && server
+  const billedHoursText =
+    priced && server.fare.billed_hours != null ? `${server.fare.billed_hours} h booked, charged by time` : null
   // The server picks the tier from the car and the hour; show what it chose.
   const tier = priced
     ? { label: server.tier_label, ...skills.find((s) => s.id === server.required_certification) }
@@ -148,7 +150,12 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
       ...(priced
         ? [
             ...(server.distance_km > 0 ? [{ label: 'Distance', value: `${server.distance_km.toFixed(1)} km` }] : []),
-            { label: `${server.tier_label} fare`, value: formatINR(server.fare.base - (server.fare.stops_fee ?? 0)) },
+            {
+              label: `${server.tier_label} fare`,
+              value: formatINR(server.fare.base - (server.fare.stops_fee ?? 0)),
+              // Within city: the server charged the hours booked, not the distance.
+              hint: billedHoursText,
+            },
             ...(server.fare.stops_fee > 0 ? [{ label: 'Stops', value: formatINR(server.fare.stops_fee) }] : []),
             { label: 'Platform fee', value: formatINR(server.fare.platform_fee) },
             ...(server.fare.night_fee > 0 ? [{ label: 'Night fee (10 pm – 5 am)', value: formatINR(server.fare.night_fee) }] : []),
@@ -427,6 +434,9 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
                   <Text style={{ ...type.title, color: colors.text }}>{totalText}</Text>
                 )}
                 <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 2 }}>Estimated total</Text>
+                {billedHoursText ? (
+                  <Text style={{ ...type.tiny, color: colors.textMuted }}>{billedHoursText}</Text>
+                ) : null}
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <Text style={{ ...type.caption, color: colors.textMuted }}>{showFare ? 'Hide' : 'Details'}</Text>
@@ -442,7 +452,10 @@ export default function HomeScreen({ config, onChange, onFindDriver }) {
               <View style={{ gap: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: space.md }}>
                 {quote.lines.map((line) => (
                   <View key={line.label} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space.lg }}>
-                    <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>{line.label}</Text>
+                    <View style={{ flexShrink: 1 }}>
+                      <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>{line.label}</Text>
+                      {line.hint ? <Text style={{ ...type.tiny, color: colors.textMuted }}>{line.hint}</Text> : null}
+                    </View>
                     <Text style={{ ...type.caption, color: colors.text, textAlign: 'right', flex: 1 }} numberOfLines={2}>
                       {line.value}
                     </Text>
