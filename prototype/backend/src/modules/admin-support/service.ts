@@ -260,7 +260,8 @@ export async function getCustomer(customerId: string, actorId: string, actorRole
 export async function overview(days: number) {
   const ist = `(t.requested_at AT TIME ZONE 'Asia/Kolkata')::date`
   const since = `(now() AT TIME ZONE 'Asia/Kolkata')::date - ($1::int - 1)`
-  const [daily, totals, safety, people] = await Promise.all([
+  const today = `(now() AT TIME ZONE 'Asia/Kolkata')::date`
+  const [daily, totals, safety, people, live] = await Promise.all([
     pool.query(
       `WITH d AS (SELECT generate_series(${since}, (now() AT TIME ZONE 'Asia/Kolkata')::date, '1 day')::date AS day)
        SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
@@ -307,8 +308,25 @@ export async function overview(days: number) {
                 WHERE dp.onboarding_status = 'UNDER_REVIEW' ${hideDemo('u.is_demo')})::int AS awaiting_review`,
       [days],
     ),
+    // Right now, independent of the selected range.
+    pool.query(
+      `SELECT count(*) FILTER (WHERE t.status IN ('REQUESTED', 'MATCHED'))::int AS waiting,
+              count(*) FILTER (WHERE t.status = 'HANDSHAKE_PENDING')::int AS driver_en_route,
+              count(*) FILTER (WHERE t.status = 'IN_TRIP')::int AS in_trip,
+              count(*) FILTER (WHERE t.status = 'ESCALATED')::int AS escalated,
+              count(*) FILTER (WHERE ${ist} = ${today})::int AS requested_today,
+              count(*) FILTER (WHERE ${ist} = ${today} AND t.status = 'COMPLETED')::int AS completed_today,
+              count(*) FILTER (WHERE ${ist} = ${today} AND t.status IN ('CANCELLED', 'NO_DRIVERS_FOUND'))::int AS lost_today,
+              (SELECT count(*) FROM driver_profiles dp JOIN users u ON u.id = dp.user_id
+                WHERE dp.availability = 'ONLINE' ${hideDemo('u.is_demo')})::int AS drivers_online,
+              (SELECT count(*) FROM driver_profiles dp JOIN users u ON u.id = dp.user_id
+                WHERE dp.availability = 'ON_TRIP' ${hideDemo('u.is_demo')})::int AS drivers_on_trip
+         FROM trips t
+        WHERE (t.status IN ('REQUESTED', 'MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP', 'ESCALATED') OR ${ist} = ${today})
+          ${hideDemoTrips('t')}`,
+    ),
   ])
-  return { days, daily: daily.rows, totals: totals.rows[0], safety: safety.rows[0], people: people.rows[0] }
+  return { days, daily: daily.rows, totals: totals.rows[0], safety: safety.rows[0], people: people.rows[0], live: live.rows[0] }
 }
 
 /* ── Pricing ─────────────────────────────────────────────────────────────── */

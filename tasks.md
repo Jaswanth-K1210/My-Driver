@@ -232,6 +232,8 @@ Completed tasks are ~~struck through~~. **Status as of 25 Oct 2026, branch `prod
       escalations, SOS and warnings; same section on the driver profile~~
 - [x] ~~Live board and live map over WebSocket (`SUBSCRIBE_OPS`)~~
 - [x] ~~Editable fees in Pricing (`cd9de9c`)~~
+- [x] ~~Overview "Live now": trips waiting for a driver, driver on the way, on a trip, escalated,
+      today's requested/completed/lost, drivers online/on trip (`feat(console)`, 31 Oct)~~
 
 ### Infrastructure: done
 - [x] ~~Dockerfiles, `deploy/docker-compose.prod.yml`, Caddy auto-TLS, `.env.production.example`~~

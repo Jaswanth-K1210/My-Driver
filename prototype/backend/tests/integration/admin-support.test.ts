@@ -122,6 +122,14 @@ describe('console support tools', () => {
     expect((await get('/v1/admin/settings')).json().demo_data_visible).toBe(false)
   })
 
+  it('counts live trips by stage in the overview', async () => {
+    await makeTrip('+919812300060', { status: 'REQUESTED' })
+    await makeTrip('+919812300061', { status: 'IN_TRIP' })
+    await makeTrip('+919812300062')
+    const live = (await get('/v1/admin/overview?days=7', ops.accessToken)).json().live
+    expect(live).toMatchObject({ waiting: 1, in_trip: 1, requested_today: 3, completed_today: 1 })
+  })
+
   it('gives managers the overview, not the desk', async () => {
     expect((await get('/v1/admin/overview?days=30', ops.accessToken)).statusCode).toBe(200)
     expect((await get('/v1/admin/overview?days=30')).statusCode).toBe(403)

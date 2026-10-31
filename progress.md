@@ -3,6 +3,15 @@
 Latest session first. `tasks.md` holds the task list; this file records what
 was actually done and what state it is in.
 
+## 2026-10-31 · Jaswanth · Console Overview: live status counts
+
+**Did:** `GET /v1/admin/overview` returns a new `live` block (current, not tied to the 7/30/90-day range): `waiting` (REQUESTED + MATCHED), `driver_en_route` (HANDSHAKE_PENDING), `in_trip`, `escalated`, `requested_today`, `completed_today`, `lost_today` (cancelled or no driver, IST day), `drivers_online`, `drivers_on_trip`. Demo data follows `ADMIN_DEMO_DATA`. The console Overview shows them as a "Live now" card row at the top and now polls every 15 s (was 60 s).
+**Checks:** `npm run typecheck` pass · `npm test` 425/425 (new test: live counts by stage) · website `npm run lint` 0 errors (no new warnings) · `npm run build` · `npm run build:admin` · `npm run check` pass.
+**Commit:** `feat(console): live status counts on the Overview`
+**Payload changed:** additive `live` object on `GET /v1/admin/overview` (console only; the apps don't use it).
+**Not done / follow-ups:** none.
+**Requests raised:** none.
+
 ## 2026-10-31 · Sanath · Sentry observability and privacy scrubbing in the customer app
 
 **Did:** Added `@sentry/react-native` (~7.11.0) to `prototype/mobile/user` (`docs/testing-plan.md` §9):
