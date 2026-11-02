@@ -34,3 +34,44 @@ export function polylineDistanceKm(points: LatLng[]): number {
   }
   return meters / 1000
 }
+
+export type TrackPoint = LatLng & { time: Date }
+
+/** Faster than this between two fixes is a GPS jump, not driving. */
+export const MAX_PLAUSIBLE_KMH = 150
+/** Movement under this is GPS jitter; it only counts once it adds up. */
+export const MIN_STEP_METERS = 10
+// A run of "jumps" this long means the anchor itself was the bad fix.
+const MAX_REJECTED_RUN = 3
+
+/**
+ * Travelled distance for billing. The raw polyline over-counts: a parked
+ * phone wanders a few metres every second, and one bad fix adds its whole
+ * jump. So hops are measured from the last accepted fix (jitter never
+ * accumulates until it is real movement) and a fix that implies an
+ * impossible speed is skipped.
+ */
+export function trackDistanceKm(points: TrackPoint[]): { km: number; rejected: number } {
+  let meters = 0
+  let rejected = 0
+  let run = 0
+  let anchor = points[0]
+  for (const p of points.slice(1)) {
+    const d = haversineMeters(anchor!, p)
+    const seconds = (p.time.getTime() - anchor!.time.getTime()) / 1000
+    if (seconds <= 0 || (d / seconds) * 3.6 > MAX_PLAUSIBLE_KMH) {
+      rejected++
+      if (++run >= MAX_REJECTED_RUN) {
+        // Re-anchor without billing the jump.
+        anchor = p
+        run = 0
+      }
+      continue
+    }
+    run = 0
+    if (d < MIN_STEP_METERS) continue
+    meters += d
+    anchor = p
+  }
+  return { km: meters / 1000, rejected }
+}

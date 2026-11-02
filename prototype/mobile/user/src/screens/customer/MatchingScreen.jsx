@@ -1,11 +1,13 @@
 import { useEffect, useRef } from 'react'
 import { Animated, Easing, Text, TouchableOpacity, View } from 'react-native'
 import { Clock, Search, X } from 'lucide-react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import TripMap from '../../components/TripMap'
 import { colors, radius, space, type } from '../../theme/tokens'
 
 const CHECKS = ['Police-verified drivers only', 'Face-match handshake armed', 'Speed limit set for your trip']
 
-export default function MatchingScreen({ status, onCancel }) {
+export default function MatchingScreen({ status, trip, onCancel }) {
   const ring = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
@@ -22,10 +24,32 @@ export default function MatchingScreen({ status, onCancel }) {
   }, [ring])
 
   return (
+    <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>
+      {/* The booking's own pickup and drop. Shown once the server has the trip. */}
+      {trip?.pickup ? (
+        <View
+          style={{
+            marginHorizontal: space.lg,
+            marginTop: space.sm,
+            height: 200,
+            borderRadius: radius.lg,
+            borderWidth: 1,
+            borderColor: colors.border,
+            overflow: 'hidden',
+          }}
+        >
+          <TripMap
+            pickup={trip.pickup}
+            drop={trip.drop}
+            pickupLabel={trip.from}
+            dropLabel={trip.to}
+            style={{ width: '100%', height: '100%' }}
+          />
+        </View>
+      ) : null}
     <View
       style={{
         flex: 1,
-        backgroundColor: colors.bg,
         alignItems: 'center',
         justifyContent: 'center',
         gap: space.xxl,
@@ -95,6 +119,9 @@ export default function MatchingScreen({ status, onCancel }) {
         <TouchableOpacity
           onPress={onCancel}
           activeOpacity={0.7}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel request"
+          hitSlop={12}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: space.sm }}
         >
           <X size={14} color={colors.textMuted} />
@@ -102,5 +129,6 @@ export default function MatchingScreen({ status, onCancel }) {
         </TouchableOpacity>
       )}
     </View>
+    </SafeAreaView>
   )
 }

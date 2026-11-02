@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { BarChart3, IndianRupee } from 'lucide-react'
+import { BarChart3, IndianRupee, Radio } from 'lucide-react'
 import { api } from '../../lib/apiClient.js'
 import PageHeader from '../../components/admin/PageHeader.jsx'
 import { SectionCard, Segmented, StatCard } from '../../components/app/Primitives.jsx'
@@ -15,7 +15,7 @@ const compactRupees = (v) => (v >= 100000 ? `₹${(v / 100000).toFixed(1)}L` : v
 
 export default function Overview() {
   const [days, setDays] = useState(30)
-  const { data, error } = useAdminPoll(() => api.admin.overview(days), 60000, [days])
+  const { data, error } = useAdminPoll(() => api.admin.overview(days), 15000, [days])
 
   return (
     <div className="space-y-6">
@@ -29,6 +29,23 @@ export default function Overview() {
         <p className="py-12 text-center text-sm text-slate-500">Loading…</p>
       ) : (
         <>
+          <SectionCard title="Live now" icon={Radio}>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <Link to="/" className="block">
+                <StatCard label="Waiting for a driver" value={data.live.waiting} danger={data.live.waiting > 0} />
+              </Link>
+              <StatCard label="Driver on the way" value={data.live.driver_en_route} />
+              <StatCard label="On a trip" value={data.live.in_trip} />
+              <StatCard label="Escalated" value={data.live.escalated} danger={data.live.escalated > 0} />
+              <StatCard label="Requested today" value={data.live.requested_today} />
+              <StatCard label="Completed today" value={data.live.completed_today} />
+              <StatCard label="Cancelled or unmatched today" value={data.live.lost_today} />
+              <Link to="/map" className="block">
+                <StatCard label="Drivers online / on trip" value={`${data.live.drivers_online} / ${data.live.drivers_on_trip}`} />
+              </Link>
+            </div>
+          </SectionCard>
+
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <StatCard label="Completed trips" value={data.totals.completed.toLocaleString('en-IN')} />
             <StatCard label="Revenue (net of refunds)" value={rupees(Math.round(data.totals.revenue))} />

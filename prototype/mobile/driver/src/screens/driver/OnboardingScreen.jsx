@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ActivityIndicator, AppState, KeyboardAvoidingView, Platform, Pressable, RefreshControl, ScrollView, Text, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import * as ImagePicker from 'expo-image-picker'
-import { Check, Clock, CreditCard, Fingerprint, IdCard, LogOut, ShieldCheck } from 'lucide-react-native'
+import { Check, Clock, CreditCard, Fingerprint, IdCard, LogOut, RefreshCw, ShieldCheck, WifiOff } from 'lucide-react-native'
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
 import { useToast } from '../../components/Toast'
 import { useAuth } from '../../context/AuthContext'
+import { useDriver } from '../../context/DriverContext'
 import { api } from '../../lib/apiClient'
+import { hasOnboardingChanged } from '../../lib/onboardingGate'
+import { unregisterPush } from '../../lib/push'
 import { colors, radius, space, type } from '../../theme/tokens'
 
 const input = {
@@ -20,6 +23,10 @@ const input = {
   color: colors.text,
   backgroundColor: colors.surface,
 }
+
+// While under review, check quietly for the console's decision so approval
+// comes through even without push.
+const REVIEW_POLL_MS = 10_000
 
 const STATUS_COPY = {
   PENDING: { title: 'Finish your verification', body: 'Complete the three steps below. It takes about five minutes.' },
@@ -261,6 +268,30 @@ export default function OnboardingScreen({ onboarding, reload, onLogout }) {
     setRefreshing(false)
   }, [reload])
 
+  // A full reload() swaps this screen for a loading state, so the poll only
+  // reads the payload and reloads when something changed. Errors are ignored:
+  // the driver is not approved either way, and pull-to-refresh still works.
+  const onboardingRef = useRef(onboarding)
+  onboardingRef.current = onboarding
+  const underReview = onboarding.onboarding_status === 'UNDER_REVIEW'
+  useEffect(() => {
+    if (!underReview) return undefined
+    let checking = false
+    const id = setInterval(async () => {
+      if (checking || AppState.currentState !== 'active') return
+      checking = true
+      try {
+        const raw = await api.driver.onboarding()
+        if (hasOnboardingChanged(onboardingRef.current, raw)) await reload()
+      } catch {
+        // Next tick tries again.
+      } finally {
+        checking = false
+      }
+    }, REVIEW_POLL_MS)
+    return () => clearInterval(id)
+  }, [underReview, reload])
+
   return (
     <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.xl, paddingVertical: space.md }}>
@@ -269,6 +300,7 @@ export default function OnboardingScreen({ onboarding, reload, onLogout }) {
           accessibilityRole="button"
           accessibilityLabel="Log out"
           onPress={async () => {
+            await unregisterPush()
             await signOut()
             onLogout?.()
           }}
@@ -320,20 +352,75 @@ export function OnboardingLoading() {
   )
 }
 
-/** Fetches onboarding state; `approved` short-circuits straight to the app. */
+/**
+ * Shown when onboarding validation fails due to a network error, requires
+ * post-trip revalidation, or receives a server 403 denial without a qualifying
+ * active trip. Never assumes APPROVED on network failure.
+ */
+export function OnboardingRetryScreen({ gate, reload, onLogout }) {
+  const { signOut } = useAuth()
+  const isForbidden = gate?.validationState === 'FORBIDDEN'
+  const isRevalidating = gate?.validationState === 'REVALIDATION_REQUIRED'
+
+  const title = isForbidden
+    ? 'Driver access restricted'
+    : isRevalidating
+      ? 'Revalidating your driver status'
+      : 'Could not verify your driver status'
+
+  const body = isForbidden
+    ? gate?.error?.message ?? 'Your account is not currently approved for dispatch. Refresh to check your verification status.'
+    : isRevalidating
+      ? 'Your trip has ended. We need to confirm your current partner approval before you can go online or accept a new ride.'
+      : 'Check your internet connection and try again. New rides and availability require a verified approval status from the server.'
+
+  return (
+    <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.xl, paddingVertical: space.md }}>
+        <Text style={{ ...type.title, color: colors.text }}>Partner verification</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Log out"
+          onPress={async () => {
+            await unregisterPush()
+            await signOut()
+            onLogout?.()
+          }}
+          style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 10 }}
+        >
+          <LogOut size={16} color={colors.text} />
+        </Pressable>
+      </View>
+
+      <View style={{ flex: 1, justifyContent: 'center', paddingHorizontal: space.xl }}>
+        <Card style={{ alignItems: 'center', gap: space.md, paddingVertical: space.xxl }}>
+          {isForbidden ? <ShieldCheck size={28} color={colors.red} /> : <WifiOff size={28} color={colors.textMuted} />}
+          <Text style={{ ...type.title, color: colors.text, textAlign: 'center' }}>{title}</Text>
+          <Text style={{ ...type.caption, color: colors.textMuted, textAlign: 'center', lineHeight: 18 }}>
+            {body}
+          </Text>
+          <Button
+            label={gate?.inFlight ? 'Checking status…' : 'Try again'}
+            icon={RefreshCw}
+            disabled={ Boolean(gate?.inFlight) }
+            onPress={() => void reload?.()}
+            style={{ alignSelf: 'stretch', marginTop: space.sm }}
+          />
+        </Card>
+      </View>
+    </SafeAreaView>
+  )
+}
+
+/**
+ * Reads the separated onboarding, active-trip continuity, and validation state
+ * from DriverContext. Never falls back to `APPROVED` on network error.
+ */
 export function useOnboarding() {
-  const [state, setState] = useState(null)
-  const reload = useCallback(async () => {
-    try {
-      setState(await api.driver.onboarding())
-    } catch {
-      // Offline or server down: let the driver into the app rather than lock
-      // them out; every dispatch-side check is enforced server-side anyway.
-      setState((s) => s ?? { onboarding_status: 'APPROVED' })
-    }
-  }, [])
-  useEffect(() => {
-    void reload()
-  }, [reload])
-  return { onboarding: state, reload }
+  const { onboardingGate, reloadOnboarding } = useDriver()
+  return {
+    onboarding: onboardingGate.onboarding,
+    gate: onboardingGate,
+    reload: reloadOnboarding,
+  }
 }

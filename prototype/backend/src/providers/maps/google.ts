@@ -1,5 +1,5 @@
 import { env } from '../../config/env.js'
-import type { MapsProvider, Place } from './index.js'
+import { pinnedPlace, type MapsProvider, type Place } from './index.js'
 
 /**
  * Google Places API (New), Text Search. One call returns names, addresses and
@@ -45,5 +45,29 @@ export class GooglePlacesProvider implements MapsProvider {
         lat: p.location.latitude,
         lng: p.location.longitude,
       }))
+  }
+
+  /**
+   * Geocoding API reverse lookup. The pin keeps its own coordinates: the
+   * customer put it exactly where the car should stop, and the nearest
+   * address is only its label.
+   */
+  async reverse(at: { lat: number; lng: number }): Promise<Place> {
+    const url = new URL('https://maps.googleapis.com/maps/api/geocode/json')
+    url.searchParams.set('latlng', `${at.lat},${at.lng}`)
+    url.searchParams.set('key', env.GOOGLE_MAPS_API_KEY!)
+    url.searchParams.set('language', 'en')
+    const res = await fetch(url, { signal: AbortSignal.timeout(8_000) })
+    if (!res.ok) throw new Error(`Reverse geocode failed: ${res.status}`)
+    const json = (await res.json()) as { results?: Array<{ place_id: string; formatted_address: string }> }
+    const top = json.results?.[0]
+    if (!top) return pinnedPlace(at)
+    return {
+      id: `google:${top.place_id}`,
+      name: top.formatted_address.split(',')[0] ?? 'Pinned location',
+      address: top.formatted_address,
+      lat: at.lat,
+      lng: at.lng,
+    }
   }
 }

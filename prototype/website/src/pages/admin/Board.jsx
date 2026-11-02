@@ -1,12 +1,15 @@
+import { useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertTriangle, Activity, Car, Radio, Timer } from 'lucide-react'
+import { AlertTriangle, Activity, Car, Clock, Radio, Timer, Zap } from 'lucide-react'
 import { api } from '../../lib/apiClient.js'
 import PageHeader from '../../components/admin/PageHeader.jsx'
 import { reasonLabel } from '../../components/admin/format.js'
 import { StatCard, SectionCard } from '../../components/app/Primitives.jsx'
 import { useAdminPoll } from '../../components/admin/useAdminPoll.js'
+import { useOpsFeed } from '../../components/admin/useOpsFeed.js'
 import { Empty, LevelBadge, relative, SlaTimer } from '../../components/admin/Indicators.jsx'
 import { cn } from '../../lib/utils.js'
+import { useToast } from '../../context/toastStore.js'
 
 /**
  * The live board.
@@ -16,19 +19,58 @@ import { cn } from '../../lib/utils.js'
  * sorted table is the faster read anyway. The map is a separate piece of work
  * that needs coordinates in the API first.
  */
+const BOARD_POLL_MS = 10_000
+// With the live feed up, polling is only a backstop for a missed frame, and
+// for the SLA-breached count, which changes with time rather than an event.
+const BOARD_BACKSTOP_MS = 30_000
+
+// Dispatch keeps retrying for 30 minutes from booking (EXTENDED_SEARCH_MINUTES).
+const searchMinutesLeft = (requestedAt) =>
+  Math.max(0, 30 - Math.floor((Date.now() - new Date(requestedAt).getTime()) / 60_000))
+
 export default function Board() {
   const navigate = useNavigate()
 
-  const { data: stats } = useAdminPoll(() => api.admin.stats(), 4000)
-  const { data: queue } = useAdminPoll(() => api.admin.escalations(false), 4000)
-  const { data: trips, loading } = useAdminPoll(() => api.admin.activeTrips(), 4000)
+  // Agents work to a contact SLA measured in minutes, so 10 seconds is fresh
+  // enough when the feed is down and keeps three polls per tab from loading the API.
+  const burst = useRef(null)
+  const refreshers = useRef([])
+  const live = useOpsFeed('board', () => {
+    // One trip change sends a few frames in a row; refetch once for the burst.
+    clearTimeout(burst.current)
+    burst.current = setTimeout(() => {
+      for (const refresh of refreshers.current) void refresh()
+    }, 300)
+  })
+  const every = live ? BOARD_BACKSTOP_MS : BOARD_POLL_MS
+  const { data: stats, refresh: refreshStats } = useAdminPoll(() => api.admin.stats(), every)
+  const { data: queue, refresh: refreshQueue } = useAdminPoll(() => api.admin.escalations(false), every)
+  const { data: trips, loading, refresh: refreshTrips } = useAdminPoll(() => api.admin.activeTrips(), every)
+  const { data: waitingData, refresh: refreshWaiting } = useAdminPoll(() => api.admin.waitingTrips(), every)
+  useEffect(() => {
+    refreshers.current = [refreshStats, refreshQueue, refreshTrips, refreshWaiting]
+  })
+
+  // A booking nobody accepted is a message for the desk: say so once per trip.
+  const { toast } = useToast()
+  const waiting = waitingData ?? []
+  const seenWaiting = useRef(null)
+  useEffect(() => {
+    if (!waitingData) return
+    const ids = new Set(waitingData.map((t) => t.trip_id))
+    if (seenWaiting.current) {
+      const fresh = waitingData.filter((t) => !seenWaiting.current.has(t.trip_id))
+      if (fresh.length) toast(`${fresh.length} new booking${fresh.length > 1 ? 's' : ''} waiting for a driver`, 'error')
+    }
+    seenWaiting.current = ids
+  }, [waitingData, toast])
 
   const items = queue?.items ?? []
   const active = trips ?? []
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Live board" subtitle="Safety Desk · refreshes every 4 seconds">
+      <PageHeader title="Live board" subtitle={`Safety Desk · ${live ? 'live' : 'refreshes every 10 seconds'}`}>
         <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700">
           <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
           Monitoring
@@ -51,6 +93,43 @@ export default function Board() {
           danger={((stats?.by_level?.L4 ?? 0) + (stats?.by_level?.L5 ?? 0)) > 0}
         />
       </div>
+
+      {waiting.length > 0 && (
+        <SectionCard title={`Waiting for a driver (${waiting.length})`} icon={Clock} className="ring-2 ring-brand-400">
+          <p className="-mt-1 mb-3 text-xs text-slate-600">
+            No nearby driver accepted these bookings. Dispatch keeps retrying for 30 minutes after booking; find a driver or call the customer.
+          </p>
+          <ul className="divide-y divide-slate-100">
+            {waiting.map((t) => {
+              const minsLeft = searchMinutesLeft(t.requested_at)
+              return (
+                <li key={t.trip_id}>
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/trips/${t.trip_id}`)}
+                    className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 py-3 text-left text-sm hover:bg-slate-50"
+                  >
+                    <span className="font-bold text-slate-900">{t.customer_name ?? 'Customer'}</span>
+                    <span className="font-mono text-xs text-slate-600">{t.customer_phone}</span>
+                    {t.urgent && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-brand-500 px-2 py-0.5 text-[11px] font-bold text-white">
+                        <Zap className="h-3 w-3" aria-hidden="true" /> Urgent
+                      </span>
+                    )}
+                    <span className="min-w-0 flex-1 truncate text-slate-600">
+                      {t.pickup_address ?? 'Pickup'} → {t.drop_address ?? 'Drop'}
+                    </span>
+                    <span className="text-xs font-bold text-slate-500">{t.required_certification}</span>
+                    <span className={cn('text-xs font-bold', minsLeft <= 5 ? 'text-brand-600' : 'text-slate-500')}>
+                      booked {relative(t.requested_at)} · {minsLeft} min left
+                    </span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </SectionCard>
+      )}
 
       <SectionCard title="Escalation queue" icon={AlertTriangle}>
         {items.length === 0 ? (
@@ -113,7 +192,22 @@ export default function Board() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {active.map((trip) => (
-                  <tr key={trip.trip_id} className={cn(trip.escalation_level && 'bg-brand-50/40')}>
+                  <tr
+                    key={trip.trip_id}
+                    onClick={() => navigate(`/trips/${trip.trip_id}`)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        navigate(`/trips/${trip.trip_id}`)
+                      }
+                    }}
+                    tabIndex={0}
+                    aria-label={`Open trip for ${trip.customer_name ?? 'customer'}`}
+                    className={cn(
+                      'cursor-pointer hover:bg-slate-50 focus:bg-slate-50 focus:outline-none',
+                      trip.escalation_level && 'bg-brand-50/40',
+                    )}
+                  >
                     <td className="py-3 pr-3"><LevelBadge level={trip.escalation_level} /></td>
                     <td className="py-3 pr-3 font-semibold text-slate-900">{trip.customer_name ?? '—'}</td>
                     <td className="py-3 pr-3 text-slate-700">{trip.driver_name ?? '—'}</td>

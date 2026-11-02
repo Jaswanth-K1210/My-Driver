@@ -1,5 +1,5 @@
 import { pool } from '../../db/client.js'
-import { hideDemo, hideDemoTrips } from '../../lib/demo.js'
+import { demoVisible, hideDemo, hideDemoTrips } from '../../lib/demo.js'
 import { notFound } from '../../lib/errors.js'
 import { getVoiceProvider } from '../../providers/voice/index.js'
 import type { Role } from '../auth/otp.js'
@@ -28,6 +28,29 @@ export async function audit(
   )
 }
 
+/**
+ * Audits a screen an agent keeps open and polling (the live map, the live
+ * board). One row per agent per screen per window records who was watching
+ * and when, without a row for every refresh of the same view.
+ */
+export const VIEW_AUDIT_WINDOW_SECONDS = 15 * 60
+
+export async function auditView(actorId: string, actorRole: Role, action: string): Promise<void> {
+  const first = await redis
+    .set(`audit:view:${action}:${actorId}`, '1', 'EX', VIEW_AUDIT_WINDOW_SECONDS, 'NX')
+    // Redis unreachable: write the row. Over-auditing is the safe failure.
+    .catch(() => 'OK')
+  if (first === null) return
+  await audit(actorId, actorRole, action, null, { window_seconds: VIEW_AUDIT_WINDOW_SECONDS })
+}
+
+/**
+ * The plate to look for on the road during a trip. MyDriver drives the
+ * customer's car, so that is the car's plate from the booking; the driver's
+ * own profile plate is only a fallback for bookings made without one.
+ */
+const TRIP_PLATE = `COALESCE(NULLIF(t.vehicle_specs->>'plate', ''), dp.vehicle_plate)`
+
 export type LiveTrip = {
   trip_id: string
   status: string
@@ -47,7 +70,7 @@ export async function activeTrips(): Promise<LiveTrip[]> {
             t.status,
             cu.full_name AS customer_name,
             du.full_name AS driver_name,
-            dp.vehicle_plate,
+            ${TRIP_PLATE} AS vehicle_plate,
             t.speed_ceiling_kmh,
             t.started_at,
             e.level AS escalation_level,
@@ -61,6 +84,24 @@ export async function activeTrips(): Promise<LiveTrip[]> {
         ${hideDemo('cu.is_demo')}
       ORDER BY e.level DESC NULLS LAST, t.started_at ASC NULLS LAST
       LIMIT 500`,
+  )
+  return rows
+}
+
+/**
+ * Bookings the first dispatch rounds could not place: still searching, and
+ * shown on the live board so ops can find a driver or call the customer.
+ */
+export async function waitingForDriver() {
+  const { rows } = await pool.query(
+    `SELECT t.id AS trip_id, t.status, cu.full_name AS customer_name, cu.phone_number AS customer_phone,
+            t.pickup_address, t.drop_address, t.required_certification,
+            (t.urgent_fee IS NOT NULL) AS urgent, t.requested_at, t.needs_driver_since
+       FROM trips t JOIN users cu ON cu.id = t.customer_id
+      WHERE t.needs_driver_since IS NOT NULL AND t.status IN ('REQUESTED', 'MATCHED')
+        ${hideDemo('cu.is_demo')}
+      ORDER BY t.requested_at
+      LIMIT 200`,
   )
   return rows
 }
@@ -86,7 +127,25 @@ export type LiveDriver = {
  * ponytail: reads the whole index; switch to GEOSEARCH BYBOX on the visible
  * map bounds once online drivers reach the tens of thousands.
  */
+/**
+ * Every open console map polls this every few seconds, and each call reads
+ * every online driver from Redis and Postgres. The answer is the same for all
+ * agents, so it is shared for a few seconds instead of rebuilt per tab.
+ */
+const LIVE_DRIVERS_CACHE_SECONDS = 3
+
 export async function liveDrivers(): Promise<LiveDriver[]> {
+  // Demo visibility changes the result, so each setting has its own entry.
+  const cacheKey = `drivers:live:view:${demoVisible() ? 'demo' : 'real'}`
+  const cached = await redis.get(cacheKey).catch(() => null)
+  if (cached) return JSON.parse(cached) as LiveDriver[]
+
+  const drivers = await readLiveDrivers()
+  await redis.set(cacheKey, JSON.stringify(drivers), 'EX', LIVE_DRIVERS_CACHE_SECONDS).catch(() => undefined)
+  return drivers
+}
+
+async function readLiveDrivers(): Promise<LiveDriver[]> {
   const ids = await redis.zrange(GEO_KEY, 0, -1)
   if (ids.length === 0) return []
   const positions = await redis.geopos(GEO_KEY, ...ids)
@@ -99,7 +158,8 @@ export async function liveDrivers(): Promise<LiveDriver[]> {
   const { rows } = await pool.query<Omit<LiveDriver, 'lat' | 'lng'>>(
     `SELECT dp.user_id AS driver_id,
             u.full_name AS name,
-            dp.vehicle_plate,
+            -- A plate only matters while a trip is live; free drivers don't expose one.
+            CASE WHEN t.id IS NOT NULL THEN ${TRIP_PLATE} END AS vehicle_plate,
             dp.availability,
             dp.night_shield_certified,
             dp.mydriver_score::float8 AS mydriver_score,

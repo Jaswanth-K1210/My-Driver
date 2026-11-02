@@ -6,6 +6,7 @@ import { counter } from '../../lib/metrics.js'
 import { loadTripRoles } from '../../realtime/gateway.js'
 import { ingestTelemetry } from '../../telemetry/ingest.js'
 import { requireAuth } from '../auth/rbac.js'
+import { acceptsTelemetry } from './state-machine.js'
 
 export const MAX_BATCH_POINTS = 300
 // A phone can be offline for a while (tunnel, dead zone); older than this and
@@ -21,6 +22,9 @@ const Point = z
         lng: z.number().min(-180).max(180),
         speed: z.number().min(0).max(400).optional(),
         heading: z.number().min(0).max(360).optional(),
+        // Metres, as the phone reports it; and Android's mock-location flag.
+        accuracy: z.number().min(0).optional(),
+        mocked: z.boolean().optional(),
       })
       .strict(),
     sensors: z.object({ accel_z: z.number().optional(), gyro_z: z.number().optional() }).strict().optional(),
@@ -65,7 +69,7 @@ export function registerTelemetryRoutes(app: FastifyInstance): void {
 
       const source = trip.driver_id === userId ? 'DRIVER' : trip.customer_id === userId ? 'CUSTOMER' : null
       if (!source) throw forbidden('FORBIDDEN_TRIP', 'You are not a participant on this trip')
-      if (trip.status !== 'IN_TRIP' && trip.status !== 'HANDSHAKE_PENDING') {
+      if (!acceptsTelemetry(trip.status)) {
         throw conflict('TRIP_NOT_ACTIVE', 'Telemetry is only accepted on an active trip')
       }
 

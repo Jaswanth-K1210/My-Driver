@@ -1,8 +1,9 @@
 import { pool } from '../../db/client.js'
-import { AppError, conflict, notFound, unauthorized } from '../../lib/errors.js'
+import { AppError, conflict, forbidden, notFound, unauthorized } from '../../lib/errors.js'
 import { pepperedEquals } from '../../lib/hash.js'
 import { getLivenessProvider } from '../../providers/liveness/index.js'
 import { getStorageProvider } from '../../providers/storage/index.js'
+import { shareGuardianLink } from '../guardian/service.js'
 import { broadcastStateChange } from './broadcast.js'
 import { HANDSHAKE_MAX_ATTEMPTS, recordEvent, transitionTrip } from './service.js'
 import type { TripStatus } from './state-machine.js'
@@ -30,9 +31,10 @@ export async function performHandshake(input: {
     pickup_handshake_otp_hash: string
     handshake_attempts: number
     face_reference_key: string | null
+    onboarding_status: string | null
   }>(
     `SELECT t.status, t.pickup_handshake_otp_hash, t.handshake_attempts,
-            d.face_reference_key
+            d.face_reference_key, d.onboarding_status
        FROM trips t
        LEFT JOIN driver_profiles d ON d.user_id = t.driver_id
       WHERE t.id = $1 AND t.driver_id = $2`,
@@ -41,6 +43,13 @@ export async function performHandshake(input: {
 
   const trip = rows[0]
   if (!trip) throw notFound('TRIP_NOT_FOUND', 'No such trip for this driver')
+  if (trip.onboarding_status !== 'APPROVED') {
+    throw forbidden(
+      'DRIVER_NOT_APPROVED',
+      `Driver approval is required to start a trip (current status: ${trip.onboarding_status ?? 'PENDING'})`,
+      { onboarding_status: trip.onboarding_status ?? 'PENDING' },
+    )
+  }
   if (trip.status !== 'HANDSHAKE_PENDING') {
     throw conflict('INVALID_TRIP_STATE', `Handshake is not available in state ${trip.status}`)
   }
@@ -94,5 +103,21 @@ export async function performHandshake(input: {
   }
 
   await broadcastStateChange(input.tripId, 'IN_TRIP')
+  await shareWithGuardiansIfAsked(input.tripId)
   return { status: 'HANDSHAKE_PASSED', trip_state: 'IN_TRIP' }
+}
+
+/**
+ * The customer's "share every trip with my guardians" choice, acted on when
+ * the trip actually starts. Best effort: a failed SMS must not undo a pickup.
+ */
+async function shareWithGuardiansIfAsked(tripId: string): Promise<void> {
+  const { rows } = await pool.query<{ customer_id: string }>(
+    `SELECT customer_id FROM trips WHERE id = $1 AND share_with_guardians`,
+    [tripId],
+  )
+  if (!rows[0]) return
+  await shareGuardianLink(tripId, rows[0].customer_id).catch((err) =>
+    console.error('auto-share with guardians failed', tripId, err),
+  )
 }

@@ -65,6 +65,8 @@ export const DEFAULT_CONFIG = {
   },
   requirement: 'within_city', // 'within_city' | 'inter_city' | 'airport' | 'full_time'
   tripType: 'one_way', // 'one_way' | 'two_way'
+  urgent: false, // true: driver in 5-10 min for the urgent fee, else within 30
+  hireByHour: false, // Within city with no destination: an HOURLY booking from the pickup
   
   // Within-city Route Planner State
   pickupId: 'start_hitec',
@@ -95,7 +97,7 @@ export const DEFAULT_CONFIG = {
   },
   
   // Full-time State
-  durationHours: 1,
+  durationHours: 2, // hourly hire starts at 2 hours
   fullTimeDetails: {
     locality: 'HITEC City & Gachibowli',
     durationUnit: 'months', // 'days' | 'weeks' | 'months'
@@ -169,6 +171,11 @@ export function getMinDurationForConfig(config) {
     }
   }
 
+  // 3. Within City, no destination: an hourly hire (MIN_HOURLY_HOURS on the server)
+  if (config.requirement === 'within_city' && config.hireByHour) {
+    return { minHours: 2, label: 'Hourly hire is at least 2 hours' }
+  }
+
   // 3. Within City
   if (config.requirement === 'within_city') {
     const startLoc = getLocationById(config.pickupId || 'start_hitec') ?? CITY_LOCATIONS[0]
@@ -210,13 +217,15 @@ export function getMinDurationForConfig(config) {
     // Average city traffic speed ~25km/h, +30m per stop buffer
     const driveMinutes = Math.round((totalKm / 25) * 60) + (totalStops * 30)
     const requiredMinutes = driveMinutes + 10 // Minimum selected duration must be 10 min greater than travel time
-    const minHours = Math.max(1, Math.ceil(requiredMinutes / 60))
+    const travelHours = Math.ceil(requiredMinutes / 60)
+    // Hourly hire starts at 2 hours; a long route needs more.
+    const minHours = Math.max(2, travelHours)
 
     return {
       minHours,
-      label: minHours > 1 
-        ? `Travel time (~${driveMinutes} mins + 10 min buffer) needs at least ${minHours} ${minHours === 1 ? 'hour' : 'hours'}`
-        : '1 hour minimum package',
+      label: travelHours > 2
+        ? `Travel time (~${driveMinutes} mins + 10 min buffer) needs at least ${minHours} hours`
+        : 'Bookings start at 2 hours',
     }
   }
 
@@ -271,10 +280,10 @@ export function getRouteLegTelemetry(startId, stops = [], destId, isInterCity = 
     cur = stop
   }
 
-  if (isInterCity && destLoc?.distanceKm && validStops.length === 0) {
+  if (isInterCity && destLoc?.distanceKm && validStops.length === 0 && startLoc?.id === 'start_hitec') {
     legKm = destLoc.distanceKm
   } else {
-    legKm += destLoc?.distanceKm ? destLoc.distanceKm : haversineDistanceKm(cur, destLoc)
+    legKm += haversineDistanceKm(cur, destLoc)
   }
 
   const roundedKm = Math.max(1, Math.round(legKm))
@@ -307,14 +316,41 @@ export function getRouteLegTelemetry(startId, stops = [], destId, isInterCity = 
   }
 }
 
+function resolveStopList(rawStops = []) {
+  return (rawStops || [])
+    .map((s) => {
+      const id = typeof s === 'string' ? s : s?.locationId
+      const loc = getLocationById(id)
+      if (!loc) return null
+      return {
+        id: s?.id || id,
+        locationId: id,
+        name: loc.name,
+        address: loc.address || loc.name,
+        lat: loc.lat,
+        lng: loc.lng,
+      }
+    })
+    .filter(Boolean)
+}
+
 /**
  * Local fare estimate, shown instantly while typing.
  * Supports Within City, Inter City, Airport, and Full Time contracts.
  * Accurately handles multi-stop waypoints and round-trip return legs.
  */
-export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nightFee: 30 }) {
+export function quoteFor(
+  config,
+  skills = SKILLS,
+  fees = { platformFee: 19, nightFee: 30, serverNightFee: null },
+) {
   const skill = skillFor(config.skillId, skills)
-  const nightFee = config.skillId === 'MD-Night' ? fees.nightFee : 0
+  const nightFee =
+    fees.serverNightFee != null
+      ? fees.serverNightFee
+      : config.skillId === 'MD-Night'
+        ? fees.nightFee
+        : 0
 
   // 1. Full Time Contract
   if (config.requirement === 'full_time') {
@@ -366,7 +402,11 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
       outboundKm += haversineDistanceKm(curPoint, stop)
       curPoint = stop
     }
-    outboundKm += dest.distanceKm ? dest.distanceKm : haversineDistanceKm(curPoint, dest)
+    if (dest.distanceKm && validOutboundStops.length === 0 && startLoc?.id === 'start_hitec') {
+      outboundKm = dest.distanceKm
+    } else {
+      outboundKm += haversineDistanceKm(curPoint, dest)
+    }
 
     // Return leg
     const isTwoWay = config.tripType === 'two_way'
@@ -387,10 +427,17 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
         returnKm += haversineDistanceKm(retCur, stop)
         retCur = stop
       }
-      returnKm += dest.distanceKm ? dest.distanceKm : haversineDistanceKm(retCur, returnDropLoc)
+      if (dest.distanceKm && validReturnStops.length === 0 && returnDropLoc?.id === 'start_hitec') {
+        returnKm = dest.distanceKm
+      } else {
+        returnKm += haversineDistanceKm(retCur, returnDropLoc)
+      }
     }
 
-    const totalKm = Math.round(outboundKm + returnKm)
+    const totalKm = Math.max(
+      3,
+      Math.max(1, Math.round(outboundKm)) + (isTwoWay ? Math.max(1, Math.round(returnKm)) : 0),
+    )
     const totalStopsCount = validOutboundStops.length + (isTwoWay ? validReturnStops.length : 0)
     const stopsAllowance = totalStopsCount * 100 // ₹100 per outstation stop
 
@@ -407,10 +454,8 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
       durationText = `${Math.max(4, hours)} Hours`
     }
 
-    const dailyBatta = days > 0 ? (350 * days) + (hours >= 6 ? 200 : 0) : 250
-    const kmFare = Math.round(totalKm * skill.rate * 0.85)
-    const timeBase = (days * 1800) + (hours * 85)
-    const base = Math.max(timeBase, kmFare) + dailyBatta + stopsAllowance
+    const distanceFare = Math.round(totalKm * skill.rate)
+    const base = distanceFare + stopsAllowance
 
     const lines = [
       { label: 'Start location', value: startLoc.name },
@@ -429,9 +474,15 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
       { label: 'Route type', value: isTwoWay ? 'Round trip' : 'One way' },
       { label: 'Est. total distance', value: `~${totalKm} km` },
       { label: 'Total duration', value: durationText },
-      { label: 'Driver allowance / batta', value: `₹${dailyBatta}` },
-      { label: 'Platform & safety fee', value: `₹${fees.platformFee}` },
+      { label: `${skill.label} rate`, value: `₹${skill.rate}/km` },
+      { label: `Distance fare (${totalKm} km × ₹${skill.rate})`, value: `₹${distanceFare}` },
     )
+
+    if (stopsAllowance > 0) {
+      lines.push({ label: `Stops convenience fee (${totalStopsCount})`, value: `₹${stopsAllowance}` })
+    }
+
+    lines.push({ label: 'Platform & safety fee', value: `₹${fees.platformFee}` })
 
     return {
       skill,
@@ -448,11 +499,12 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
   // 3. Airport Transfer
   if (config.requirement === 'airport') {
     const airportLoc = AIRPORT_LOCATIONS.find((a) => a.id === config.airportDetails.terminalId) ?? AIRPORT_LOCATIONS[0]
+    const endpointLoc = dropFor(config.dropId) || DROPS[0]
     const isTwoWay = config.tripType === 'two_way'
-    const distanceKm = Math.round(airportLoc.distanceKm * (isTwoWay ? 1.8 : 1.0))
-    const baseCorridorFare = 749 + (skill.rate * 12)
-    const tollAllowance = 140
-    const base = Math.round(baseCorridorFare * (isTwoWay ? 1.75 : 1.0)) + tollAllowance
+    const singleLegKm = Math.max(1, Math.round(haversineDistanceKm(endpointLoc, airportLoc)))
+    const distanceKm = Math.max(3, isTwoWay ? singleLegKm * 2 : singleLegKm)
+    const distanceFare = Math.round(distanceKm * skill.rate)
+    const base = distanceFare
 
     return {
       skill,
@@ -461,8 +513,9 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
       lines: [
         { label: 'Corridor', value: `${airportLoc.name}` },
         { label: 'Transfer type', value: isTwoWay ? 'Round-trip' : (config.airportDetails.flow === 'arrival' ? 'Airport pickup' : 'Airport drop') },
-        { label: 'Estimated distance', value: `${distanceKm} km` },
-        { label: 'Toll & parking allowance', value: `₹${tollAllowance}` },
+        { label: 'Estimated distance', value: `~${distanceKm} km` },
+        { label: `${skill.label} rate`, value: `₹${skill.rate}/km` },
+        { label: `Distance fare (${distanceKm} km × ₹${skill.rate})`, value: `₹${distanceFare}` },
         { label: 'Platform fee', value: `₹${fees.platformFee}` },
       ],
       base,
@@ -510,12 +563,14 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
     returnDistanceKm += haversineDistanceKm(returnCurrentLoc, returnDropLoc)
   }
 
-  const totalKm = Math.max(3, Math.round(outboundDistanceKm + returnDistanceKm))
+  const outboundRoundedKm = Math.max(1, Math.round(outboundDistanceKm))
+  const returnRoundedKm = isTwoWay ? Math.max(1, Math.round(returnDistanceKm)) : 0
+  const totalKm = Math.max(3, outboundRoundedKm + returnRoundedKm)
   const totalStopsCount = validOutboundStops.length + (isTwoWay ? validReturnStops.length : 0)
   const stopsAllowance = totalStopsCount * 60 // ₹60 per city intermediate stop
 
-  const durationAddon = Math.max(0, (config.durationHours - 2) * 60)
-  const base = Math.round(totalKm * skill.rate) + durationAddon + stopsAllowance
+  const distanceFare = Math.round(totalKm * skill.rate)
+  const base = distanceFare + stopsAllowance
 
   const lines = [
     { label: 'Trip type', value: isTwoWay ? 'Round-trip (Two-way)' : 'One-way' },
@@ -541,10 +596,14 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
     { label: 'Total distance', value: `~${totalKm} km` },
     { label: 'Duration', value: `${config.durationHours} ${config.durationHours === 1 ? 'hour' : 'hours'}` },
     { label: `${skill.label} rate`, value: `₹${skill.rate}/km` },
+    { label: `Distance fare (${totalKm} km × ₹${skill.rate})`, value: `₹${distanceFare}` },
   )
 
   if (stopsAllowance > 0) {
-    lines.push({ label: 'Stops convenience fee', value: `₹${stopsAllowance}` })
+    lines.push({
+      label: `Stops convenience fee (${totalStopsCount} ${totalStopsCount === 1 ? 'stop' : 'stops'})`,
+      value: `₹${stopsAllowance}`,
+    })
   }
 
   lines.push({ label: 'Platform fee', value: `₹${fees.platformFee}` })
@@ -560,38 +619,67 @@ export function quoteFor(config, skills = SKILLS, fees = { platformFee: 19, nigh
   }
 }
 
-export function bookingPayloadFor(config, skills = SKILLS) {
-  const skill = skillFor(config.skillId, skills)
+/**
+ * The tier is no longer sent: the server picks it from car_details, the same
+ * way for every client, and the quote says which one it chose.
+ */
+const safetyFields = (config) => ({
+  prefer_female_driver: Boolean(config.preferFemaleDriver),
+  share_with_guardians: Boolean(config.shareWithGuardians),
+})
+
+export function bookingPayloadFor(config) {
+  const chosenPickup = getLocationById(config.pickupId) ?? PICKUP
+  const isTwoWay = config.tripType === 'two_way'
+
+  const resolveReturnDrop = (returnDropId, fallbackLoc) => {
+    if (!isTwoWay) return null
+    if (!returnDropId || returnDropId === 'same_as_pickup') {
+      return { lat: fallbackLoc.lat, lng: fallbackLoc.lng }
+    }
+    const d = getLocationById(returnDropId) ?? fallbackLoc
+    return { lat: d.lat, lng: d.lng }
+  }
 
   const basePayload = {
-    stops: config.stops,
-    return_stops: config.returnStops,
-    return_drop: config.returnDropId && config.returnDropId !== 'same_as_pickup' 
-        ? (() => { const d = getLocationById(config.returnDropId); return d ? {lat: d.lat, lng: d.lng} : null; })()
-        : null,
+    stops: resolveStopList(config.stops),
+    return_stops: isTwoWay ? resolveStopList(config.returnStops) : [],
+    return_drop: resolveReturnDrop(config.returnDropId, chosenPickup),
     car_details: config.carDetails,
     vision_mode: config.visionMode,
     flight_number: config.flightNumber || config.airportDetails?.flightNumber,
     requirement: config.requirement,
     trip_type: config.tripType,
+    urgent: Boolean(config.urgent),
   }
 
-  // The customer's chosen pickup. This used to be the fixed PICKUP constant,
-  // which sent every driver to Cyber Towers whatever the customer picked.
-  const chosenPickup = getLocationById(config.pickupId) ?? PICKUP
-
-  if (config.requirement === 'full_time' || config.durationHours > 8) {
+  if (config.requirement === 'full_time') {
     return {
       booking_type: 'HOURLY',
       hours: Math.min(12, config.durationHours || 4),
       pickup: { lat: chosenPickup.lat, lng: chosenPickup.lng },
       pickup_address:
-        config.requirement === 'full_time' && config.fullTimeDetails?.locality
-          ? config.fullTimeDetails.locality
-          : chosenPickup.address || chosenPickup.name,
-      required_certification: skill.id,
+        config.fullTimeDetails?.locality || chosenPickup.address || chosenPickup.name,
       speed_ceiling_kmh: config.ceiling,
+      ...safetyFields(config),
       ...basePayload,
+    }
+  }
+
+  // No destination: the driver is hired by the hour from the pickup.
+  if (config.requirement === 'within_city' && config.hireByHour) {
+    return {
+      booking_type: 'HOURLY',
+      hours: Math.max(2, config.durationHours || 2),
+      pickup: { lat: chosenPickup.lat, lng: chosenPickup.lng },
+      pickup_address: chosenPickup.address || chosenPickup.name,
+      speed_ceiling_kmh: config.ceiling,
+      ...safetyFields(config),
+      ...basePayload,
+      stops: [],
+      return_stops: [],
+      return_drop: null,
+      trip_type: 'one_way',
     }
   }
 
@@ -610,28 +698,33 @@ export function bookingPayloadFor(config, skills = SKILLS) {
     const dest = getLocationById(destId) ?? INTERCITY_DESTINATIONS[0]
     drop = { lat: dest.lat, lng: dest.lng }
     drop_address = dest.address || dest.name
-    basePayload.stops = config.interCityDetails?.stops || config.stops
-    basePayload.return_stops = config.interCityDetails?.returnStops || config.returnStops
+    basePayload.stops = resolveStopList(config.interCityDetails?.stops || config.stops)
+    basePayload.return_stops = isTwoWay
+      ? resolveStopList(config.interCityDetails?.returnStops || config.returnStops)
+      : []
+    basePayload.return_drop = resolveReturnDrop(config.interCityDetails?.returnDropId, startLoc)
   } else if (config.requirement === 'airport') {
     const airportLoc = AIRPORT_LOCATIONS.find((a) => a.id === config.airportDetails.terminalId) ?? AIRPORT_LOCATIONS[0]
+    const defaultDrop = dropFor(config.dropId) || DROPS[0]
     if (config.airportDetails.flow === 'arrival') {
       pickup = { lat: airportLoc.lat, lng: airportLoc.lng }
       pickup_address = airportLoc.address || airportLoc.name
-      const defaultDrop = dropFor(config.dropId) || DROPS[0]
       drop = { lat: defaultDrop.lat, lng: defaultDrop.lng }
       drop_address = defaultDrop.address || defaultDrop.name
-    } else { // departure
-      const defaultDrop = dropFor(config.dropId) || DROPS[0]
-      pickup = { lat: defaultDrop.lat, lng: defaultDrop.lng } // User is at drop (e.g. home/gachibowli) going to airport
+    } else {
+      pickup = { lat: defaultDrop.lat, lng: defaultDrop.lng }
       pickup_address = defaultDrop.address || defaultDrop.name
       drop = { lat: airportLoc.lat, lng: airportLoc.lng }
       drop_address = airportLoc.address || airportLoc.name
     }
+    basePayload.stops = []
+    basePayload.return_stops = []
+    basePayload.return_drop = isTwoWay ? { lat: pickup.lat, lng: pickup.lng } : null
   } else {
     // Within city point-to-point
     const dropData = dropFor(config.dropId)
     drop = { lat: dropData.lat, lng: dropData.lng }
-    drop_address = dropData.address
+    drop_address = dropData.address || dropData.name
   }
 
   return {
@@ -640,8 +733,8 @@ export function bookingPayloadFor(config, skills = SKILLS) {
     pickup_address,
     drop,
     drop_address,
-    required_certification: skill.id,
     speed_ceiling_kmh: config.ceiling,
+    ...safetyFields(config),
     hours: config.durationHours,
     ...basePayload,
   }
@@ -652,9 +745,14 @@ export async function serverQuote(api, config, skills = SKILLS) {
   try {
     const payload = bookingPayloadFor(config, skills)
     const quoteBody = { ...payload }
+    // Booking-only fields: the quote endpoint refuses them.
     delete quoteBody.speed_ceiling_kmh
+    delete quoteBody.prefer_female_driver
+    delete quoteBody.share_with_guardians
     return await api.trips.quote(quoteBody)
-  } catch {
+  } catch (err) {
+    // A trip the server refuses outright: the page must say why, not spin.
+    if (err?.code === 'OUTSIDE_CITY') throw err
     return null
   }
 }

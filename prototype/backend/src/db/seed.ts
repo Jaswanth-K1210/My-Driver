@@ -5,7 +5,7 @@ import { env } from '../config/env.js'
 // exactly what the marketing site and the apps already advertise.
 const RATE_CARDS = [
   { skill_id: 'MD-Standard', label: 'Standard', per_km: 16, hourly: 240 },
-  { skill_id: 'MD-Auto', label: 'Auto', per_km: 12, hourly: 180 },
+  { skill_id: 'MD-Auto', label: 'Auto Spec.', per_km: 18, hourly: 260 },
   { skill_id: 'MD-SUV', label: 'SUV', per_km: 22, hourly: 330 },
   { skill_id: 'MD-Lux', label: 'Lux', per_km: 35, hourly: 520 },
   { skill_id: 'MD-Night', label: 'Night', per_km: 19, hourly: 280 },

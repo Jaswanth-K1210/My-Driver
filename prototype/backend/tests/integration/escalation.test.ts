@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildApp } from '../../src/app.js'
 import { pool } from '../../src/db/client.js'
 import { seed } from '../../src/db/seed.js'
@@ -9,6 +9,7 @@ import { promoteStaleEscalations } from '../../src/modules/escalation/sweeper.js
 import { awaitDispatchIdle } from '../../src/modules/trips/dispatch-tracker.js'
 import { ConsoleSmsProvider, setSmsProvider } from '../../src/providers/sms/index.js'
 import { ConsoleVoiceProvider, setVoiceProvider } from '../../src/providers/voice/index.js'
+import { getHub } from '../../src/realtime/hub.js'
 import { bearer } from '../helpers/auth.js'
 import { resetDb } from '../helpers/db.js'
 import { resetRedis } from '../helpers/redis.js'
@@ -242,6 +243,22 @@ describe('L0–L5 escalation and the Safety Desk', () => {
       expect(res.statusCode).toBe(200)
       expect(res.json().status).toBe('RESOLVED')
       expect(await tripStatus(tripId)).toBe('IN_TRIP')
+    })
+
+    it('tells the apps the trip is back to IN_TRIP when resolved', async () => {
+      const incident = await openSos()
+      const publish = vi.spyOn(getHub(), 'publish')
+      try {
+        await app.inject({
+          method: 'POST', url: `/v1/admin/escalations/${incident.id}/resolve`,
+          headers: bearer(agent.accessToken), payload: { resolution: 'False alarm' },
+        })
+        expect(publish).toHaveBeenCalledWith(tripId, {
+          type: 'TRIP_STATE_CHANGED', trip_id: tripId, status: 'IN_TRIP',
+        })
+      } finally {
+        publish.mockRestore()
+      }
     })
 
     it('keeps a complete, immutable incident history', async () => {

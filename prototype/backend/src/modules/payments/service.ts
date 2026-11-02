@@ -19,6 +19,8 @@ export type PaymentView = {
   amount_captured: number
   amount_refunded: number
   amount_due: number
+  amount_due_paid: number
+  due_order_id: string | null
   failure_reason: string | null
   checkout_url: string
   created_at: string
@@ -30,6 +32,8 @@ const SELECT = `
          amount_captured::float8   AS amount_captured,
          amount_refunded::float8   AS amount_refunded,
          amount_due::float8        AS amount_due,
+         amount_due_paid::float8   AS amount_due_paid,
+         due_order_id,
          failure_reason, created_at, customer_id
     FROM payments`
 
@@ -50,6 +54,15 @@ function requireProvider(): PaymentProvider {
 }
 
 export const paymentsEnabled = (): boolean => getPaymentProvider() !== null
+
+let payAfterOverride: boolean | undefined
+/** No hold at booking; the final fare is paid after the trip (env PAY_AFTER_TRIP). */
+export const payAfterTrip = (): boolean => payAfterOverride ?? env.PAY_AFTER_TRIP
+
+/** Test-only: force pay-after-trip on or off; undefined restores the env. */
+export function setPayAfterTrip(on: boolean | undefined): void {
+  payAfterOverride = on
+}
 
 /**
  * Called right after a booking commits. Idempotent per trip: a booking retried
@@ -93,7 +106,11 @@ export async function getPaymentForTrip(tripId: string, userId: string): Promise
  * the browser) or the webhook (signature on the body). Either way exactly one
  * caller flips CREATED -> AUTHORIZED, and only that caller starts dispatch.
  */
-export async function markAuthorized(orderId: string, paymentId: string): Promise<{ tripId: string; changed: boolean }> {
+export async function markAuthorized(orderId: string, paymentId: string): Promise<{ tripId: string; changed: boolean; due: boolean }> {
+  // The amount-due order arrives through the same checkout and webhook paths.
+  const due = await markDuePaid(orderId, paymentId)
+  if (due) return { ...due, due: true }
+
   const { rows } = await pool.query<{ trip_id: string }>(
     `UPDATE payments
         SET status = 'AUTHORIZED', provider_payment_id = $2, failure_reason = NULL, updated_at = now()
@@ -103,14 +120,25 @@ export async function markAuthorized(orderId: string, paymentId: string): Promis
   )
   if (rows[0]) {
     await dispatchPaidTrip(rows[0].trip_id)
-    return { tripId: rows[0].trip_id, changed: true }
+    await capturePaidAfterTrip(rows[0].trip_id)
+    return { tripId: rows[0].trip_id, changed: true, due: false }
   }
   const { rows: found } = await pool.query<{ trip_id: string }>(
     `SELECT trip_id FROM payments WHERE provider_order_id = $1`,
     [orderId],
   )
   if (!found[0]) throw notFound('PAYMENT_NOT_FOUND', 'No payment for that order')
-  return { tripId: found[0].trip_id, changed: false }
+  return { tripId: found[0].trip_id, changed: false, due: false }
+}
+
+/** Pay-after-trip: the trip already ended, so the payment is taken in full now. */
+async function capturePaidAfterTrip(tripId: string): Promise<void> {
+  const { rows } = await pool.query<{ status: string }>(`SELECT status FROM trips WHERE id = $1`, [tripId])
+  if (rows[0]?.status !== 'COMPLETED' && rows[0]?.status !== 'CANCELLED') return
+  const { rows: p } = await pool.query<{ amount_authorized: string }>(
+    `SELECT amount_authorized FROM payments WHERE trip_id = $1`, [tripId],
+  )
+  await captureForTrip(tripId, Number(p[0]!.amount_authorized))
 }
 
 async function dispatchPaidTrip(tripId: string): Promise<void> {
@@ -129,8 +157,8 @@ export async function verifyCheckout(orderId: string, paymentId: string, signatu
   if (!provider.verifyCheckoutSignature(orderId, paymentId, signature)) {
     throw unauthorized('BAD_SIGNATURE', 'Payment signature did not verify')
   }
-  const { tripId } = await markAuthorized(orderId, paymentId)
-  return { trip_id: tripId, status: 'AUTHORIZED' as const }
+  const { tripId, due } = await markAuthorized(orderId, paymentId)
+  return { trip_id: tripId, status: due ? ('DUE_PAID' as const) : ('AUTHORIZED' as const) }
 }
 
 export async function markFailed(orderId: string, reason: string): Promise<void> {
@@ -146,6 +174,17 @@ export async function markFailed(orderId: string, reason: string): Promise<void>
  * made before the row changes, so a failed capture leaves the payment
  * AUTHORIZED for the next attempt rather than claiming money we do not have.
  */
+/**
+ * The trip is over and owes `amount`. With a booking hold, capture it. With
+ * PAY_AFTER_TRIP there is no hold: open an order for the amount, which the
+ * customer pays from the same checkout page and markAuthorized captures.
+ */
+export async function chargeForTrip(tripId: string, customerId: string, amount: number): Promise<void> {
+  if (!payAfterTrip()) return captureForTrip(tripId, amount)
+  if (!paymentsEnabled() || amount <= 0) return
+  await createPaymentForTrip(tripId, customerId, amount)
+}
+
 export async function captureForTrip(tripId: string, finalFare: number): Promise<void> {
   const provider = getPaymentProvider()
   if (!provider) return
@@ -158,8 +197,8 @@ export async function captureForTrip(tripId: string, finalFare: number): Promise
   if (!p) return
 
   const authorized = Number(p.amount_authorized)
-  // ponytail: overage beyond the hold is recorded as amount_due, not charged.
-  // A second order for the difference is the upgrade if overtime is common.
+  // Overage beyond the hold is recorded as amount_due and collected with a
+  // second order the customer pays from the checkout page (ensureDueOrder).
   const capture = Math.min(finalFare, authorized)
   await provider.capture(p.provider_payment_id, toPaise(capture))
   await pool.query(
@@ -168,6 +207,66 @@ export async function captureForTrip(tripId: string, finalFare: number): Promise
       WHERE id = $1 AND status = 'AUTHORIZED'`,
     [p.id, capture.toFixed(2), Math.max(0, finalFare - capture).toFixed(2)],
   )
+}
+
+/**
+ * The order that collects an amount due, created the first time the customer
+ * opens the checkout page for it and reused after that. Returns null when
+ * nothing is owed.
+ */
+export async function ensureDueOrder(paymentId: string): Promise<{ orderId: string; amount: number } | null> {
+  const provider = requireProvider()
+  const read = () =>
+    pool.query<{ trip_id: string; amount_due: number; due_order_id: string | null }>(
+      `SELECT trip_id, amount_due::float8 AS amount_due, due_order_id
+         FROM payments WHERE id = $1 AND status = 'CAPTURED' AND amount_due > 0`,
+      [paymentId],
+    )
+  const p = (await read()).rows[0]
+  if (!p) return null
+  if (p.due_order_id) return { orderId: p.due_order_id, amount: p.amount_due }
+
+  // Razorpay caps a receipt at 40 characters.
+  const { orderId } = await provider.createOrder(toPaise(p.amount_due), `due_${p.trip_id.replace(/-/g, '')}`)
+  await pool.query(`UPDATE payments SET due_order_id = $2 WHERE id = $1 AND due_order_id IS NULL`, [paymentId, orderId])
+  // A concurrent page load may have won; its order is the one of record.
+  const final = (await read()).rows[0]
+  return final?.due_order_id ? { orderId: final.due_order_id, amount: final.amount_due } : null
+}
+
+/**
+ * The amount-due order was paid: capture it and clear what is owed. The claim
+ * on due_payment_id makes the checkout callback and the webhook unable to
+ * capture twice. Returns null when the order is not an amount-due order.
+ */
+async function markDuePaid(orderId: string, paymentId: string): Promise<{ tripId: string; changed: boolean } | null> {
+  const { rows } = await pool.query<{ id: string; trip_id: string; amount_due: number }>(
+    `UPDATE payments SET due_payment_id = $2, updated_at = now()
+      WHERE due_order_id = $1 AND due_payment_id IS NULL AND amount_due > 0
+      RETURNING id, trip_id, amount_due::float8 AS amount_due`,
+    [orderId, paymentId],
+  )
+  const p = rows[0]
+  if (!p) {
+    const { rows: found } = await pool.query<{ trip_id: string }>(
+      `SELECT trip_id FROM payments WHERE due_order_id = $1`,
+      [orderId],
+    )
+    return found[0] ? { tripId: found[0].trip_id, changed: false } : null
+  }
+
+  try {
+    await requireProvider().capture(paymentId, toPaise(p.amount_due))
+  } catch (err) {
+    // Release the claim so the webhook's retry can capture it.
+    await pool.query(`UPDATE payments SET due_payment_id = NULL WHERE id = $1 AND due_payment_id = $2`, [p.id, paymentId])
+    throw err
+  }
+  await pool.query(
+    `UPDATE payments SET amount_due_paid = amount_due, amount_due = 0, updated_at = now() WHERE id = $1`,
+    [p.id],
+  )
+  return { tripId: p.trip_id, changed: true }
 }
 
 /** Trip cancelled or nobody accepted: let the hold go. */
@@ -237,6 +336,7 @@ export async function listPayments(status: PaymentStatus | undefined, limit: num
             p.amount_captured::float8   AS amount_captured,
             p.amount_refunded::float8   AS amount_refunded,
             p.amount_due::float8        AS amount_due,
+            p.amount_due_paid::float8   AS amount_due_paid,
             p.failure_reason, p.created_at, p.updated_at,
             u.full_name AS customer_name, u.phone_number AS customer_phone,
             t.status AS trip_status
@@ -268,7 +368,10 @@ export async function handleWebhookEvent(eventId: string, event: Record<string, 
   const entity = event.payload?.payment?.entity ?? {}
   const orderId: string | undefined = entity.order_id
   const { rows: pay } = orderId
-    ? await pool.query<{ id: string }>(`SELECT id FROM payments WHERE provider_order_id = $1`, [orderId])
+    ? await pool.query<{ id: string }>(
+        `SELECT id FROM payments WHERE provider_order_id = $1 OR due_order_id = $1`,
+        [orderId],
+      )
     : { rows: [] as { id: string }[] }
 
   const { rowCount } = await pool.query(

@@ -32,10 +32,10 @@ import {
   TRANSMISSIONS,
   VEHICLE_TYPES,
 } from '../../data/mock.js'
-import { getMinDurationForConfig, getRecommendedSkillId, getRouteLegTelemetry } from '../../lib/booking.js'
+import { getLocationById, getMinDurationForConfig, getRecommendedSkillId, getRouteLegTelemetry } from '../../lib/booking.js'
 import { clamp, cn } from '../../lib/utils.js'
 import PlacePicker from './PlacePicker.jsx'
-import { GarageChips } from './Garage.jsx'
+import { SavedCarSelect } from './Garage.jsx'
 import { requirementEnabled, vehicleEnabled } from '../../lib/features.js'
 
 /* ── 1. Vehicle Type Selector ───────────────────────────────────────────── */
@@ -147,9 +147,12 @@ export function CarSpecPicker({ carDetails, onChange, onAutoMatchSkill }) {
   }
 
   return (
-    <div className="space-y-4">
-      <GarageChips carDetails={carDetails} onPick={pickSaved} />
-      {/* Manual / Custom Car Specs Details */}
+    <SavedCarSelect
+      carDetails={carDetails}
+      onPick={pickSaved}
+      onAddNew={() => onChange({ ...carDetails, savedVehicleId: null, plate: '' })}
+    >
+      {/* A new car's details; a saved car needs none of these. */}
       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-4 space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {/* Company Selector */}
@@ -256,8 +259,23 @@ export function CarSpecPicker({ carDetails, onChange, onAutoMatchSkill }) {
             </div>
           </div>
         </div>
+
+        <div>
+          <label htmlFor="booking-plate" className="mb-1.5 block text-xs font-bold text-slate-700">
+            Number plate <span className="font-medium text-slate-400">(optional, helps your driver find the car)</span>
+          </label>
+          <input
+            id="booking-plate"
+            type="text"
+            value={carDetails.plate ?? ''}
+            maxLength={16}
+            placeholder="TS 09 EA 4120"
+            onChange={(e) => onChange({ ...carDetails, plate: e.target.value.toUpperCase(), savedVehicleId: null })}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold uppercase text-slate-900 hover:border-slate-300 focus:border-brand-500 focus:outline-none"
+          />
+        </div>
       </div>
-    </div>
+    </SavedCarSelect>
   )
 }
 
@@ -372,9 +390,11 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
   const locations = isInterCity ? INTERCITY_DESTINATIONS : CITY_LOCATIONS
   const pickupLocations = CITY_LOCATIONS
 
-  const outboundDestObj = isInterCity 
-    ? INTERCITY_DESTINATIONS.find((d) => d.id === dropId)
-    : CITY_LOCATIONS.find((d) => d.id === dropId)
+  const outboundDestObj =
+    getLocationById(dropId) ??
+    (isInterCity
+      ? INTERCITY_DESTINATIONS.find((d) => d.id === dropId)
+      : CITY_LOCATIONS.find((d) => d.id === dropId))
   const outboundDestName = outboundDestObj?.name || (isInterCity ? 'Destination City' : 'Destination')
 
   // Live telemetry calculations
@@ -440,26 +460,44 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
         <div className="absolute left-[31.5px] top-[54px] bottom-[85px] w-[2px] bg-slate-100 z-0" />
 
         {/* 1. Pickup Location */}
-        <div className="relative z-10 flex items-start gap-3">
-          <div className="mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 ring-4 ring-white">
+        <div className="relative flex items-start gap-3">
+          <div className="relative z-10 mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-100 ring-4 ring-white">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-600" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
               Pickup
             </label>
-            <div><PlacePicker value={pickupId} onChange={handlePickupChange} options={pickupLocations} placeholder="Choose pickup" label="Pickup" /></div>
+            <div>
+              <PlacePicker
+                value={pickupId}
+                onChange={handlePickupChange}
+                options={pickupLocations}
+                placeholder="Choose pickup or enter custom location"
+                label="Pickup"
+                showCurrentLocation
+                autoDetectCurrentLocation
+              />
+            </div>
           </div>
         </div>
 
         {/* Outbound Stops */}
         {stops.map((stop, i) => (
-          <div key={stop.id} className="relative z-10 flex items-start gap-3">
-            <div className="mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-200 ring-4 ring-white">
+          <div key={stop.id} className="relative flex items-start gap-3">
+            <div className="relative z-10 mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-200 ring-4 ring-white">
               <div className="h-1.5 w-1.5 rounded-full bg-slate-600" />
             </div>
-            <div className="flex-1 flex items-center gap-2">
-              <div className="flex-1"><PlacePicker value={stop.locationId} onChange={(id) => updateStop(stop.id, id)} options={pickupLocations} placeholder={`Choose stop ${i + 1}`} /></div>
+            <div className="flex-1 min-w-0 flex items-center gap-2">
+              <div className="flex-1 min-w-0">
+                <PlacePicker
+                  value={stop.locationId}
+                  onChange={(id) => updateStop(stop.id, id)}
+                  options={pickupLocations}
+                  placeholder={`Choose stop ${i + 1}`}
+                  showCurrentLocation
+                />
+              </div>
               <button
                 type="button"
                 onClick={() => removeStop(stop.id)}
@@ -473,7 +511,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
         ))}
 
         {/* Add Outbound Stop Button */}
-        <div className="relative z-10 ml-[28px] flex items-center gap-2">
+        <div className="relative ml-[28px] flex items-center gap-2">
           <button
             type="button"
             disabled={!canAddStop}
@@ -489,20 +527,29 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
         </div>
 
         {/* Outbound Destination */}
-        <div className="relative z-10 flex items-start gap-3">
-          <div className="mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-900 ring-4 ring-white">
+        <div className="relative flex items-start gap-3">
+          <div className="relative z-10 mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-900 ring-4 ring-white">
             <div className="h-1.5 w-1.5 rounded-full bg-white" />
           </div>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
               {isTwoWay ? 'Turnaround point' : 'Drop'}
             </label>
-            <div><PlacePicker value={dropId} onChange={(id) => updateState(isInterCity ? { destinationId: id } : { dropId: id })} options={locations} placeholder="Choose drop" label="Drop" /></div>
+            <div>
+              <PlacePicker
+                value={dropId}
+                onChange={(id) => updateState(isInterCity ? { destinationId: id } : { dropId: id })}
+                options={locations}
+                placeholder="Choose drop or enter custom location"
+                label="Drop"
+                showCurrentLocation
+              />
+            </div>
           </div>
         </div>
 
         {/* Outbound Leg Telemetry Footer */}
-        <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 border border-slate-200/80 px-3.5 py-2.5 mt-2">
+        <div className="relative flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 border border-slate-200/80 px-3.5 py-2.5 mt-2">
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
               <Navigation className="h-3.5 w-3.5 text-emerald-600 rotate-45" />
@@ -537,11 +584,11 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
           <div className="absolute left-[31.5px] top-[54px] bottom-[85px] w-[2px] bg-brand-100 z-0" />
 
           {/* 1. Return Origin (Locked/Auto-synced to Outbound Destination) */}
-          <div className="relative z-10 flex items-start gap-3">
-            <div className="mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-200 ring-4 ring-white">
+          <div className="relative flex items-start gap-3">
+            <div className="relative z-10 mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-slate-200 ring-4 ring-white">
               <span className="text-[9px] leading-none text-slate-600 font-bold">↩</span>
             </div>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">
                 Return Origin (From)
               </label>
@@ -554,12 +601,20 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
 
           {/* Return Stops */}
           {returnStops.map((stop, i) => (
-            <div key={stop.id} className="relative z-10 flex items-start gap-3">
-              <div className="mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-100 ring-4 ring-white">
+            <div key={stop.id} className="relative flex items-start gap-3">
+              <div className="relative z-10 mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-100 ring-4 ring-white">
                 <div className="h-1.5 w-1.5 rounded-full bg-brand-600" />
               </div>
-              <div className="flex-1 flex items-center gap-2">
-                <div className="flex-1"><PlacePicker value={stop.locationId} onChange={(id) => updateReturnStop(stop.id, id)} options={pickupLocations} placeholder={`Choose return stop ${i + 1}`} /></div>
+              <div className="flex-1 min-w-0 flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <PlacePicker
+                    value={stop.locationId}
+                    onChange={(id) => updateReturnStop(stop.id, id)}
+                    options={pickupLocations}
+                    placeholder={`Choose return stop ${i + 1}`}
+                    showCurrentLocation
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={() => removeReturnStop(stop.id)}
@@ -573,7 +628,7 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
           ))}
 
           {/* Add Return Stop Button */}
-          <div className="relative z-10 ml-[28px] flex items-center gap-2">
+          <div className="relative ml-[28px] flex items-center gap-2">
             <button
               type="button"
               disabled={!canAddReturnStop}
@@ -589,11 +644,11 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
           </div>
 
           {/* Return Destination Dropdown (Defaults to Pickup Location) */}
-          <div className="relative z-10 flex items-start gap-3">
-            <div className="mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-600 ring-4 ring-white">
+          <div className="relative flex items-start gap-3">
+            <div className="relative z-10 mt-2.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-600 ring-4 ring-white">
               <Check className="h-2.5 w-2.5 text-white" />
             </div>
-            <div className="flex-1">
+            <div className="flex-1 min-w-0">
               <div className="mb-1 flex items-center justify-between">
                 <label className="text-[10px] font-bold uppercase tracking-wide text-brand-700">
                   Final Return Destination (To)
@@ -604,12 +659,22 @@ export function RoutePlanner({ config, setConfig, isInterCity }) {
                   </span>
                 )}
               </div>
-              <div><PlacePicker value={returnDropId} onChange={(id) => updateState({ returnDropId: id })} options={pickupLocations} placeholder="Choose return drop" tone="brand" label="Return drop" /></div>
+              <div>
+                <PlacePicker
+                  value={returnDropId}
+                  onChange={(id) => updateState({ returnDropId: id })}
+                  options={pickupLocations}
+                  placeholder="Choose return drop"
+                  tone="brand"
+                  label="Return drop"
+                  showCurrentLocation
+                />
+              </div>
             </div>
           </div>
 
           {/* Return Leg Telemetry Footer */}
-          <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white border border-brand-200/80 px-3.5 py-2.5 mt-2">
+          <div className="relative flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white border border-brand-200/80 px-3.5 py-2.5 mt-2">
             <div className="flex items-center gap-3">
               <span className="flex items-center gap-1.5 text-xs font-bold text-brand-950">
                 <Navigation className="h-3.5 w-3.5 text-brand-600 rotate-45" />
@@ -729,7 +794,37 @@ export function TripDetailsForm({ config, setConfig }) {
       {/* ── CASE 1: WITHIN CITY ── */}
       {req === 'within_city' && (
         <div className="space-y-3.5">
-          <RoutePlanner config={config} setConfig={setConfig} isInterCity={false} />
+          <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(config.hireByHour)}
+              onChange={(e) => setConfig((c) => ({ ...c, hireByHour: e.target.checked }))}
+              className="mt-0.5 h-4 w-4 accent-brand-500"
+            />
+            <span>
+              <span className="block text-sm font-bold text-slate-900">No destination? Hire by the hour</span>
+              <span className="block text-xs text-slate-500">
+                The driver comes to your pickup and drives you wherever you need, for the hours you choose.
+              </span>
+            </span>
+          </label>
+
+          {config.hireByHour ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <label className="mb-1 block text-[10px] font-bold uppercase tracking-wide text-slate-500">Pickup</label>
+              <PlacePicker
+                value={config.pickupId}
+                onChange={(pickupId) => setConfig((c) => ({ ...c, pickupId }))}
+                options={CITY_LOCATIONS}
+                placeholder="Choose pickup or enter custom location"
+                label="Pickup"
+                showCurrentLocation
+                autoDetectCurrentLocation
+              />
+            </div>
+          ) : (
+            <RoutePlanner config={config} setConfig={setConfig} isInterCity={false} />
+          )}
 
           {/* Duration Presets + Custom Counter */}
           <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3 shadow-sm">
@@ -750,7 +845,7 @@ export function TripDetailsForm({ config, setConfig }) {
 
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               <div className="grid flex-1 grid-cols-4 gap-2">
-                {[1, 2, 4, 8].map((h) => {
+                {[2, 4, 8, 12].map((h) => {
                   const isBelowMin = h < minDur.minHours
                   return (
                     <button
@@ -1091,6 +1186,7 @@ export function TripDetailsForm({ config, setConfig }) {
               onChange={(dropId) => setConfig((c) => ({ ...c, dropId }))}
               options={CITY_LOCATIONS}
               placeholder={config.airportDetails.flow === 'arrival' ? 'Where should we drop you?' : 'Where should we pick you up?'}
+              showCurrentLocation
             />
           </div>
 

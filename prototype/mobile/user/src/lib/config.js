@@ -21,7 +21,7 @@ function inferredApiUrl() {
 }
 
 export const API_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? inferredApiUrl() ?? 'http://localhost:4000'
+  process.env.EXPO_PUBLIC_API_URL?.trim() || inferredApiUrl() || 'http://localhost:4000'
 
 /** This app only ever authenticates in one role. */
 export const APP_ROLE = 'CUSTOMER'

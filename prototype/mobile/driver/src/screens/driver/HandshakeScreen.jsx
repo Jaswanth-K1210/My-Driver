@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react'
-import { Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
+import { useEffect, useRef, useState } from 'react'
+import { Alert, Animated, Pressable, ScrollView, Text, TextInput, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { ArrowLeft, Check, KeyRound, ScanFace, ShieldCheck } from 'lucide-react-native'
+import { Check, KeyRound, ScanFace, ShieldCheck, X } from 'lucide-react-native'
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
 import { useToast } from '../../components/Toast'
+import TripMap from '../../components/TripMap'
 import * as ImagePicker from 'expo-image-picker'
 import { useDriver } from '../../context/DriverContext'
 import { colors, radius, space, type } from '../../theme/tokens'
@@ -15,17 +16,45 @@ const OTP_LENGTH = 4
  * The selfie is taken here and judged on the server: the liveness provider and
  * its confidence threshold decide, together with the customer's OTP, whether
  * the trip may start. Nothing on this screen claims a match by itself.
+ *
+ * The selfie and the typed code live in DriverFlow (`draft` / `onDraft`), not
+ * here: returning from the camera re-checks the driver's approval, and while
+ * that runs DriverFlow shows the loading screen in place of this one. State
+ * kept on this screen was thrown away with it, so the selfie came back blank.
  */
 
-export default function HandshakeScreen({ request, onVerified, onBack }) {
-  const { submitHandshake } = useDriver()
+/** The base64 photo in a camera result, or null (cancelled, error or no data). */
+function photoFrom(result) {
+  if (!result || 'code' in result || result.canceled) return null
+  return result.assets?.[0]?.base64 ?? null
+}
+
+export default function HandshakeScreen({ request, onVerified, draft, onDraft }) {
+  const { submitHandshake, cancelTrip } = useDriver()
   const [submitting, setSubmitting] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
   const { toast } = useToast()
-  const [selfie, setSelfie] = useState(null)
-  const [otp, setOtp] = useState(['', '', '', ''])
+  const { selfie, otp } = draft
+  const setSelfie = (value) => onDraft(() => ({ selfie: value }))
+  const setOtp = (next) => onDraft((prev) => ({ otp: typeof next === 'function' ? next(prev.otp) : next }))
   const [otpError, setOtpError] = useState(false)
   const inputsRef = useRef([])
   const shake = useRef(new Animated.Value(0)).current
+
+  // Android may close the app while the camera is open (low memory). The photo
+  // then comes back through getPendingResultAsync when the app starts again.
+  useEffect(() => {
+    let cancelled = false
+    ImagePicker.getPendingResultAsync()
+      .then((pending) => {
+        const photo = photoFrom(Array.isArray(pending) ? pending[0] : pending)
+        if (!cancelled && photo) setSelfie(photo)
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const takeSelfie = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync()
@@ -33,13 +62,23 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
       toast('Allow camera access to take the pickup selfie', 'warning')
       return
     }
-    const shot = await ImagePicker.launchCameraAsync({
-      base64: true,
-      quality: 0.5,
-      cameraType: ImagePicker.CameraType.front,
-      mediaTypes: ['images'],
-    })
-    if (!shot.canceled && shot.assets?.[0]?.base64) setSelfie(shot.assets[0].base64)
+    let shot
+    try {
+      shot = await ImagePicker.launchCameraAsync({
+        base64: true,
+        quality: 0.5,
+        exif: false,
+        cameraType: ImagePicker.CameraType.front,
+        mediaTypes: ['images'],
+      })
+    } catch (err) {
+      toast(err?.message ?? 'Could not open the camera. Try again.', 'warning')
+      return
+    }
+    if (shot.canceled) return
+    const photo = photoFrom(shot)
+    if (photo) setSelfie(photo)
+    else toast('The photo could not be read. Take the selfie again.', 'warning')
   }
 
   const runShake = () => {
@@ -101,6 +140,25 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
     }
   }
 
+  const confirmCancel = () =>
+    Alert.alert('Cancel this trip?', 'The customer will be told that you cancelled.', [
+      { text: 'Keep trip', style: 'cancel' },
+      {
+        text: 'Cancel trip',
+        style: 'destructive',
+        onPress: async () => {
+          setCancelling(true)
+          try {
+            await cancelTrip('Cancelled by the driver before pickup')
+            toast('Trip cancelled', 'info')
+          } catch (err) {
+            setCancelling(false)
+            toast(err?.message ?? 'Could not cancel the trip', 'warning')
+          }
+        },
+      },
+    ])
+
   const matched = Boolean(selfie)
 
   return (
@@ -116,11 +174,12 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Back to requests"
-          onPress={() => onBack?.()}
+          accessibilityLabel="Cancel trip"
+          disabled={cancelling || submitting}
+          onPress={confirmCancel}
           style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 8 }}
         >
-          <ArrowLeft size={16} color={colors.text} />
+          <X size={16} color={colors.text} />
         </Pressable>
         <View style={{ flex: 1 }}>
           <Text style={{ ...type.title, color: colors.text }}>Pickup handshake</Text>
@@ -134,6 +193,7 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: space.lg, gap: space.lg }}
       >
+        <TripMap destination={request.pickupCoords} destinationLabel={request.pickup} title="Pickup" />
         <Card>
           <View
             style={{
@@ -249,7 +309,7 @@ export default function HandshakeScreen({ request, onVerified, onBack }) {
           <Button
             label={submitting ? 'Verifying…' : 'Verify & unlock engine'}
             icon={ShieldCheck}
-            disabled={!matched || submitting}
+            disabled={!matched || submitting || cancelling}
             onPress={verify}
             style={{ marginTop: space.lg }}
           />

@@ -105,7 +105,7 @@ export async function searchTrips(s: TripSearch) {
 export async function getTripDetail(tripId: string, actorId: string, actorRole: Role) {
   const { rows } = await pool.query(
     `SELECT t.*, t.estimated_fare::float8 AS estimated_fare, t.fare_amount::float8 AS fare_amount,
-            t.platform_fee::float8 AS platform_fee, t.night_fee::float8 AS night_fee,
+            t.platform_fee::float8 AS platform_fee, t.night_fee::float8 AS night_fee, t.urgent_fee::float8 AS urgent_fee,
             t.driver_earnings::float8 AS driver_earnings, t.distance_km::float8 AS distance_km,
             t.estimated_distance_km::float8 AS estimated_distance_km,
             cu.full_name AS customer_name, cu.phone_number AS customer_phone, cu.email AS customer_email,
@@ -124,7 +124,7 @@ export async function getTripDetail(tripId: string, actorId: string, actorRole: 
   delete trip.pickup_handshake_otp_hash
   delete trip.idempotency_key
 
-  const [events, payment, escalations, rating, inspections, links, checkin] = await Promise.all([
+  const [events, payment, escalations, rating, inspections, links, checkin, anomalies] = await Promise.all([
     pool.query(
       `SELECT e.type, e.created_at, e.actor_role, e.payload, u.full_name AS actor_name
          FROM trip_events e LEFT JOIN users u ON u.id = e.actor_id
@@ -156,6 +156,12 @@ export async function getTripDetail(tripId: string, actorId: string, actorRole: 
       [tripId],
     ),
     pool.query(`SELECT due_at, called_at, outcome, notes FROM post_trip_checkins WHERE trip_id = $1`, [tripId]),
+    // Every automated flag, including the ones that never open an incident
+    // (a fare capped for review).
+    pool.query(
+      `SELECT reason, level, details, created_at FROM anomalies WHERE trip_id = $1 ORDER BY created_at`,
+      [tripId],
+    ),
   ])
 
   await audit(actorId, actorRole, 'VIEW_TRIP', tripId)
@@ -168,6 +174,7 @@ export async function getTripDetail(tripId: string, actorId: string, actorRole: 
     inspections: inspections.rows,
     guardian: links.rows[0],
     checkin: checkin.rows[0] ?? null,
+    anomalies: anomalies.rows,
   }
 }
 
@@ -253,7 +260,8 @@ export async function getCustomer(customerId: string, actorId: string, actorRole
 export async function overview(days: number) {
   const ist = `(t.requested_at AT TIME ZONE 'Asia/Kolkata')::date`
   const since = `(now() AT TIME ZONE 'Asia/Kolkata')::date - ($1::int - 1)`
-  const [daily, totals, safety, people] = await Promise.all([
+  const today = `(now() AT TIME ZONE 'Asia/Kolkata')::date`
+  const [daily, totals, safety, people, live] = await Promise.all([
     pool.query(
       `WITH d AS (SELECT generate_series(${since}, (now() AT TIME ZONE 'Asia/Kolkata')::date, '1 day')::date AS day)
        SELECT to_char(d.day, 'YYYY-MM-DD') AS day,
@@ -300,8 +308,25 @@ export async function overview(days: number) {
                 WHERE dp.onboarding_status = 'UNDER_REVIEW' ${hideDemo('u.is_demo')})::int AS awaiting_review`,
       [days],
     ),
+    // Right now, independent of the selected range.
+    pool.query(
+      `SELECT count(*) FILTER (WHERE t.status IN ('REQUESTED', 'MATCHED'))::int AS waiting,
+              count(*) FILTER (WHERE t.status = 'HANDSHAKE_PENDING')::int AS driver_en_route,
+              count(*) FILTER (WHERE t.status = 'IN_TRIP')::int AS in_trip,
+              count(*) FILTER (WHERE t.status = 'ESCALATED')::int AS escalated,
+              count(*) FILTER (WHERE ${ist} = ${today})::int AS requested_today,
+              count(*) FILTER (WHERE ${ist} = ${today} AND t.status = 'COMPLETED')::int AS completed_today,
+              count(*) FILTER (WHERE ${ist} = ${today} AND t.status IN ('CANCELLED', 'NO_DRIVERS_FOUND'))::int AS lost_today,
+              (SELECT count(*) FROM driver_profiles dp JOIN users u ON u.id = dp.user_id
+                WHERE dp.availability = 'ONLINE' ${hideDemo('u.is_demo')})::int AS drivers_online,
+              (SELECT count(*) FROM driver_profiles dp JOIN users u ON u.id = dp.user_id
+                WHERE dp.availability = 'ON_TRIP' ${hideDemo('u.is_demo')})::int AS drivers_on_trip
+         FROM trips t
+        WHERE (t.status IN ('REQUESTED', 'MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP', 'ESCALATED') OR ${ist} = ${today})
+          ${hideDemoTrips('t')}`,
+    ),
   ])
-  return { days, daily: daily.rows, totals: totals.rows[0], safety: safety.rows[0], people: people.rows[0] }
+  return { days, daily: daily.rows, totals: totals.rows[0], safety: safety.rows[0], people: people.rows[0], live: live.rows[0] }
 }
 
 /* ── Pricing ─────────────────────────────────────────────────────────────── */

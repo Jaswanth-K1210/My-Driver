@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { Award, ArrowLeft, Eye, FileText, Fingerprint, Moon, ShieldCheck } from 'lucide-react'
+import { Award, ArrowLeft, Eye, FileText, Fingerprint, Moon, ShieldCheck, Users } from 'lucide-react'
 import { api, ApiError } from '../../lib/apiClient.js'
 import { ask } from '../../components/admin/PromptDialog.jsx'
 import { SectionCard } from '../../components/app/Primitives.jsx'
@@ -9,6 +9,8 @@ import { Empty, relative, StatusPill } from '../../components/admin/Indicators.j
 import { hasRole, OPS_ROLES } from '../../components/admin/RequireRole.jsx'
 import { useAuth } from '../../context/authStore.js'
 import { cn } from '../../lib/utils.js'
+import { dateTime } from '../../components/admin/format.js'
+import DriverActivity from '../../components/admin/DriverActivity.jsx'
 
 const BLOCKER_TEXT = {
   PAN_NOT_VERIFIED: 'PAN verification',
@@ -23,15 +25,22 @@ export default function DriverDetail() {
   const { user } = useAuth()
   const [data, setData] = useState(null)
   const [badges, setBadges] = useState([])
+  const [practicals, setPracticals] = useState([])
+  const [practical, setPractical] = useState({ code: '', at: '' })
   const [busy, setBusy] = useState(false)
 
   const canAct = hasRole(user, OPS_ROLES)
 
   const load = useCallback(async () => {
     try {
-      const [driver, catalogue] = await Promise.all([api.admin.driver(id), api.admin.badges()])
+      const [driver, catalogue, tests] = await Promise.all([
+        api.admin.driver(id),
+        api.admin.badges(),
+        api.admin.assessments(),
+      ])
       setData(driver)
       setBadges(catalogue.items ?? [])
+      setPracticals((tests.items ?? []).filter((t) => t.kind === 'PRACTICAL'))
     } catch (err) {
       toast(err instanceof ApiError ? err.message : 'Could not load driver', 'error')
     }
@@ -101,6 +110,10 @@ export default function DriverDetail() {
         </div>
       </header>
 
+      <SectionCard title="Trips, earnings and safety record" icon={Eye}>
+        <DriverActivity activity={data.activity} />
+      </SectionCard>
+
       {canAct && (
         <SectionCard title="Onboarding decision" icon={ShieldCheck}>
           <div className="flex flex-wrap gap-2">
@@ -150,6 +163,29 @@ export default function DriverDetail() {
           )}
         </SectionCard>
       )}
+
+      <SectionCard title="Gender" icon={Users}>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="max-w-md text-xs text-slate-500">
+            Used only to honour a customer&apos;s preference for a female driver, who is then offered nearby trips first.
+            Never shown to customers.
+          </p>
+          <select
+            value={profile.gender ?? ''}
+            disabled={!canAct || busy}
+            onChange={(e) =>
+              run('Gender saved', () => api.admin.setDriverGender(id, e.target.value || null))
+            }
+            className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 disabled:bg-slate-50"
+            aria-label="Driver gender"
+          >
+            <option value="">Not recorded</option>
+            <option value="FEMALE">Female</option>
+            <option value="MALE">Male</option>
+            <option value="OTHER">Other</option>
+          </select>
+        </div>
+      </SectionCard>
 
       <SectionCard title="Identity verification" icon={Fingerprint}>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -252,6 +288,7 @@ export default function DriverDetail() {
                   <p className="mt-0.5 text-xs text-slate-500">
                     {attempt.kind} · attempt {attempt.attempt_no} · pass mark {attempt.passing_score}
                     {attempt.submitted_at && ` · ${relative(attempt.submitted_at)}`}
+                    {!attempt.submitted_at && attempt.scheduled_at && ` · scheduled for ${dateTime(attempt.scheduled_at)}`}
                   </p>
                 </div>
                 <span className="rounded-lg bg-slate-100 px-2 py-0.5 text-xs font-black tabular-nums text-slate-700">
@@ -263,6 +300,50 @@ export default function DriverDetail() {
               </li>
             ))}
           </ul>
+        )}
+        {canAct && practicals.length > 0 && (
+          <form
+            className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-4"
+            onSubmit={(e) => {
+              e.preventDefault()
+              const code = practical.code || practicals[0].code
+              void run('Practical test scheduled', () =>
+                api.admin.schedulePractical(id, code, new Date(practical.at).toISOString()),
+              )
+            }}
+          >
+            <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Practical test
+              <select
+                value={practical.code || practicals[0].code}
+                onChange={(e) => setPractical((p) => ({ ...p, code: e.target.value }))}
+                className="mt-1 block rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 outline-none focus:border-slate-400"
+              >
+                {practicals.map((t) => (
+                  <option key={t.code} value={t.code}>
+                    {t.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Date and time
+              <input
+                type="datetime-local"
+                required
+                value={practical.at}
+                onChange={(e) => setPractical((p) => ({ ...p, at: e.target.value }))}
+                className="mt-1 block rounded-xl border border-slate-200 px-3 py-2 text-sm font-normal normal-case tracking-normal text-slate-900 outline-none focus:border-slate-400"
+              />
+            </label>
+            <button
+              type="submit"
+              disabled={busy || !practical.at}
+              className="rounded-xl bg-slate-900 px-4 py-2.5 text-xs font-bold text-white hover:bg-slate-800 disabled:opacity-50"
+            >
+              Schedule
+            </button>
+          </form>
         )}
       </SectionCard>
 

@@ -50,4 +50,11 @@ describe('production configuration guard', () => {
     expect(r.errors).toEqual([])
     expect(r.warnings.join()).toContain('LIVENESS_PROVIDER')
   })
+
+  it('warns when iPhones would get no push, or sandbox-only push', () => {
+    const apns = { APNS_KEY_P8: 'k', APNS_KEY_ID: 'i', APNS_TEAM_ID: 't', APNS_TOPICS: 'com.mydriver.user' }
+    expect(productionProblems(SAFE).warnings.join()).toContain('APNS_* not set')
+    expect(productionProblems({ ...SAFE, ...apns, APNS_PRODUCTION: false }).warnings.join()).toContain('APNS_PRODUCTION=false')
+    expect(productionProblems({ ...SAFE, ...apns, APNS_PRODUCTION: true }).warnings.join()).not.toContain('APNS')
+  })
 })

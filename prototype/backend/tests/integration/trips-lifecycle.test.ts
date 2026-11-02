@@ -4,12 +4,17 @@ import { buildApp } from '../../src/app.js'
 import { pool } from '../../src/db/client.js'
 import { seed } from '../../src/db/seed.js'
 import { awaitDispatchIdle } from '../../src/modules/trips/dispatch-tracker.js'
+import { EXTENDED_SEARCH_MINUTES, retryWaitingTrips } from '../../src/modules/trips/matching.js'
+import { detectArrivals } from '../../src/modules/trips/arrival.js'
 import { expireStaleOffers } from '../../src/modules/trips/sweeper.js'
+import { redis } from '../../src/redis/client.js'
+import { ConsolePushProvider, setPushProvider } from '../../src/providers/push/index.js'
 import { bearer, loginAs } from '../helpers/auth.js'
 import { resetDb } from '../helpers/db.js'
+import { loginAsRole } from '../helpers/safety.js'
 import { resetRedis } from '../helpers/redis.js'
 import {
-  BOOK_BODY, eventTypes, GACHIBOWLI, makeCustomer, makeOnlineDriver, SELFIE, tripStatus,
+  BOOK_BODY, eventTypes, GACHIBOWLI, HITEC_CITY, makeCustomer, makeOnlineDriver, SELFIE, tripStatus,
   type Actor,
 } from '../helpers/trips.js'
 
@@ -59,12 +64,78 @@ describe('trip lifecycle', () => {
       expect(await eventTypes(tripId)).toContain('TRIP_MATCHED')
     })
 
-    it('ends as NO_DRIVERS_FOUND when nobody is nearby', async () => {
-      await app.inject({
+    it('returns the stops, car and trip type on the polled offer', async () => {
+      const stop = { ...GACHIBOWLI, address: 'Gachibowli Stadium' }
+      const car = { model: 'Toyota Innova', transmission: 'MANUAL', fuel: 'DIESEL' }
+      await book({
+        ...BOOK_BODY,
+        stops: [stop],
+        return_stops: [stop],
+        car_details: car,
+        vision_mode: 'NIGHT',
+        flight_number: 'AI 544',
+        requirement: 'AIRPORT',
+        trip_type: 'ROUND_TRIP',
+      })
+      await awaitDispatchIdle()
+
+      const poll = await app.inject({
+        method: 'GET', url: '/v1/driver/offers', headers: bearer(driver.accessToken),
+      })
+      expect(poll.statusCode).toBe(200)
+      expect(poll.json()[0]).toMatchObject({
+        stops: [stop],
+        return_stops: [stop],
+        vehicle_specs: car,
+        vision_mode: 'NIGHT',
+        flight_number: 'AI 544',
+        requirement: 'AIRPORT',
+        trip_type: 'ROUND_TRIP',
+      })
+    })
+
+    const goOffline = () =>
+      app.inject({
         method: 'POST', url: '/v1/driver/availability',
         headers: bearer(driver.accessToken), payload: { availability: 'OFFLINE' },
       })
+    const needsDriver = async (tripId: string) =>
+      (await pool.query(`SELECT needs_driver_since FROM trips WHERE id = $1`, [tripId])).rows[0].needs_driver_since
+
+    it('keeps searching and flags the trip for ops when nobody is nearby', async () => {
+      await goOffline()
       const tripId = await bookAndDispatch()
+
+      expect(await tripStatus(tripId)).toBe('REQUESTED')
+      expect(await needsDriver(tripId)).not.toBeNull()
+      expect(await eventTypes(tripId)).toContain('TRIP_NEEDS_DRIVER')
+      const ops = await loginAsRole(app, '+919800000071', 'SAFETY_DESK_AGENT')
+      const waiting = await app.inject({ method: 'GET', url: '/v1/admin/trips/waiting', headers: bearer(ops.accessToken) })
+      expect(waiting.json().map((t: { trip_id: string }) => t.trip_id)).toEqual([tripId])
+    })
+
+    it('offers a waiting trip to a driver who comes online later', async () => {
+      await goOffline()
+      const tripId = await bookAndDispatch()
+      const late = await makeOnlineDriver(app, '+919848012399')
+
+      await retryWaitingTrips()
+      await awaitDispatchIdle()
+
+      const { rows } = await pool.query(`SELECT driver_id FROM trip_offers WHERE trip_id = $1`, [tripId])
+      expect(rows.map((r) => r.driver_id)).toEqual([late.userId])
+      expect(await tripStatus(tripId)).toBe('MATCHED')
+    })
+
+    it('ends as NO_DRIVERS_FOUND once the extended search window has passed', async () => {
+      await goOffline()
+      const tripId = await bookAndDispatch()
+      await pool.query(
+        `UPDATE trips SET requested_at = now() - make_interval(mins => $2) WHERE id = $1`,
+        [tripId, EXTENDED_SEARCH_MINUTES + 1],
+      )
+
+      await retryWaitingTrips()
 
       expect(await tripStatus(tripId)).toBe('NO_DRIVERS_FOUND')
       expect(await eventTypes(tripId)).toContain('TRIP_NO_DRIVERS_FOUND')
@@ -75,7 +146,8 @@ describe('trip lifecycle', () => {
         .id as string
       await awaitDispatchIdle()
 
-      expect(await tripStatus(tripId)).toBe('NO_DRIVERS_FOUND')
+      expect(await tripStatus(tripId)).toBe('REQUESTED')
+      expect(await needsDriver(tripId)).not.toBeNull()
     })
 
     it('re-dispatches to the next driver when the first declines', async () => {
@@ -98,12 +170,13 @@ describe('trip lifecycle', () => {
       expect(await tripStatus(tripId)).toBe('MATCHED')
     })
 
-    it('gives up after every nearby driver has declined', async () => {
+    it('moves to the extended search after every nearby driver has declined', async () => {
       const tripId = await bookAndDispatch()
       await respond(tripId, false)
       await awaitDispatchIdle()
 
-      expect(await tripStatus(tripId)).toBe('NO_DRIVERS_FOUND')
+      expect(await tripStatus(tripId)).toBe('REQUESTED')
+      expect(await needsDriver(tripId)).not.toBeNull()
     })
 
     it('embeds the driver name, vehicle and rating once one is assigned', async () => {
@@ -184,6 +257,40 @@ describe('trip lifecycle', () => {
       )
       expect(rows[0].status).toBe('EXPIRED')
       expect(await eventTypes(tripId)).toContain('OFFER_EXPIRED')
+    })
+
+    /** Lets every live offer to this driver expire and sweeps them. */
+    async function missOffer(): Promise<void> {
+      await bookAndDispatch()
+      await pool.query(`UPDATE trip_offers SET expires_at = now() - interval '1 second' WHERE status = 'PENDING'`)
+      await expireStaleOffers()
+      await awaitDispatchIdle()
+      // Cancel whatever was re-dispatched so the next booking starts clean.
+      await pool.query(`UPDATE trips SET status = 'CANCELLED' WHERE status IN ('REQUESTED', 'MATCHED')`)
+      await pool.query(`UPDATE trip_offers SET status = 'EXPIRED' WHERE status = 'PENDING'`)
+    }
+    const availability = async () =>
+      (await pool.query(`SELECT availability FROM driver_profiles WHERE user_id = $1`, [driver.userId])).rows[0].availability
+
+    it('takes a driver offline after two missed offers in a row, and the poll says so', async () => {
+      await missOffer()
+      expect(await availability()).toBe('ONLINE')
+      await missOffer()
+      expect(await availability()).toBe('OFFLINE')
+
+      const poll = await app.inject({ method: 'GET', url: '/v1/driver/offers', headers: bearer(driver.accessToken) })
+      expect(poll.statusCode).toBe(409)
+      expect(poll.json().error.code).toBe('DRIVER_OFFLINE')
+    })
+
+    it('answering an offer resets the missed count', async () => {
+      await missOffer()
+      const tripId = await bookAndDispatch()
+      await respond(tripId, false)
+      await pool.query(`UPDATE trips SET status = 'CANCELLED' WHERE status IN ('REQUESTED', 'MATCHED')`)
+      await pool.query(`UPDATE trip_offers SET status = 'EXPIRED' WHERE status = 'PENDING'`)
+      await missOffer()
+      expect(await availability()).toBe('ONLINE')
     })
   })
 
@@ -314,6 +421,58 @@ describe('trip lifecycle', () => {
       expect(body.duration_min).toBeGreaterThanOrEqual(1)
     })
 
+    /** Posts a route as a background batch, one fix a minute, ending now. */
+    async function sendRoute(tripId: string, route: { lat: number; lng: number }[]): Promise<void> {
+      // Back-date the start so the whole route falls inside the trip.
+      await pool.query(`UPDATE trips SET started_at = now() - interval '1 hour' WHERE id = $1`, [tripId])
+      const sentAt = Date.now()
+      const points = route.map((coords, i) => ({ timestamp: sentAt - (route.length - 1 - i) * 60_000, coords }))
+      const res = await app.inject({
+        method: 'POST', url: `/v1/trips/${tripId}/telemetry`,
+        headers: bearer(driver.accessToken), payload: { sent_at: sentAt, points },
+      })
+      expect(res.json().accepted).toBe(route.length)
+    }
+
+    it('caps a distance far past the quote and flags the trip for review', async () => {
+      const tripId = await toInTrip()
+      // A 10 km detour north on a ~1.9 km booking.
+      const detour = Array.from({ length: 11 }, (_, i) => ({ lat: HITEC_CITY.lat + i * 0.009, lng: HITEC_CITY.lng }))
+      await sendRoute(tripId, [...detour, GACHIBOWLI])
+      const body = (await complete(tripId)).json()
+
+      expect(body.distance_km).toBeCloseTo(body.estimated_distance_km * 1.5 + 2, 1)
+      const { rows } = await pool.query(`SELECT reason, details FROM anomalies WHERE trip_id = $1`, [tripId])
+      expect(rows).toHaveLength(1)
+      expect(rows[0].reason).toBe('FARE_DISTANCE_REVIEW')
+      expect(rows[0].details.tracked_km).toBeGreaterThan(10)
+    })
+
+    it('does not bill fixes from before the trip started', async () => {
+      const tripId = await toInTrip()
+      await sendRoute(tripId, [HITEC_CITY, { lat: 17.4441, lng: 78.3864 }, GACHIBOWLI])
+      // Move the start past the whole route: none of it was the trip.
+      await pool.query(`UPDATE trips SET started_at = now() + interval '1 second' WHERE id = $1`, [tripId])
+      const body = (await complete(tripId)).json()
+      expect(body.distance_km).toBeCloseTo(body.estimated_distance_km, 2)
+    })
+
+    it('keeps imprecise fixes out of the billed route', async () => {
+      const tripId = await toInTrip()
+      await pool.query(`UPDATE trips SET started_at = now() - interval '1 hour' WHERE id = $1`, [tripId])
+      const sentAt = Date.now()
+      const points = [HITEC_CITY, { lat: 17.4441, lng: 78.3864 }, GACHIBOWLI].map((c, i) => ({
+        timestamp: sentAt - (2 - i) * 60_000,
+        coords: { ...c, accuracy: 120 },
+      }))
+      await app.inject({
+        method: 'POST', url: `/v1/trips/${tripId}/telemetry`,
+        headers: bearer(driver.accessToken), payload: { sent_at: sentAt, points },
+      })
+      const body = (await complete(tripId)).json()
+      expect(body.distance_km).toBeCloseTo(body.estimated_distance_km, 2)
+    })
+
     it('falls back to the booking estimate when no telemetry was recorded', async () => {
       const tripId = await toInTrip()
       const body = (await complete(tripId)).json()
@@ -360,6 +519,104 @@ describe('trip lifecycle', () => {
       )
       expect(rows[0].cancellation_reason).toBe('Changed my mind')
       expect(rows[0].cancelled_by).toBe(customer.userId)
+    })
+
+    describe('customer push notifications', () => {
+      let push: ConsolePushProvider
+      beforeEach(() => { push = new ConsolePushProvider(); setPushProvider(push) })
+      afterAll(() => setPushProvider(undefined))
+
+      const toCustomer = () =>
+        push.sent.filter((m) => m.userId === customer.userId).map((m) => m.payload.data?.type)
+
+      it('tells the customer when a driver accepts, the trip starts and it ends', async () => {
+        const tripId = await toInTrip()
+        await complete(tripId)
+
+        // The offer itself (MATCHED) is dispatch detail and is not announced.
+        expect(toCustomer()).toEqual(['DRIVER_MATCHED', 'TRIP_STARTED', 'TRIP_ENDED'])
+        const last = push.sent.filter((m) => m.userId === customer.userId).at(-1)!.payload
+        expect(last.channel).toBe('trips')
+        expect(last.data).toMatchObject({ trip_id: tripId, status: 'COMPLETED' })
+      })
+
+      it('says a payment is due when the fare ran over the hold', async () => {
+        const tripId = await toInTrip()
+        await pool.query(
+          `INSERT INTO payments (trip_id, customer_id, provider, provider_order_id, amount_authorized,
+                                 amount_captured, amount_due, status)
+           VALUES ($1, $2, 'mock', 'order_push_test', 100, 100, 42.5, 'CAPTURED')`,
+          [tripId, customer.userId],
+        )
+        await complete(tripId)
+
+        const due = push.sent.find((m) => m.payload.data?.type === 'PAYMENT_DUE')!
+        expect(due.userId).toBe(customer.userId)
+        expect(due.payload.body).toContain('₹42.50')
+      })
+
+      it('does not notify the customer of their own cancellation, but does when the driver cancels', async () => {
+        const own = await bookAndDispatch()
+        await app.inject({
+          method: 'POST', url: `/v1/trips/${own}/cancel`,
+          headers: bearer(customer.accessToken), payload: { reason: 'Changed my mind' },
+        })
+        expect(toCustomer()).toEqual([])
+
+        const theirs = await bookAndDispatch()
+        await respond(theirs, true)
+        await app.inject({
+          method: 'POST', url: `/v1/trips/${theirs}/cancel`,
+          headers: bearer(driver.accessToken), payload: { reason: 'Car trouble' },
+        })
+        expect(toCustomer()).toEqual(['DRIVER_MATCHED', 'TRIP_CANCELLED'])
+      })
+
+      it('tells the customer when no driver could be found', async () => {
+        await app.inject({
+          method: 'POST', url: '/v1/driver/availability',
+          headers: bearer(driver.accessToken), payload: { availability: 'OFFLINE' },
+        })
+        const tripId = await bookAndDispatch()
+        await pool.query(`UPDATE trips SET requested_at = now() - interval '1 hour' WHERE id = $1`, [tripId])
+        await retryWaitingTrips()
+        expect(toCustomer()).toEqual(['NO_DRIVERS_FOUND'])
+      })
+
+      it('marks the driver arrived once, when they reach the pickup, and tells the customer', async () => {
+        const tripId = await bookAndDispatch()
+        await respond(tripId, true)
+        const lastFix = (lat: number, lng: number) =>
+          redis.set(`trip:{${tripId}}:last:driver`, JSON.stringify({ lat, lng, at: Date.now() }))
+
+        // About 2 km away: not arrived.
+        await lastFix(HITEC_CITY.lat + 0.02, HITEC_CITY.lng)
+        expect(await detectArrivals()).toBe(0)
+
+        await lastFix(HITEC_CITY.lat + 0.0005, HITEC_CITY.lng) // ~55 m
+        expect(await detectArrivals()).toBe(1)
+        expect(await detectArrivals()).toBe(0)
+        expect(toCustomer()).toEqual(['DRIVER_MATCHED', 'DRIVER_ARRIVED'])
+
+        const trip = (await app.inject({ method: 'GET', url: `/v1/trips/${tripId}`, headers: bearer(customer.accessToken) })).json()
+        expect(Date.parse(trip.arrived_at)).not.toBeNaN()
+        expect(trip.started_at).toBeNull()
+      })
+    })
+
+    it('returns when the trip started, for the driver app timer', async () => {
+      const tripId = await toInTrip()
+      const trip = (await app.inject({ method: 'GET', url: `/v1/trips/${tripId}`, headers: bearer(driver.accessToken) })).json()
+      expect(Math.abs(Date.now() - Date.parse(trip.started_at))).toBeLessThan(60_000)
+    })
+
+    it('refuses to reissue the pickup code once the trip is under way', async () => {
+      const tripId = await toInTrip()
+      const res = await app.inject({
+        method: 'POST', url: `/v1/trips/${tripId}/handshake-otp`, headers: bearer(customer.accessToken),
+      })
+      expect(res.statusCode).toBe(409)
+      expect(res.json().error.code).toBe('HANDSHAKE_NOT_PENDING')
     })
 
     it('refuses to cancel once the trip is under way', async () => {

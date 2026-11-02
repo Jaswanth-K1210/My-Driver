@@ -21,10 +21,21 @@ function cacheKey(q: string, near?: { lat: number; lng: number }): string {
 // call, so ten users typing "airport" at once cost Google one request.
 const inflight = new Map<string, Promise<Place[]>>()
 
+/** PLACE_SEARCH_BIAS as a point, or undefined when it is turned off. */
+function defaultBias(): { lat: number; lng: number } | undefined {
+  const raw = env.PLACE_SEARCH_BIAS.trim()
+  if (!raw) return undefined
+  const [lat, lng] = raw.split(',').map((n) => Number(n.trim()))
+  return { lat: lat!, lng: lng! }
+}
+
 export async function searchLocations(
   rawQuery: string,
-  near?: { lat: number; lng: number },
+  callerNear?: { lat: number; lng: number },
 ): Promise<{ results: Place[]; cached: boolean }> {
+  // Neither app sends its position with a search, so without this a search
+  // for "metro station" is not leaned towards Hyderabad at all.
+  const near = callerNear ?? defaultBias()
   const q = normaliseQuery(rawQuery)
   const key = cacheKey(q, near)
 
@@ -45,4 +56,18 @@ export async function searchLocations(
     inflight.set(key, pending)
   }
   return { results: await pending, cached: false }
+}
+
+/**
+ * Cached by the pin rounded to ~10 m: a customer nudging a pin back and forth
+ * does not pay for a lookup each time.
+ */
+export async function reverseLocation(at: { lat: number; lng: number }): Promise<Place> {
+  const key = `loc:reverse:${getMapsProvider().name}:${at.lat.toFixed(4)},${at.lng.toFixed(4)}`
+  const hit = await redis.get(key)
+  // The label is shared; the coordinates are always the caller's own pin.
+  if (hit) return { ...(JSON.parse(hit) as Place), lat: at.lat, lng: at.lng }
+  const place = await getMapsProvider().reverse(at)
+  await redis.set(key, JSON.stringify(place), 'EX', env.LOCATION_CACHE_TTL_SECONDS)
+  return place
 }

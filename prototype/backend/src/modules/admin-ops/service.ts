@@ -11,9 +11,14 @@ import { pool } from '../../db/client.js'
 import { hideDemo } from '../../lib/demo.js'
 import { approvalBlockers, getKycStatus } from '../kyc/service.js'
 import { badRequest, conflict, notFound } from '../../lib/errors.js'
+import { getPushProvider } from '../../providers/push/index.js'
 import { getStorageProvider } from '../../providers/storage/index.js'
 import type { Role } from '../auth/otp.js'
+import { raiseEscalation } from '../escalation/service.js'
 import { audit } from '../safety-desk/service.js'
+import { removeDriverFromIndex } from '../trips/geo-index.js'
+import { withdrawUnapprovedDriver } from '../trips/matching.js'
+import { earnedAt, earningTrip } from '../trips/earning.js'
 
 export type OnboardingStatus =
   | 'PENDING'
@@ -132,7 +137,7 @@ export async function getDriver(driverId: string) {
     `SELECT dp.user_id, u.full_name, u.phone_number, u.email,
             dp.onboarding_status, dp.mydriver_score::float8 AS mydriver_score,
             dp.rating::float8 AS rating, dp.rating_count, dp.total_trips,
-            dp.certifications, dp.night_shield_certified,
+            dp.certifications, dp.night_shield_certified, dp.gender,
             dp.vehicle_model, dp.vehicle_plate, dp.availability,
             dp.reviewed_by, dp.reviewed_at, dp.review_note, dp.onboarded_at
        FROM driver_profiles dp
@@ -143,7 +148,7 @@ export async function getDriver(driverId: string) {
   const profile = rows[0]
   if (!profile) throw notFound('DRIVER_NOT_FOUND', 'No driver profile for that user')
 
-  const [documents, attempts, badges, nightShield] = await Promise.all([
+  const [documents, attempts, badges, nightShield, activity] = await Promise.all([
     pool.query(
       `SELECT id, kind, status, number_last4, expires_on, reject_reason,
               reviewed_by, reviewed_at, created_at
@@ -151,7 +156,7 @@ export async function getDriver(driverId: string) {
       [driverId],
     ),
     pool.query(
-      `SELECT aa.id, aa.attempt_no, aa.score, aa.passed, aa.submitted_at, aa.notes,
+      `SELECT aa.id, aa.attempt_no, aa.score, aa.passed, aa.submitted_at, aa.scheduled_at, aa.notes,
               a.code, a.title, a.kind, a.passing_score
          FROM assessment_attempts aa
          JOIN assessments a ON a.id = aa.assessment_id
@@ -174,6 +179,7 @@ export async function getDriver(driverId: string) {
         WHERE driver_id = $1 ORDER BY qualified_at DESC`,
       [driverId],
     ),
+    driverActivity(driverId),
   ])
 
   return {
@@ -184,6 +190,59 @@ export async function getDriver(driverId: string) {
     attempts: attempts.rows,
     badges: badges.rows,
     night_shield: nightShield.rows,
+    activity,
+  }
+}
+
+/**
+ * Earnings, trip counts and the safety record (escalations, SOS, automated
+ * warnings) the console shows next to a driver.
+ */
+export async function driverActivity(driverId: string) {
+  const [stats, escalations, warnings, current] = await Promise.all([
+    pool.query(
+      `SELECT count(*) FILTER (WHERE status = 'COMPLETED')::int AS completed,
+              count(*) FILTER (WHERE status = 'CANCELLED')::int AS cancelled,
+              COALESCE(sum(driver_earnings) FILTER (WHERE ${earningTrip()}), 0)::float8 AS earned_total,
+              COALESCE(sum(driver_earnings) FILTER (WHERE ${earningTrip()} AND ${earnedAt()} > now() - interval '7 days'), 0)::float8 AS earned_week,
+              COALESCE(sum(driver_earnings) FILTER (WHERE ${earningTrip()} AND payout_id IS NULL), 0)::float8 AS unpaid,
+              max(completed_at) AS last_trip_at
+         FROM trips WHERE driver_id = $1`,
+      [driverId],
+    ),
+    pool.query(
+      `SELECT e.id, e.trip_id, e.level, e.status, e.reason, e.opened_at
+         FROM escalations e JOIN trips t ON t.id = e.trip_id
+        WHERE t.driver_id = $1 ORDER BY e.opened_at DESC LIMIT 20`,
+      [driverId],
+    ),
+    pool.query(
+      `SELECT a.id, a.trip_id, a.reason, a.level, a.created_at
+         FROM anomalies a JOIN trips t ON t.id = a.trip_id
+        WHERE t.driver_id = $1 ORDER BY a.created_at DESC LIMIT 20`,
+      [driverId],
+    ),
+    pool.query(
+      `SELECT id FROM trips WHERE driver_id = $1
+          AND status IN ('MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP', 'ESCALATED')
+        ORDER BY requested_at DESC LIMIT 1`,
+      [driverId],
+    ),
+  ])
+  const counts = await pool.query(
+    `SELECT count(*)::int AS escalations,
+            count(*) FILTER (WHERE e.status <> 'RESOLVED')::int AS open_escalations,
+            count(*) FILTER (WHERE e.reason LIKE '%SOS%')::int AS sos,
+            (SELECT count(*)::int FROM anomalies a JOIN trips t2 ON t2.id = a.trip_id WHERE t2.driver_id = $1) AS warnings
+       FROM escalations e JOIN trips t ON t.id = e.trip_id WHERE t.driver_id = $1`,
+    [driverId],
+  )
+  return {
+    ...stats.rows[0],
+    ...counts.rows[0],
+    current_trip_id: current.rows[0]?.id ?? null,
+    recent_escalations: escalations.rows,
+    recent_warnings: warnings.rows,
   }
 }
 
@@ -240,12 +299,57 @@ export async function setOnboardingStatus(
     [driverId, status, actorId, note ?? null],
   )
 
+  if (status !== 'APPROVED') {
+    // Out of the index first, so re-dispatch cannot pick this driver again.
+    await removeDriverFromIndex(driverId)
+    await withdrawUnapprovedDriver(driverId, actorId, actorRole)
+
+    const { rows: activeTrips } = await pool.query<{ id: string }>(
+      `SELECT id FROM trips
+        WHERE driver_id = $1 AND status IN ('IN_TRIP', 'ESCALATED')
+        ORDER BY requested_at DESC LIMIT 1`,
+      [driverId],
+    )
+    const activeTrip = activeTrips[0]
+    if (activeTrip) {
+      // A driver suspended or unapproved mid-trip must safely finish the ride
+      // under Safety Desk oversight, then be forced OFFLINE on completion.
+      await raiseEscalation({
+        tripId: activeTrip.id,
+        level: 'L2',
+        reason: 'DRIVER_SUSPENDED_DURING_TRIP',
+        details: { onboarding_status: status, note: note ?? null },
+        actorId,
+        actorRole,
+      }).catch(() => undefined)
+    } else {
+      await pool.query(
+        `UPDATE driver_profiles SET availability = 'OFFLINE', updated_at = now() WHERE user_id = $1`,
+        [driverId],
+      )
+    }
+  }
+
   await audit(actorId, actorRole, `DRIVER_${status}`, driverId, {
     from: before.onboarding_status,
     to: status,
     note: note ?? null,
   })
+  // Tell the driver's phone now, so the app re-checks instead of waiting
+  // for the next launch.
+  const message = STATUS_PUSH[status]
+  if (message && status !== before.onboarding_status) {
+    await getPushProvider()
+      .send(driverId, { ...message, data: { type: 'ONBOARDING_STATUS', status } })
+      .catch(() => undefined)
+  }
   return updated[0]!
+}
+
+const STATUS_PUSH: Partial<Record<OnboardingStatus, { title: string; body: string }>> = {
+  APPROVED: { title: "You're approved", body: 'You can go online and take trips now.' },
+  REJECTED: { title: 'Application not approved', body: 'Open the app to see why and what to do next.' },
+  SUSPENDED: { title: 'Account suspended', body: 'You cannot take trips for now. Open the app for details.' },
 }
 
 /* ── Documents ───────────────────────────────────────────────────────────── */
@@ -316,16 +420,17 @@ export async function listAssessments() {
 }
 
 export async function gradingQueue(limit: number) {
+  // Submitted tests, plus practical tests with a date set (graded after the drive).
   const { rows } = await pool.query(
     `SELECT aa.id, aa.driver_id, u.full_name, aa.attempt_no, aa.answers,
-            aa.started_at, aa.submitted_at,
+            aa.started_at, aa.submitted_at, aa.scheduled_at,
             a.code, a.title, a.kind, a.passing_score
        FROM assessment_attempts aa
        JOIN assessments a ON a.id = aa.assessment_id
        JOIN users u ON u.id = aa.driver_id
-      WHERE aa.submitted_at IS NOT NULL AND aa.passed IS NULL
+      WHERE (aa.submitted_at IS NOT NULL OR aa.scheduled_at IS NOT NULL) AND aa.passed IS NULL
         ${hideDemo('u.is_demo')}
-      ORDER BY aa.submitted_at
+      ORDER BY COALESCE(aa.submitted_at, aa.scheduled_at)
       LIMIT $1`,
     [limit],
   )
@@ -361,6 +466,65 @@ export async function gradeAttempt(
     passed: attempt.passed,
   })
   return attempt
+}
+
+/**
+ * Sets the date of a driver's practical test. An open scheduled attempt is
+ * moved rather than duplicated; otherwise a new attempt is opened, within the
+ * test's attempt limit. Graded later with gradeAttempt like any other.
+ */
+export async function schedulePracticalTest(
+  driverId: string,
+  code: string,
+  scheduledAt: Date,
+  actorId: string,
+  actorRole: Role,
+) {
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const { rows: tests } = await client.query<{ id: string; max_attempts: number }>(
+      `SELECT id, max_attempts FROM assessments WHERE code = $1 AND kind = 'PRACTICAL' AND active`,
+      [code],
+    )
+    const test = tests[0]
+    if (!test) throw notFound('ASSESSMENT_NOT_FOUND', 'No active practical test with that code')
+
+    // Locks this driver's attempts at the test, so two schedulers cannot both insert.
+    const { rows: past } = await client.query<{ id: string; attempt_no: number; passed: boolean | null; scheduled_at: Date | null; submitted_at: Date | null }>(
+      `SELECT id, attempt_no, passed, scheduled_at, submitted_at FROM assessment_attempts
+        WHERE driver_id = $1 AND assessment_id = $2 ORDER BY attempt_no FOR UPDATE`,
+      [driverId, test.id],
+    )
+    if (past.some((a) => a.passed)) throw conflict('ALREADY_PASSED', 'This driver has already passed that test')
+
+    const open = past.find((a) => a.passed === null && a.submitted_at === null && a.scheduled_at !== null)
+    let attemptId: string
+    if (open) {
+      await client.query(`UPDATE assessment_attempts SET scheduled_at = $2 WHERE id = $1`, [open.id, scheduledAt])
+      attemptId = open.id
+    } else {
+      if (past.length >= test.max_attempts) throw conflict('NO_ATTEMPTS_LEFT', 'This driver has used every attempt')
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO assessment_attempts (driver_id, assessment_id, attempt_no, scheduled_at)
+         VALUES ($1, $2, $3, $4) RETURNING id`,
+        [driverId, test.id, (past.at(-1)?.attempt_no ?? 0) + 1, scheduledAt],
+      )
+      attemptId = rows[0]!.id
+    }
+    await client.query('COMMIT')
+    await audit(actorId, actorRole, 'PRACTICAL_SCHEDULED', driverId, {
+      attempt_id: attemptId,
+      code,
+      scheduled_at: scheduledAt.toISOString(),
+    })
+    return { attempt_id: attemptId, code, scheduled_at: scheduledAt.toISOString() }
+  } catch (err) {
+    await client.query('ROLLBACK')
+    throw err
+  } finally {
+    client.release()
+  }
 }
 
 export async function listBadges() {
@@ -669,12 +833,12 @@ export async function listPayouts(status: string | undefined, limit: number) {
 export async function unsettled(periodStart: string, periodEnd: string) {
   const { rows } = await pool.query(
     `SELECT t.driver_id, u.full_name AS driver_name, COUNT(*)::int AS trip_count,
-            COALESCE(SUM(t.driver_earnings), 0)::float8 AS gross,
+            COALESCE(SUM(t.fare_amount), 0)::float8 AS gross,
             COALESCE(SUM(t.platform_fee), 0)::float8 AS platform_fee
        FROM trips t
        JOIN users u ON u.id = t.driver_id
-      WHERE t.status = 'COMPLETED' AND t.payout_id IS NULL
-        AND t.completed_at >= $1::date AND t.completed_at < $2::date
+      WHERE ${earningTrip('t.')} AND t.payout_id IS NULL
+        AND ${earnedAt('t.')} >= $1::date AND ${earnedAt('t.')} < $2::date
         ${hideDemo('u.is_demo')}
       GROUP BY t.driver_id, u.full_name
       ORDER BY gross DESC`,
@@ -713,11 +877,11 @@ export async function generatePayout(
       platform_fee: string
     }>(
       `SELECT COUNT(*)::int AS trip_count,
-              COALESCE(SUM(driver_earnings), 0) AS gross,
+              COALESCE(SUM(fare_amount), 0) AS gross,
               COALESCE(SUM(platform_fee), 0) AS platform_fee
          FROM trips
-        WHERE driver_id = $1 AND status = 'COMPLETED' AND payout_id IS NULL
-          AND completed_at >= $2::date AND completed_at < $3::date`,
+        WHERE driver_id = $1 AND ${earningTrip()} AND payout_id IS NULL
+          AND ${earnedAt()} >= $2::date AND ${earnedAt()} < $3::date`,
       [driverId, periodStart, periodEnd],
     )
     const total = totals[0]!
@@ -736,8 +900,8 @@ export async function generatePayout(
 
     const { rowCount } = await client.query(
       `UPDATE trips SET payout_id = $4
-        WHERE driver_id = $1 AND status = 'COMPLETED' AND payout_id IS NULL
-          AND completed_at >= $2::date AND completed_at < $3::date`,
+        WHERE driver_id = $1 AND ${earningTrip()} AND payout_id IS NULL
+          AND ${earnedAt()} >= $2::date AND ${earnedAt()} < $3::date`,
       [driverId, periodStart, periodEnd, payoutId],
     )
 
@@ -817,4 +981,23 @@ export async function auditLog(filters: {
     [filters.actor ?? null, filters.subject ?? null, filters.action ?? null, filters.limit],
   )
   return rows
+}
+
+/**
+ * Recorded at onboarding review, only so a customer's preference for a
+ * female driver can be honoured. Audited: it is personal data.
+ */
+export async function setDriverGender(
+  driverId: string,
+  gender: 'FEMALE' | 'MALE' | 'OTHER' | null,
+  actorId: string,
+  actorRole: Role,
+): Promise<{ user_id: string; gender: string | null }> {
+  const { rows } = await pool.query<{ user_id: string; gender: string | null }>(
+    `UPDATE driver_profiles SET gender = $2, updated_at = now() WHERE user_id = $1 RETURNING user_id, gender`,
+    [driverId, gender],
+  )
+  if (!rows[0]) throw notFound('DRIVER_NOT_FOUND', 'No driver profile for that user')
+  await audit(actorId, actorRole, 'DRIVER_GENDER_SET', driverId, { gender })
+  return rows[0]
 }

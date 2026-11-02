@@ -54,6 +54,14 @@ const EnvSchema = z.object({
 
   PUSH_PROVIDER: z.enum(['console', 'fcm']).default('console'),
   FCM_SERVICE_ACCOUNT_JSON: z.string().optional(),
+  // iOS push straight to Apple (D-1): the .p8 auth key (PEM; "\n" escapes are
+  // fine), its key ID, the team ID, and the apps' bundle IDs, comma separated.
+  APNS_KEY_P8: z.string().optional(),
+  APNS_KEY_ID: z.string().optional(),
+  APNS_TEAM_ID: z.string().optional(),
+  APNS_TOPICS: z.string().optional(),
+  // false = sandbox, for development builds; TestFlight and the App Store use production.
+  APNS_PRODUCTION: boolFromEnv.default(false),
 
   STORAGE_ENDPOINT: z.string().url().default('http://localhost:9000'),
   STORAGE_REGION: z.string().default('us-east-1'),
@@ -83,13 +91,22 @@ const EnvSchema = z.object({
   // 'none' dispatches at booking with no payment step: the pre-payments
   // behaviour, kept so the trip test suite does not need a checkout per trip.
   PAYMENTS_PROVIDER: z.enum(['none', 'mock', 'razorpay']).default('none'),
+  // true: no hold at booking, dispatch starts at once and the customer pays the
+  // final fare after the trip. Off by default: prd.md 3.2 still requires the hold.
+  PAY_AFTER_TRIP: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   RAZORPAY_KEY_ID: z.string().optional(),
   RAZORPAY_KEY_SECRET: z.string().optional(),
   RAZORPAY_WEBHOOK_SECRET: z.string().optional(),
-  MAPS_PROVIDER: z.enum(['mock', 'google']).default('mock'),
+  MAPS_PROVIDER: z.enum(['mock', 'google', 'photon']).default('mock'),
   GOOGLE_MAPS_API_KEY: z.string().optional(),
   // Seconds a search result is served from Redis before asking Google again.
   LOCATION_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
+  // "lat,lng" that place search leans towards when the app sends no position
+  // of its own (D-4). Central Hyderabad; an empty value turns the bias off.
+  PLACE_SEARCH_BIAS: z
+    .string()
+    .default('17.3850,78.4867')
+    .refine((v) => v.trim() === '' || /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(v.trim()), 'PLACE_SEARCH_BIAS must be "lat,lng" or empty'),
 
   // Whether the operations console shows the seeded demo data (npm run
   // seed:demo). Production always hides it, whatever this says.
@@ -101,6 +118,12 @@ const EnvSchema = z.object({
 
   // Public base URL of this API, used to build the hosted checkout link.
   PUBLIC_API_URL: z.string().url().default('http://localhost:4000'),
+
+  // Sentry (src/instrument.ts). Empty DSN = off.
+  SENTRY_DSN: z.string().default(''),
+  SENTRY_ENVIRONMENT: z.string().default('local'),
+  SENTRY_RELEASE: z.string().optional(),
+  SENTRY_TRACES_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
 })
 
 export type Env = z.infer<typeof EnvSchema>
@@ -144,8 +167,14 @@ export function productionProblems(e: Env): { errors: string[]; warnings: string
 
   if (e.LIVENESS_PROVIDER === 'mock') warnings.push('LIVENESS_PROVIDER=mock: the pickup selfie is captured but not face-matched')
   if (e.PUSH_PROVIDER === 'console') warnings.push('PUSH_PROVIDER=console: no push notifications are delivered')
+  if (e.PUSH_PROVIDER === 'fcm' && !(e.APNS_KEY_P8 && e.APNS_KEY_ID && e.APNS_TEAM_ID && e.APNS_TOPICS)) {
+    warnings.push('APNS_* not set: no push notifications reach iPhones')
+  } else if (e.PUSH_PROVIDER === 'fcm' && !e.APNS_PRODUCTION) {
+    warnings.push('APNS_PRODUCTION=false: iPhone pushes go to the APNs sandbox, which TestFlight and App Store builds do not use')
+  }
   if (e.VOICE_PROVIDER === 'console') warnings.push('VOICE_PROVIDER=console: Safety Desk calls are logged, not placed')
   if (e.MAPS_PROVIDER === 'mock') warnings.push('MAPS_PROVIDER=mock: place search only knows a few built-in places')
+  if (e.MAPS_PROVIDER === 'photon') warnings.push('MAPS_PROVIDER=photon uses the public fair-use Photon server; use google or a self-hosted Photon for real traffic')
   return { errors, warnings }
 }
 

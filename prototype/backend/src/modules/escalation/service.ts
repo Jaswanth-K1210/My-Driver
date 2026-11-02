@@ -7,6 +7,8 @@ import { getSmsProvider } from '../../providers/sms/index.js'
 import { getHub } from '../../realtime/hub.js'
 import { redis } from '../../redis/client.js'
 import type { Role } from '../auth/otp.js'
+import { opsChanged } from '../../realtime/ops-feed.js'
+import { invalidateTripCache } from '../trips/broadcast.js'
 import {
   assertPromotion,
   AUTO_PROMOTE_AFTER_SECONDS,
@@ -148,6 +150,9 @@ export async function raiseEscalation(input: {
     }
 
     await client.query('COMMIT')
+    // The trip's status may have changed above; drop the gateway's cached copy.
+    await invalidateTripCache(input.tripId).catch(() => undefined)
+    await opsChanged()
     counter(`mydriver_escalation_${escalation.level.toLowerCase()}_total`)
 
     // Side effects run after commit: an SMS cannot be rolled back.
@@ -268,6 +273,7 @@ export async function acknowledgeEscalation(
     }
     await recordEvent(client, id, 'ACKNOWLEDGED', agentId, role, {})
     await client.query('COMMIT')
+    await opsChanged()
 
     // Met or missed, the SLA outcome is recorded at the moment of contact.
     const met = escalation.sla_deadline
@@ -317,6 +323,9 @@ export async function promoteEscalation(
       )
     }
     await client.query('COMMIT')
+    // The trip's status may have changed above; drop the gateway's cached copy.
+    await invalidateTripCache(escalation.trip_id).catch(() => undefined)
+    await opsChanged()
 
     await announce(escalation).catch(() => undefined)
     await notifyGuardians(escalation).catch(() => undefined)
@@ -353,11 +362,23 @@ export async function resolveEscalation(
     await recordEvent(client, id, 'RESOLVED', agentId, role, { resolution })
 
     // A resolved incident releases the trip back to IN_TRIP if it is still running.
-    await client.query(
+    const released = await client.query(
       `UPDATE trips SET status = 'IN_TRIP' WHERE id = $1 AND status = 'ESCALATED'`,
       [escalation.trip_id],
     )
     await client.query('COMMIT')
+    // The trip's status may have changed above; drop the gateway's cached copy.
+    await invalidateTripCache(escalation.trip_id).catch(() => undefined)
+    await opsChanged()
+    // Both apps are still showing ESCALATED. Not broadcastStateChange(): that
+    // would push "Trip started" to the customer.
+    if (released.rowCount) {
+      await getHub()
+        .publish(escalation.trip_id, {
+          type: 'TRIP_STATE_CHANGED', trip_id: escalation.trip_id, status: 'IN_TRIP',
+        })
+        .catch(() => undefined)
+    }
     return escalation
   } catch (err) {
     await client.query('ROLLBACK')

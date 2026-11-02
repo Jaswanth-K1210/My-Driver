@@ -1,6 +1,6 @@
 import fastifyCors from '@fastify/cors'
 import fastifyJwt from '@fastify/jwt'
-import Fastify, { type FastifyInstance } from 'fastify'
+import Fastify, { type FastifyInstance, type RouteOptions } from 'fastify'
 import {
   serializerCompiler,
   validatorCompiler,
@@ -14,6 +14,7 @@ import { registerAdminOpsRoutes } from './modules/admin-ops/routes.js'
 import { registerAdminSupportRoutes } from './modules/admin-support/routes.js'
 import { registerAuthRoutes } from './modules/auth/routes.js'
 import { registerCatalogueRoutes } from './modules/catalogue/routes.js'
+import { registerDriverAppRoutes } from './modules/driver-app/routes.js'
 import { registerKycRoutes } from './modules/kyc/routes.js'
 import { registerLocationRoutes } from './modules/locations/routes.js'
 import { registerTelemetryRoutes } from './modules/trips/telemetry-routes.js'
@@ -35,7 +36,7 @@ export const setReady = (value: boolean): void => {
   ready = value
 }
 
-export async function buildApp(): Promise<FastifyInstance> {
+export async function buildApp(opts: { onRoute?: (route: RouteOptions) => void } = {}): Promise<FastifyInstance> {
   const app = Fastify({
     logger: {
       level: env.NODE_ENV === 'test' ? 'silent' : env.LOG_LEVEL,
@@ -64,6 +65,7 @@ export async function buildApp(): Promise<FastifyInstance> {
     // Trust the proxy so rate limiting sees the real client IP behind a load balancer.
     trustProxy: true,
   }).withTypeProvider<ZodTypeProvider>()
+  if (opts.onRoute) app.addHook('onRoute', opts.onRoute)
 
   app.setValidatorCompiler(validatorCompiler)
   app.setSerializerCompiler(serializerCompiler)
@@ -125,6 +127,7 @@ export async function buildApp(): Promise<FastifyInstance> {
   registerCatalogueRoutes(app)
   registerLocationRoutes(app)
   registerTelemetryRoutes(app)
+  registerDriverAppRoutes(app)
 
   // "Is this process alive" — for the container runtime.
   app.get('/health', async () => ({ status: 'ok', service: 'mydriver-backend' }))

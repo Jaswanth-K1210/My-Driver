@@ -11,7 +11,7 @@ const VARIANTS = {
   outline: { bg: colors.surface, fg: colors.red, border: colors.red },
   subtle: { bg: colors.surfaceAlt, fg: colors.text, border: colors.border },
   ghost: { bg: 'transparent', fg: colors.textMuted, border: 'transparent' },
-  disabled: { bg: colors.surfaceSunken, fg: colors.textFaint, border: colors.border },
+  disabled: { bg: colors.surfaceSunken, fg: colors.textMuted, border: colors.border },
 }
 
 export default function Button({

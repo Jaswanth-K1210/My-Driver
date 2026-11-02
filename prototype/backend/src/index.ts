@@ -6,6 +6,7 @@ import { startEscalationSweeper } from './modules/escalation/sweeper.js'
 import { getIntegrityEngine } from './modules/integrity/engine.js'
 import { startSweeper } from './modules/trips/sweeper.js'
 import { getHub } from './realtime/hub.js'
+import { startOpsFeed } from './realtime/ops-feed.js'
 import { closeRedis } from './redis/client.js'
 import { getTelemetryWriter } from './telemetry/batch-writer.js'
 
@@ -18,6 +19,7 @@ const integrity = getIntegrityEngine()
 integrity.start()
 const stopEscalationSweeper = startEscalationSweeper()
 const stopQualificationSweeper = startQualificationSweeper()
+const stopOpsFeed = startOpsFeed()
 
 let shuttingDown = false
 
@@ -34,6 +36,7 @@ async function shutdown(signal: string): Promise<void> {
     stopSweeper()
     stopEscalationSweeper()
     stopQualificationSweeper()
+    stopOpsFeed()
     integrity.stop()
     // 2. Stop accepting connections and let in-flight requests finish.
     await app.close()

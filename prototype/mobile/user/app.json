@@ -2,23 +2,54 @@
   "expo": {
     "name": "MyDriver",
     "slug": "mydriver-user",
+    "scheme": "mydriver",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FFFFFF",
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.mydriver.user"
+      "supportsTablet": false,
+      "bundleIdentifier": "com.mydriver.user",
+      "infoPlist": {
+        "UIBackgroundModes": ["remote-notification"],
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.mydriver.user",
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/adaptive-icon-monochrome.png",
         "backgroundColor": "#FFFFFF"
-      }
+      },
+      "permissions": ["POST_NOTIFICATIONS", "VIBRATE", "ACCESS_COARSE_LOCATION", "ACCESS_FINE_LOCATION"]
     },
     "plugins": [
       "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "MyDriver uses your location to fill in your pickup when you book. During a trip it compares your location with your driver's, so the Safety Desk can step in if the car goes somewhere you are not. Location is only shared while you book or a trip is in progress."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#E01E26",
+          "defaultChannel": "trips"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
+      ],
       "expo-status-bar",
       "expo-web-browser"
     ]

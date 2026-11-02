@@ -5,9 +5,11 @@ import { Activity, Flag, Gauge, Siren, Square } from 'lucide-react-native'
 import Button from '../../components/Button'
 import Card from '../../components/Card'
 import { useToast } from '../../components/Toast'
-import * as Location from 'expo-location'
 import { DeviceMotion } from 'expo-sensors'
+import TripMap from '../../components/TripMap'
 import { useDriver } from '../../context/DriverContext'
+import { tripStartedAt } from '../../lib/telemetry'
+import { onFix, setSensorSource } from '../../lib/tracking'
 import { colors, radius, space, type } from '../../theme/tokens'
 
 const BRAKE_THRESHOLD = 0.4
@@ -63,24 +65,34 @@ function GForceBar({ label, value, threshold, max }) {
 
 export default function DriveActiveScreen({ request, onComplete }) {
   const { toast } = useToast()
-  const { sendTelemetry, sendSos } = useDriver()
+  const { sendSos, tracking, queued, connection } = useDriver()
   const [finishing, setFinishing] = useState(false)
   const [speed, setSpeed] = useState(0)
   const [brakeG, setBrakeG] = useState(0)
   const [swerveG, setSwerveG] = useState(0)
   const [events, setEvents] = useState([])
   const [elapsed, setElapsed] = useState(0)
-  const [gpsDenied, setGpsDenied] = useState(false)
   const lastEventRef = useRef(0)
   const maxSpeedRef = useRef(0)
   // Latest sensor sample, read by the GPS callback so each telemetry frame
   // carries the g-force at the moment of the fix.
   const motionRef = useRef({ brake: 0, swerve: 0 })
+  // Strongest reading since the last GPS fix. A fix is once a second and the
+  // sensor five times, so sampling only the latest would miss most hard stops.
+  const peakRef = useRef({ brake: 0, swerve: 0 })
 
+  // Counted from when the server started the trip, falling back to when
+  // tracking began on this phone: the driver can come back from the drop-off
+  // inspection or reopen the app, even with its storage cleared.
+  const serverStart = request?.startedAt ?? null
   useEffect(() => {
-    const tick = setInterval(() => setElapsed((s) => s + 1), 1000)
+    const mountedAt = Date.now()
+    const update = () =>
+      setElapsed(Math.max(0, Math.round((Date.now() - (serverStart ?? tripStartedAt() ?? mountedAt)) / 1000)))
+    update()
+    const tick = setInterval(update, 1000)
     return () => clearInterval(tick)
-  }, [])
+  }, [serverStart])
 
   // Motion: DeviceMotion reports acceleration with gravity already removed.
   // ponytail: assumes a portrait dash mount (y = forward, x = lateral); add a
@@ -96,6 +108,10 @@ export default function DriveActiveScreen({ request, onComplete }) {
         const brake = Math.abs(acceleration.y ?? 0) / 9.81
         const swerve = Math.abs(acceleration.x ?? 0) / 9.81
         motionRef.current = { brake, swerve }
+        peakRef.current = {
+          brake: Math.max(peakRef.current.brake, brake),
+          swerve: Math.max(peakRef.current.swerve, swerve),
+        }
         setBrakeG(brake)
         setSwerveG(swerve)
 
@@ -116,40 +132,27 @@ export default function DriveActiveScreen({ request, onComplete }) {
     }
   }, [toast])
 
-  // Position and speed from the device GPS. The server caps ingest at one
-  // frame per second, so the watcher asks for no more than that.
+  // Fixes come from lib/tracking.js, which keeps running with the screen
+  // off. This screen only reads the speed and lends its g-force sample.
   useEffect(() => {
-    let sub
-    let cancelled = false
-    ;(async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync()
-      if (cancelled) return
-      if (status !== 'granted') {
-        setGpsDenied(true)
-        return
-      }
-      sub = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.BestForNavigation, timeInterval: 1000, distanceInterval: 0 },
-        ({ coords }) => {
-          const kmh = Math.max(0, Math.round((coords.speed ?? 0) * 3.6))
-          setSpeed(kmh)
-          maxSpeedRef.current = Math.max(maxSpeedRef.current, kmh)
-          sendTelemetry(
-            { lat: coords.latitude, lng: coords.longitude, speed: kmh, heading: coords.heading ?? 0 },
-            {
-              accel_z: Number(motionRef.current.brake.toFixed(3)),
-              gyro_z: Number(motionRef.current.swerve.toFixed(3)),
-            },
-          )
-        },
-      )
-      if (cancelled) sub.remove()
-    })()
+    // Stored as accel_z / gyro_z (the wire and column names): accel_z is the
+    // peak forward (braking) g and gyro_z the peak sideways (swerve) g since
+    // the previous fix, both from the accelerometer.
+    setSensorSource(() => {
+      const peak = peakRef.current
+      peakRef.current = { ...motionRef.current }
+      return { accel_z: Number(peak.brake.toFixed(3)), gyro_z: Number(peak.swerve.toFixed(3)) }
+    })
+    const off = onFix(({ coords }) => {
+      if (coords.speed == null) return
+      setSpeed(coords.speed)
+      maxSpeedRef.current = Math.max(maxSpeedRef.current, coords.speed)
+    })
     return () => {
-      cancelled = true
-      sub?.remove()
+      off()
+      setSensorSource(null)
     }
-  }, [sendTelemetry])
+  }, [])
 
   const raiseSos = async () => {
     try {
@@ -182,7 +185,36 @@ export default function DriveActiveScreen({ request, onComplete }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: space.lg, gap: space.md }}
       >
-        {gpsDenied && (
+        {request.status === 'ESCALATED' && (
+          <Card tone="alert">
+            <Text style={{ ...type.bodyBold, color: colors.redPressed }}>Safety Desk alerted</Text>
+            <Text style={{ ...type.tiny, color: colors.redPressed, marginTop: 4 }}>
+              An agent is following this trip. Keep driving safely and answer their call.
+            </Text>
+          </Card>
+        )}
+        {tracking === 'foreground' && (
+          <Card tone="sunken">
+            <Text style={{ ...type.bodyBold, color: colors.text }}>Keep this screen open</Text>
+            <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 4 }}>
+              Background location is not allowed, so tracking stops if you leave the app. Set location to
+              "Allow all the time" in Settings.
+            </Text>
+          </Card>
+        )}
+        {(queued > 0 || connection !== 'open') && tracking !== 'denied' && (
+          <Card tone="sunken">
+            <Text style={{ ...type.bodyBold, color: colors.text }}>
+              {connection === 'open' ? 'Sending saved locations' : 'No connection'}
+            </Text>
+            <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 4 }}>
+              {queued > 0
+                ? `${queued} location${queued === 1 ? '' : 's'} saved on this phone. They are sent when the network returns.`
+                : 'Your route is being saved on this phone until the network returns.'}
+            </Text>
+          </Card>
+        )}
+        {tracking === 'denied' && (
           <Card tone="alert">
             <Text style={{ ...type.bodyBold, color: colors.redPressed }}>Location is off</Text>
             <Text style={{ ...type.tiny, color: colors.redPressed, marginTop: 4 }}>
@@ -190,6 +222,12 @@ export default function DriveActiveScreen({ request, onComplete }) {
             </Text>
           </Card>
         )}
+        <TripMap
+          destination={request.dropCoords}
+          destinationLabel={request.drop}
+          title="Drop"
+        />
+
         <Card style={{ alignItems: 'center', padding: space.xl }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Gauge size={12} color={colors.textMuted} />

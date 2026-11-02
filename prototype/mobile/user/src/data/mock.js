@@ -94,7 +94,6 @@ export const DROPS = [
 ]
 
 export const HOUR_PACKAGES = [
-  { id: 'h1', hours: 1, includedKm: 10, label: '1 hour' },
   { id: 'h2', hours: 2, includedKm: 20, label: '2 hours' },
   { id: 'h4', hours: 4, includedKm: 40, label: '4 hours' },
   { id: 'h8', hours: 8, includedKm: 80, label: '8 hours' },
@@ -102,14 +101,6 @@ export const HOUR_PACKAGES = [
 ]
 
 export const PICKUP_TIMES = ['Now', 'In 30 min', 'In 1 hour', 'Schedule later']
-
-export const SKILLS = [
-  { id: 'MD-Standard', label: 'Standard', rate: 16, hourlyRate: 240, eta: '3 min away', tagline: 'Everyday certified', description: 'Background-verified professional drivers for daily commutes, school runs and errands.' },
-  { id: 'MD-Auto', label: 'Auto Spec.', rate: 18, hourlyRate: 260, eta: '2 min away', tagline: 'Automatic Expert', description: 'Specialized in automatic transmission, dual-clutch, and hybrid/EV vehicle dynamics.' },
-  { id: 'MD-SUV', label: 'SUV Pro', rate: 22, hourlyRate: 330, eta: '6 min away', tagline: 'Large SUVs & 4x4', description: 'Certified for 6/7-seater SUVs, hill driving, heavy traffic, and highway dynamics.' },
-  { id: 'MD-Lux', label: 'Lux Chauffeur', rate: 35, hourlyRate: 520, eta: '8 min away', tagline: 'Executive class', description: 'Hospitality-trained executive chauffeurs for luxury sedans (Mercedes, BMW, Audi).' },
-  { id: 'MD-Night', label: 'Highway & Night', rate: 19, hourlyRate: 280, eta: '4 min away', tagline: 'Outstation & Night', description: 'Night and long-distance highway specialists with 24x7 Safety Desk live monitoring.' },
-]
 
 export const VISION_MODES = [
   { id: 'R', name: 'Road', desc: 'Road & traffic recording' },

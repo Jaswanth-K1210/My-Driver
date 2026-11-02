@@ -30,6 +30,8 @@ import {
   revokeBadge,
   revokeNightShield,
   reviewDocument,
+  schedulePracticalTest,
+  setDriverGender,
   setOnboardingStatus,
   shiftChecks,
   unsettled,
@@ -95,6 +97,16 @@ export function registerAdminOpsRoutes(app: FastifyInstance): void {
         request.auth!.role,
         request.body.note,
       ),
+  )
+
+  r.patch(
+    '/v1/admin/drivers/:id/gender',
+    {
+      onRequest: [requireAuth, requireRole(...OPS)],
+      schema: { params: Uuid, body: z.object({ gender: z.enum(['FEMALE', 'MALE', 'OTHER']).nullable() }).strict() },
+    },
+    async (request) =>
+      setDriverGender(request.params.id, request.body.gender, request.auth!.userId, request.auth!.role),
   )
 
   /* ── Documents ─────────────────────────────────────────────────────── */
@@ -165,6 +177,25 @@ export function registerAdminOpsRoutes(app: FastifyInstance): void {
         request.auth!.userId,
         request.auth!.role,
         request.body.notes,
+      ),
+  )
+
+  r.post(
+    '/v1/admin/drivers/:id/practical',
+    {
+      onRequest: [requireAuth, requireRole(...OPS)],
+      schema: {
+        params: Uuid,
+        body: z.object({ code: z.string().min(1).max(64), scheduled_at: z.coerce.date() }).strict(),
+      },
+    },
+    async (request) =>
+      schedulePracticalTest(
+        request.params.id,
+        request.body.code,
+        request.body.scheduled_at,
+        request.auth!.userId,
+        request.auth!.role,
       ),
   )
 

@@ -1,29 +1,33 @@
 /**
  * HomeScreen — the complete booking UI for the MyDriver user app.
  *
- * Steps (in scroll order):
- *   1. What do you need?          — RequirementTabs
- *   2. Your Vehicle               — CarDetailsForm (saved garage + new vehicle)
- *   3. Trip Details               — WithinCityForm / InterCityForm / AirportForm / FullTimeForm
- *   4. Driver Certification       — SkillPicker (full cards with recommended badge)
- *   5. Speed Ceiling              — Slider 40–120 km/h
- *   6. Price Estimate             — Live quote breakdown
+ * Sections (in scroll order):
+ *   What do you need?   — RequirementTabs
+ *   Your vehicle        — CarDetailsForm (saved garage + another car)
+ *   Trip details        — WithinCityForm / InterCityForm / AirportForm / FullTimeForm
+ *   Your driver         — the tier the server picks from the car
+ *   Safety              — speed limit, guardians, female driver;
+ *                         asked once, then pre-filled from /v1/me
+ *   When                — standard or urgent (urgent fee from trip-config)
+ *   Price estimate      — server total, with the line breakdown on demand
  *
- * Sticky CTA: "Find [Skill] Driver" — disabled until quote.ready
+ * Sticky bar: estimated total + "Find [Tier] Driver" — disabled until quote.ready
  */
-import { ScrollView, Text, View } from 'react-native'
+import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Slider from '@react-native-community/slider'
-import { Gauge, Search } from 'lucide-react-native'
+import { ChevronDown, ChevronUp, Clock, Gauge, Search, UserCheck, Zap } from 'lucide-react-native'
 import { useTrip } from '../../context/TripContext'
 import { useAuth } from '../../context/AuthContext'
 import { useEffect, useState } from 'react'
-import { quoteFor, serverQuote } from '../../lib/booking'
+import { bookingPayloadFor, quoteFor, serverQuote } from '../../lib/booking'
 import { api } from '../../lib/apiClient'
+import { requirementEnabled } from '../../lib/features'
 import { clamp, formatINR } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 import Button from '../../components/Button'
-import Card from '../../components/Card'
+import { Panel } from '../../components/Form'
+import Toggle from '../../components/Toggle'
 
 import RequirementTabs from './components/RequirementTabs'
 import CarDetailsForm from './components/CarDetailsForm'
@@ -31,30 +35,26 @@ import WithinCityForm from './components/WithinCityForm'
 import InterCityForm from './components/InterCityForm'
 import AirportForm from './components/AirportForm'
 import FullTimeForm from './components/FullTimeForm'
-import SkillPicker from './components/SkillPicker'
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
-function SectionHeader({ step, children }) {
+const TRIP_TITLES = {
+  within_city: 'Route & duration',
+  inter_city: 'Outstation trip',
+  airport: 'Airport transfer',
+  full_time: 'Contract details',
+}
+
+function Section({ title, hint, children }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginBottom: space.sm }}>
-      {step != null && (
-        <View
-          style={{
-            width: 22,
-            height: 22,
-            borderRadius: radius.pill,
-            backgroundColor: colors.graphite,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Text style={{ ...type.micro, color: '#fff' }}>{step}</Text>
-        </View>
-      )}
-      <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.6 }}>
-        {String(children).toUpperCase()}
-      </Text>
+    <View style={{ gap: space.md }}>
+      <View style={{ gap: 2 }}>
+        <Text accessibilityRole="header" style={{ ...type.title, color: colors.text }}>
+          {title}
+        </Text>
+        {hint ? <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 17 }}>{hint}</Text> : null}
+      </View>
+      {children}
     </View>
   )
 }
@@ -62,237 +62,463 @@ function SectionHeader({ step, children }) {
 /* ── Main Component ──────────────────────────────────────────────────────── */
 
 export default function HomeScreen({ config, onChange, onFindDriver }) {
-  const { skills } = useTrip()
-  const { user } = useAuth()
+  const { skills, skillsStatus, reloadSkills } = useTrip()
+  const { user, refreshMe } = useAuth()
+  const safety = user?.safety
+  const firstTime = safety ? !safety.set : false
+  const [saving, setSaving] = useState(false)
 
+  // Saved defaults pre-fill every booking; changing them here is for this
+  // trip only (the Profile screen changes the defaults).
+  useEffect(() => {
+    if (!safety?.set) return
+    onChange({
+      ...config,
+      ceiling: safety.speed_limit_kmh,
+      shareWithGuardians: safety.share_with_guardians,
+      preferFemaleDriver: safety.prefer_female_driver,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [safety?.set])
+
+  // The price shown, and held at checkout, is the server's. The local quote
+  // only supplies the words (route, trip type, duration) and tells us the
+  // form is complete enough to ask for a price.
   const [server, setServer] = useState(null)
+  const [priceStatus, setPriceStatus] = useState('idle') // 'idle' | 'loading' | 'ready' | 'error' | 'outside'
+  const [quoteError, setQuoteError] = useState(null)
+  const [priceAttempt, setPriceAttempt] = useState(0)
+  const [showFare, setShowFare] = useState(false)
 
-  const platformFee = server ? server.fare.platform_fee : 19
-  const baseNightFee = server ? (server.fare.night_fee > 0 ? server.fare.night_fee : 30) : 30
-  const local = quoteFor(config, skills, { platformFee, nightFee: baseNightFee })
-  const quote = local
+  // The urgent fee and driver ETAs are server settings, as on the website.
+  const [tripConfig, setTripConfig] = useState(null)
+  useEffect(() => {
+    api.catalogue.tripConfig().then(setTripConfig).catch(() => undefined)
+  }, [])
+  const eta = tripConfig?.driver_eta_minutes ?? { normal: 30, urgent: { min: 5, max: 10 } }
+  // Shown only when the server sends it; an older backend has no urgent fee.
+  const urgentFee = Number.isFinite(tripConfig?.fees?.urgent_fee) ? tripConfig.fees.urgent_fee : null
+
+  const local = quoteFor(config, skills)
 
   useEffect(() => {
     if (!local.ready) {
       setServer(null)
+      setPriceStatus('idle')
       return undefined
     }
     let cancelled = false
+    setPriceStatus('loading')
     const timer = setTimeout(() => {
-      serverQuote(api, config, skills)
+      serverQuote(api, config)
         .then((q) => {
-          if (!cancelled && q) setServer(q)
+          if (cancelled) return
+          // serverQuote resolves to null when the request failed. A price from
+          // an earlier form state must not stay on screen as if it were current.
+          setQuoteError(null)
+          setServer(q)
+          setPriceStatus(q ? 'ready' : 'error')
         })
-        .catch(() => {
-          if (!cancelled) setServer(null)
+        .catch((err) => {
+          // Only a trip the server refuses outright is thrown (OUTSIDE_CITY).
+          if (cancelled) return
+          setServer(null)
+          setQuoteError(err)
+          setPriceStatus('outside')
         })
     }, 250)
     return () => {
       cancelled = true
       clearTimeout(timer)
     }
-  }, [config, skills, local.ready])
+  }, [config, skills, local.ready, priceAttempt])
+
+  const priced = priceStatus === 'ready' && server
+  const billedHoursText =
+    priced && server.fare.billed_hours != null ? `${server.fare.billed_hours} h booked, charged by time` : null
+  // The server picks the tier from the car and the hour; show what it chose.
+  const tier = priced
+    ? { label: server.tier_label, ...skills.find((s) => s.id === server.required_certification) }
+    : null
+  const quote = {
+    skill: tier,
+    ready: Boolean(priced),
+    total: priced ? server.fare.total : 0,
+    lines: [
+      // Words only from the local quote: its rupee figures are not the server's.
+      ...local.lines.filter((l) => !String(l.value).includes('₹') && !/distance/i.test(l.label)),
+      ...(priced
+        ? [
+            ...(server.distance_km > 0 ? [{ label: 'Distance', value: `${server.distance_km.toFixed(1)} km` }] : []),
+            {
+              label: `${server.tier_label} fare`,
+              value: formatINR(server.fare.base - (server.fare.stops_fee ?? 0)),
+              // Within city: the server charged the hours booked, not the distance.
+              hint: billedHoursText,
+            },
+            ...(server.fare.stops_fee > 0 ? [{ label: 'Stops', value: formatINR(server.fare.stops_fee) }] : []),
+            { label: 'Platform fee', value: formatINR(server.fare.platform_fee) },
+            ...(server.fare.night_fee > 0 ? [{ label: 'Night fee (10 pm – 5 am)', value: formatINR(server.fare.night_fee) }] : []),
+            ...(server.fare.urgent_fee > 0
+              ? [{ label: `Urgent (driver in ${eta.urgent.min}–${eta.urgent.max} min)`, value: formatINR(server.fare.urgent_fee) }]
+              : []),
+          ]
+        : []),
+    ],
+  }
+
+  // First booking: the choices made here become the saved defaults.
+  const findDriver = async () => {
+    if (config.tripType === 'two_way') {
+      const payload = bookingPayloadFor(config)
+      if (!payload.return_drop) {
+        Alert.alert(
+          'Return Drop Required',
+          'Please select a valid final return destination for your round trip.',
+        )
+        return
+      }
+    }
+
+    if (firstTime) {
+      setSaving(true)
+      try {
+        await api.me.update({
+          safety: {
+            speed_limit_kmh: config.ceiling,
+            share_with_guardians: Boolean(config.shareWithGuardians),
+            prefer_female_driver: Boolean(config.preferFemaleDriver),
+          },
+        })
+      } catch {
+        // Not saving the defaults must not block the ride; we ask again next time.
+      }
+      try {
+        await refreshMe()
+      } catch {
+        // Refresh failure must not block booking.
+      } finally {
+        setSaving(false)
+      }
+    }
+    onFindDriver(config)
+  }
 
   const hour = new Date().getHours()
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  const firstName = (user?.full_name ?? '').trim().split(/\s+/)[0]
+  const initials = (user?.full_name ?? 'MD')
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
+  const totalText =
+    priceStatus === 'loading' ? null : quote.ready ? formatINR(quote.total) : '--'
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
-
-      {/* ── App Bar ── */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
+      {/* ── Scrollable Content ── */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
           paddingHorizontal: space.xl,
-          paddingBottom: space.md,
+          paddingTop: space.lg,
+          paddingBottom: space.xxxl,
+          gap: space.xxxl,
         }}
       >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+        {/* ── Greeting ── */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>
+              {greeting}
+              {firstName ? `, ${firstName}` : ''}
+            </Text>
+            <Text accessibilityRole="header" style={{ ...type.headline, color: colors.text, marginTop: 2 }}>
+              Book a driver
+            </Text>
+          </View>
           <View
             style={{
-              width: 40,
-              height: 40,
+              width: 44,
+              height: 44,
               borderRadius: radius.pill,
               backgroundColor: colors.brandSoft,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Text style={{ ...type.bodyBold, color: colors.brand }}>{(user?.full_name ?? 'MD').split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase()}</Text>
-          </View>
-          <View>
-            <Text style={{ ...type.tiny, color: colors.textMuted }}>{greeting}</Text>
-            <Text style={{ ...type.body, color: colors.text }}>{user?.full_name ?? 'MyDriver rider'}</Text>
+            <Text style={{ ...type.bodyBold, color: colors.brand }}>{initials}</Text>
           </View>
         </View>
-      </View>
 
-      {/* ── Scrollable Content ── */}
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: space.xxl, gap: space.xl }}
-      >
-        {/* ── Step 1: Requirement ── */}
-        <View>
-          <View style={{ paddingHorizontal: space.xl }}>
-            <SectionHeader step={1}>What do you need?</SectionHeader>
-          </View>
+        <Section title="What do you need?">
           <RequirementTabs
             selectedId={config.requirement}
             onChange={(r) => onChange({ ...config, requirement: r })}
           />
-        </View>
+        </Section>
 
-        <View style={{ paddingHorizontal: space.xl, gap: space.xl }}>
-          {/* ── Step 2: Vehicle ── */}
-          <View>
-            <SectionHeader step={2}>Your Vehicle</SectionHeader>
-            <CarDetailsForm config={config} onChange={onChange} />
-          </View>
+        <Section title="Your vehicle">
+          <CarDetailsForm config={config} onChange={onChange} />
+        </Section>
 
-          {/* ── Step 3: Trip Details ── */}
-          <View>
-            <SectionHeader step={3}>
-              {config.requirement === 'within_city'
-                ? 'Route & Duration'
-                : config.requirement === 'inter_city'
-                ? 'Outstation Route & Duration'
-                : config.requirement === 'airport'
-                ? 'Airport Transfer Details'
-                : 'Full-Time Contract Details'}
-            </SectionHeader>
-            {config.requirement === 'within_city' && (
-              <WithinCityForm config={config} onChange={onChange} />
-            )}
-            {config.requirement === 'inter_city' && (
-              <InterCityForm config={config} onChange={onChange} />
-            )}
-            {config.requirement === 'airport' && (
-              <AirportForm config={config} onChange={onChange} />
-            )}
-            {config.requirement === 'full_time' && (
-              <FullTimeForm config={config} onChange={onChange} />
-            )}
-          </View>
+        <Section title={TRIP_TITLES[config.requirement] ?? TRIP_TITLES.within_city}>
+          {config.requirement === 'within_city' && (
+            <WithinCityForm config={config} onChange={onChange} />
+          )}
+          {config.requirement === 'inter_city' && (
+            <InterCityForm config={config} onChange={onChange} />
+          )}
+          {config.requirement === 'airport' && (
+            <AirportForm config={config} onChange={onChange} />
+          )}
+          {config.requirement === 'full_time' && requirementEnabled('full_time') && (
+            <FullTimeForm config={config} onChange={onChange} />
+          )}
+        </Section>
 
-          {/* ── Step 4: Driver Certification ── */}
-          <View>
-            <SectionHeader step={4}>Driver Certification</SectionHeader>
-            <SkillPicker
-              config={config}
-              onChange={onChange}
-            />
-          </View>
-
-          {/* ── Step 5: Speed Ceiling ── */}
-          <Card>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: space.sm,
-              }}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Gauge size={14} color={colors.textMuted} />
-                <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5 }}>
-                  SPEED CEILING
+        {/* ── Your driver (picked by the server) ── */}
+        <Section title="Your driver" hint="Matched to your car and the time of the trip.">
+          <Panel style={{ gap: space.sm }}>
+            {skillsStatus === 'error' && !skills.length ? (
+              <>
+                <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>
+                  Could not load driver tiers. Check your connection.
                 </Text>
-              </View>
-              <View
-                style={{
-                  backgroundColor: colors.brandSoft,
-                  borderRadius: radius.sm,
-                  paddingHorizontal: 10,
-                  paddingVertical: 4,
-                }}
-              >
-                <Text style={{ ...type.caption, color: colors.brand, fontWeight: '900' }}>
-                  {config.ceiling} km/h
-                </Text>
-              </View>
-            </View>
-            <Slider
-              minimumValue={40}
-              maximumValue={120}
-              step={5}
-              value={config.ceiling}
-              onValueChange={(v) => onChange({ ...config, ceiling: clamp(Math.round(v), 40, 120) })}
-              minimumTrackTintColor={colors.brand}
-              maximumTrackTintColor={colors.surfaceSunken}
-              thumbTintColor={colors.brand}
-            />
-            <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 4 }}>
-              Breaches alert you, your guardians and the Safety Desk instantly.
-            </Text>
-          </Card>
-
-          {/* ── Step 6: Price Estimate ── */}
-          <Card>
-            <Text style={{ ...type.micro, color: colors.textMuted, letterSpacing: 0.5, marginBottom: space.md }}>
-              PRICE ESTIMATE
-            </Text>
-            <View style={{ gap: space.sm }}>
-              {quote.lines.map((line) => (
+                <Button label="Try again" variant="subtle" onPress={reloadSkills} />
+              </>
+            ) : tier ? (
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>
                 <View
-                  key={line.label}
-                  style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space.md }}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: radius.md,
+                    backgroundColor: colors.surfaceAlt,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
                 >
-                  <Text style={{ ...type.caption, color: colors.textMuted, flex: 1 }}>
-                    {line.label}
-                  </Text>
-                  <Text
-                    style={{
-                      ...type.caption,
-                      color: colors.text,
-                      fontWeight: '700',
-                      textAlign: 'right',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {line.value}
-                  </Text>
+                  <UserCheck size={18} color={colors.text} />
                 </View>
-              ))}
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  borderTopWidth: 1,
-                  borderTopColor: colors.border,
-                  marginTop: space.sm,
-                  paddingTop: space.sm,
-                }}
-              >
-                <Text style={{ ...type.bodyBold, color: colors.text }}>Estimated total</Text>
-                <Text style={{ ...type.bodyBold, color: colors.brand }}>
-                  {quote.ready ? formatINR(quote.total) : '--'}
-                </Text>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ ...type.bodyBold, color: colors.text }}>{tier.label}</Text>
+                  {tier.description ? (
+                    <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 17 }}>{tier.description}</Text>
+                  ) : null}
+                </View>
+              </View>
+            ) : (
+              <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>
+                We pick the right certified driver for your car once the trip details are in.
+              </Text>
+            )}
+          </Panel>
+        </Section>
+
+        {/* ── Safety ── */}
+        <Section
+          title={firstTime ? 'Set your safety preferences' : 'Safety'}
+          hint={
+            firstTime
+              ? 'We ask once. Your choices are saved for every trip, and you can change them in Profile.'
+              : 'Going over the speed limit alerts you, your guardians and the Safety Desk.'
+          }
+        >
+          <Panel style={{ gap: space.md }}>
+            <View style={{ gap: space.sm }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                  <Gauge size={18} color={colors.textMuted} />
+                  <Text style={{ ...type.body, color: colors.text }}>Speed limit</Text>
+                </View>
+                <Text style={{ ...type.bodyBold, color: colors.brand }}>{config.ceiling} km/h</Text>
+              </View>
+              <Slider
+                minimumValue={40}
+                maximumValue={120}
+                step={5}
+                value={config.ceiling}
+                onValueChange={(v) => onChange({ ...config, ceiling: clamp(Math.round(v), 40, 120) })}
+                accessibilityLabel="Speed limit for this trip"
+                accessibilityValue={{ min: 40, max: 120, now: config.ceiling, text: `${config.ceiling} kilometres per hour` }}
+                minimumTrackTintColor={colors.brand}
+                maximumTrackTintColor={colors.surfaceSunken}
+                thumbTintColor={colors.brand}
+              />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                <Text style={{ ...type.tiny, color: colors.textMuted }}>40 km/h</Text>
+                <Text style={{ ...type.tiny, color: colors.textMuted }}>120 km/h</Text>
               </View>
             </View>
-          </Card>
-        </View>
+            <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: space.sm }}>
+              <Toggle
+                label="Share the trip with my guardians"
+                checked={Boolean(config.shareWithGuardians)}
+                onChange={(v) => onChange({ ...config, shareWithGuardians: v })}
+              />
+              <Toggle
+                label="Prefer a female driver"
+                checked={Boolean(config.preferFemaleDriver)}
+                onChange={(v) => onChange({ ...config, preferFemaleDriver: v })}
+              />
+            </View>
+          </Panel>
+        </Section>
+
+        {/* ── When (standard or urgent, priced by the server) ── */}
+        <Section title="When do you need the driver?">
+          <View style={{ flexDirection: 'row', gap: space.md }}>
+            {[
+              { urgent: false, icon: Clock, title: 'Standard', hint: `Driver assigned within ${eta.normal} min` },
+              {
+                urgent: true,
+                icon: Zap,
+                title: 'Urgent',
+                hint: `Driver in ${eta.urgent.min}–${eta.urgent.max} min${urgentFee != null ? ` · +${formatINR(urgentFee)}` : ''}`,
+              },
+            ].map((o) => {
+              const selected = Boolean(config.urgent) === o.urgent
+              const Icon = o.icon
+              return (
+                <Pressable
+                  key={o.title}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${o.title}: ${o.hint}`}
+                  onPress={() => onChange({ ...config, urgent: o.urgent })}
+                  style={{
+                    flex: 1,
+                    gap: 4,
+                    borderRadius: radius.lg,
+                    borderWidth: selected ? 1.5 : 1,
+                    borderColor: selected ? colors.red : colors.border,
+                    backgroundColor: selected ? colors.redSofter : colors.surface,
+                    paddingHorizontal: space.md,
+                    paddingVertical: 14,
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Icon size={16} color={colors.brand} />
+                    <Text style={{ ...type.bodyBold, color: colors.text }}>{o.title}</Text>
+                  </View>
+                  <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 16 }}>{o.hint}</Text>
+                </Pressable>
+              )
+            })}
+          </View>
+        </Section>
+
+        {/* ── Price estimate ── */}
+        <Section title="Price estimate">
+          <Panel style={{ gap: space.md }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={showFare ? 'Hide price details' : 'Show price details'}
+              accessibilityState={{ expanded: showFare }}
+              onPress={() => setShowFare((v) => !v)}
+              style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.md }}
+            >
+              <View style={{ flex: 1 }}>
+                {totalText === null ? (
+                  <ActivityIndicator
+                    color={colors.brand}
+                    accessibilityLabel="Getting your price"
+                    style={{ alignSelf: 'flex-start', height: 22 }}
+                  />
+                ) : (
+                  <Text style={{ ...type.title, color: colors.text }}>{totalText}</Text>
+                )}
+                <Text style={{ ...type.tiny, color: colors.textMuted, marginTop: 2 }}>Estimated total</Text>
+                {billedHoursText ? (
+                  <Text style={{ ...type.tiny, color: colors.textMuted }}>{billedHoursText}</Text>
+                ) : null}
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ ...type.caption, color: colors.textMuted }}>{showFare ? 'Hide' : 'Details'}</Text>
+                {showFare ? (
+                  <ChevronUp size={16} color={colors.textMuted} />
+                ) : (
+                  <ChevronDown size={16} color={colors.textMuted} />
+                )}
+              </View>
+            </Pressable>
+
+            {showFare && quote.lines.length > 0 ? (
+              <View style={{ gap: 10, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: space.md }}>
+                {quote.lines.map((line) => (
+                  <View key={line.label} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: space.lg }}>
+                    <View style={{ flexShrink: 1 }}>
+                      <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>{line.label}</Text>
+                      {line.hint ? <Text style={{ ...type.tiny, color: colors.textMuted }}>{line.hint}</Text> : null}
+                    </View>
+                    <Text style={{ ...type.caption, color: colors.text, textAlign: 'right', flex: 1 }} numberOfLines={2}>
+                      {line.value}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {priceStatus === 'outside' ? (
+              <View style={{ gap: space.sm }}>
+                <Text style={{ ...type.bodyBold, color: colors.text }}>This trip goes outside the city</Text>
+                <Text style={{ ...type.caption, color: colors.textMuted, fontWeight: '500' }}>
+                  {quoteError?.message ?? 'Within City trips stay inside the city. Book it as Outstation instead.'}
+                </Text>
+                <Button
+                  label="Switch to Outstation"
+                  variant="outline"
+                  onPress={() => onChange({ ...config, requirement: 'inter_city' })}
+                />
+              </View>
+            ) : priceStatus === 'error' ? (
+              <View style={{ gap: space.sm }}>
+                <Text style={{ ...type.caption, color: colors.redPressed }}>
+                  Could not get a price. Check your connection and try again.
+                </Text>
+                <Button label="Try again" variant="subtle" onPress={() => setPriceAttempt((n) => n + 1)} />
+              </View>
+            ) : quote.ready ? (
+              <Text style={{ ...type.tiny, color: colors.textMuted, lineHeight: 17 }}>
+                This amount is held when you book. You are charged the final fare when the trip ends.
+              </Text>
+            ) : null}
+          </Panel>
+        </Section>
       </ScrollView>
 
       {/* ── Sticky CTA ── */}
       <View
         style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: space.lg,
           borderTopWidth: 1,
           borderTopColor: colors.border,
           backgroundColor: colors.surface,
           paddingHorizontal: space.xl,
-          paddingVertical: space.lg,
+          paddingVertical: space.md,
         }}
       >
+        <View style={{ minWidth: 64 }}>
+          <Text style={{ ...type.tiny, color: colors.textMuted }}>Estimated</Text>
+          {totalText === null ? (
+            <ActivityIndicator color={colors.brand} style={{ alignSelf: 'flex-start', height: 22 }} />
+          ) : (
+            <Text style={{ ...type.title, color: colors.text }}>{totalText}</Text>
+          )}
+        </View>
         <Button
-          label={`Find ${quote.skill?.label ?? 'Standard'} Driver`}
+          label={quote.skill ? `Find ${quote.skill.label} Driver` : 'Find a driver'}
           icon={Search}
-          disabled={!quote.ready}
-          onPress={() => onFindDriver(config)}
+          disabled={!quote.ready || saving}
+          onPress={findDriver}
+          style={{ flex: 1 }}
         />
       </View>
     </SafeAreaView>

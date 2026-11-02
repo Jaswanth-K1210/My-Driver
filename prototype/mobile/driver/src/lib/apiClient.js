@@ -11,7 +11,7 @@ import { API_URL } from './config.js'
  */
 const safeKey = (key) => key.replace(/[^A-Za-z0-9._-]/g, '_')
 
-const secureStorage = {
+export const secureStorage = {
   async get(key) {
     try {
       return await SecureStore.getItemAsync(safeKey(key))

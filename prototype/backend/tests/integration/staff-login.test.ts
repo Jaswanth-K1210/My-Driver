@@ -89,4 +89,24 @@ describe('staff password login and live driver map', () => {
     })
     expect(denied.statusCode).toBe(403)
   })
+
+  it('audits a polled live map once per agent, not once per refresh', async () => {
+    const desk = await loginAsRole(app, '+919100000004', 'SAFETY_DESK_AGENT')
+    const other = await loginAsRole(app, '+919100000005', 'SAFETY_DESK_AGENT')
+    const views = async () => (await auditActions()).filter((a) => a === 'VIEW_DRIVER_MAP').length
+
+    for (let i = 0; i < 3; i++) {
+      const res = await app.inject({
+        method: 'GET', url: '/v1/admin/drivers/live', headers: bearer(desk.accessToken),
+      })
+      expect(res.statusCode).toBe(200)
+    }
+    expect(await views()).toBe(1)
+
+    // A second agent opening the map is a separate act and gets its own row.
+    await app.inject({
+      method: 'GET', url: '/v1/admin/drivers/live', headers: bearer(other.accessToken),
+    })
+    expect(await views()).toBe(2)
+  })
 })

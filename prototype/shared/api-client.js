@@ -121,7 +121,7 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
     await loadTokens()
 
     const send = async () => {
-      const headers = { ...(options.headers ?? {}) }
+      const headers = { ...options.headers }
       if (options.body !== undefined) headers['content-type'] = 'application/json'
       if (options.auth !== false && accessToken) headers.authorization = `Bearer ${accessToken}`
 
@@ -174,6 +174,7 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
     let closedByCaller = false
     let attempt = 0
     const subscriptions = new Set()
+    const opsViews = new Set()
     const handlers = new Map()
 
     const emit = (frame) => {
@@ -200,6 +201,7 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
           attempt = 0
           onState?.('open')
           for (const id of subscriptions) send({ type: 'SUBSCRIBE', trip_id: id })
+          for (const view of opsViews) send({ type: 'SUBSCRIBE_OPS', view })
           resolve()
         }
         ws.onerror = () => reject(new Error('WebSocket failed to open'))
@@ -243,6 +245,19 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
       unsubscribe(tripId) {
         subscriptions.delete(tripId)
         send({ type: 'UNSUBSCRIBE', trip_id: tripId })
+      },
+      /**
+       * Operations console only (Safety Desk roles). 'board' sends OPS_CHANGED
+       * when the live board should be refetched; 'map' sends DRIVERS_LIVE with
+       * every online driver every few seconds.
+       */
+      subscribeOps(view) {
+        opsViews.add(view)
+        send({ type: 'SUBSCRIBE_OPS', view })
+      },
+      unsubscribeOps(view) {
+        opsViews.delete(view)
+        send({ type: 'UNSUBSCRIBE_OPS', view })
       },
       sendDriverTelemetry(tripId, coords, sensors) {
         send({
@@ -373,6 +388,9 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
     locations: {
       search: (q, near) =>
         request(`/v1/locations/search${qs({ q, lat: near?.lat, lng: near?.lng })}`),
+      get: (id) => request(`/v1/locations/${id}`),
+      /** The address at a pin the customer dropped on the map. */
+      reverse: (at) => request(`/v1/locations/reverse${qs({ lat: at.lat, lng: at.lng })}`),
     },
 
     /** Public guardian view. No account, no token — the link is the audience. */
@@ -381,17 +399,16 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
     devices: {
       register: (platform, token) =>
         request('/v1/me/devices', { method: 'POST', body: { platform, token } }),
-    },
-
-    locations: {
-      search: (query) => request(`/v1/locations/search${qs({ q: query })}`),
-      get: (id) => request(`/v1/locations/${id}`),
+      /** Call before logout, while the session can still authenticate it. */
+      unregister: (token) => request('/v1/me/devices', { method: 'DELETE', body: { token } }),
     },
 
     /** Safety Desk. Requires SAFETY_DESK_AGENT, OPS_MANAGER or SUPER_ADMIN. */
     admin: {
       stats: () => request('/v1/admin/stats'),
       activeTrips: () => request('/v1/admin/trips/active'),
+      // Bookings the first dispatch rounds could not place, still searching.
+      waitingTrips: () => request('/v1/admin/trips/waiting'),
       liveDrivers: () => request('/v1/admin/drivers/live'),
 
       escalations: (includeResolved = false) =>
@@ -445,6 +462,13 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
       assessments: () => request('/v1/admin/assessments'),
 
       pendingAttempts: (params = {}) => request(`/v1/admin/attempts/pending${qs(params)}`),
+
+      /** Set or move a driver's practical test date (ISO string). */
+      schedulePractical: (driverId, code, scheduledAt) =>
+        request(`/v1/admin/drivers/${driverId}/practical`, {
+          method: 'POST',
+          body: { code, scheduled_at: scheduledAt },
+        }),
 
       gradeAttempt: (id, score, notes) =>
         request(`/v1/admin/attempts/${id}/grade`, {
@@ -523,6 +547,12 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
       customer: (id) => request(`/v1/admin/customers/${id}`),
       overview: (days = 30) => request(`/v1/admin/overview?days=${days}`),
       rateCards: () => request('/v1/admin/rate-cards'),
+      /** Platform, night and stop fees, as every quote uses them. */
+      fees: () => request('/v1/admin/pricing/fees'),
+      updateFees: (patch) => request('/v1/admin/pricing/fees', { method: 'PATCH', body: patch }),
+      /** Only used to honour a customer's preference for a female driver. */
+      setDriverGender: (id, gender) =>
+        request(`/v1/admin/drivers/${id}/gender`, { method: 'PATCH', body: { gender } }),
       updateRateCard: (skillId, patch) =>
         request(`/v1/admin/rate-cards/${encodeURIComponent(skillId)}`, { method: 'PATCH', body: patch }),
 
@@ -641,6 +671,18 @@ export function createClient({ baseUrl, storage, onAuthChange } = {}) {
         }),
 
       summary: () => request('/v1/driver/summary'),
+
+      /** Today, this week and unsettled totals, 7 daily bars, recent trips and payouts. */
+      earnings: () => request('/v1/driver/earnings'),
+
+      /** Status of every active test for this driver. Never includes questions. */
+      assessments: () => request('/v1/driver/assessments'),
+
+      /** Score, rating, badges, Night Shield and the latest of each document. */
+      profile: () => request('/v1/driver/profile'),
+
+      /** Update driver full_name, email, vehicle_model and vehicle_plate. */
+      updateProfile: (patch) => request('/v1/driver/profile', { method: 'PATCH', body: patch }),
 
       /** KYC checklist, uploaded documents and what still blocks approval. */
       onboarding: () => request('/v1/driver/onboarding'),

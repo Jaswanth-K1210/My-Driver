@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Pressable, ScrollView, Text, View } from 'react-native'
+import { ScrollView, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { IndianRupee, LogOut, TrendingUp, XCircle, Zap } from 'lucide-react-native'
+import { IndianRupee, XCircle, Zap } from 'lucide-react-native'
 import { ActivityIndicator } from 'react-native'
 import Button, { Pill } from '../../components/Button'
 import Card from '../../components/Card'
@@ -10,7 +10,7 @@ import { useToast } from '../../components/Toast'
 import Toggle from '../../components/Toggle'
 import { useAuth } from '../../context/AuthContext'
 import { useDriver } from '../../context/DriverContext'
-import { formatINR } from '../../lib/utils'
+import { formatINR, offerTags } from '../../lib/utils'
 import { colors, radius, space, type } from '../../theme/tokens'
 
 function MiniStat({ value, label, alert }) {
@@ -30,16 +30,34 @@ function MiniStat({ value, label, alert }) {
   )
 }
 
-export default function DriverHomeScreen({ onLogout }) {
+export default function DriverHomeScreen({ onOpenProfile }) {
   const { toast } = useToast()
-  const { user, signOut } = useAuth()
-  const { online, busy, summary, offer, goOnline, respondToOffer, connection } = useDriver()
+  const { user } = useAuth()
+  const {
+    online,
+    busy,
+    summary,
+    profileComplete,
+    offer,
+    onboardingGate,
+    goOnline,
+    respondToOffer,
+    connection,
+    platformFee,
+  } = useDriver()
   const [acting, setActing] = useState(false)
+  const canAct = Boolean(onboardingGate?.canStartOrAcceptNewRide)
 
-  // Offers arrive over the WebSocket from the real dispatcher.
-  const request = offer
+  // Offers come from the real dispatcher: by push, with polling as the fallback.
+  const request = canAct ? offer : null
+  const tags = offerTags(request)
 
   const respond = async (accept) => {
+    if (accept && summary && !profileComplete) {
+      toast('Complete your driver profile before accepting a trip', 'warning')
+      onOpenProfile?.()
+      return
+    }
     setActing(true)
     try {
       await respondToOffer(accept)
@@ -52,6 +70,15 @@ export default function DriverHomeScreen({ onLogout }) {
   }
 
   const toggleOnline = async (next) => {
+    if (next && !canAct) {
+      toast('Verify your driver approval status before going online', 'warning')
+      return
+    }
+    if (next && summary && !profileComplete) {
+      toast('Add your name to your driver profile before going online', 'warning')
+      onOpenProfile?.()
+      return
+    }
     try {
       await goOnline(next)
       toast(next ? 'You are online — waiting for trips' : 'You are offline', 'info')
@@ -60,8 +87,11 @@ export default function DriverHomeScreen({ onLogout }) {
     }
   }
 
+  const driverName = summary?.full_name || user?.full_name || user?.phone_number || 'Driver'
+  const vehicleLine = [summary?.vehicle_model, summary?.vehicle_plate].filter(Boolean).join(' · ')
+
   return (
-    <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: colors.bg }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: colors.bg }}>
 
       <View
         style={{
@@ -72,27 +102,21 @@ export default function DriverHomeScreen({ onLogout }) {
           paddingBottom: space.md,
         }}
       >
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={{ ...type.tiny, color: colors.textMuted }}>
             {online ? `Driver mode · online${connection === 'open' ? '' : ' · connecting'}` : 'Driver mode · offline'}
           </Text>
-          <Text style={{ ...type.body, color: colors.text }}>
-            {user?.full_name ?? user?.phone_number ?? 'Driver'}
+          <Text numberOfLines={1} style={{ ...type.bodyBold, color: colors.text }}>
+            {driverName}
           </Text>
+          {vehicleLine ? (
+            <Text numberOfLines={1} style={{ ...type.micro, color: colors.textMuted }}>
+              {vehicleLine}
+            </Text>
+          ) : null}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
           {summary?.rating ? <Pill label={`★ ${summary.rating.toFixed(1)}`} tone="brand" /> : null}
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Log out of MyDriver"
-            onPress={async () => {
-            await signOut()
-            onLogout?.()
-          }}
-            style={{ borderRadius: radius.pill, backgroundColor: colors.surfaceAlt, padding: 10 }}
-          >
-            <LogOut size={16} color={colors.text} />
-          </Pressable>
         </View>
       </View>
 
@@ -100,6 +124,24 @@ export default function DriverHomeScreen({ onLogout }) {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: space.lg, paddingBottom: space.xxl, gap: space.lg }}
       >
+        {summary && !profileComplete && (
+          <Card tone="alert" style={{ gap: space.sm }}>
+            <Text style={{ ...type.bodyBold, color: colors.redPressed }}>
+              Complete your driver profile
+            </Text>
+            <Text style={{ ...type.tiny, color: colors.textMuted }}>
+              Add your full name so customers can verify you on the live trip screen.
+            </Text>
+            {onOpenProfile && (
+              <Button
+                label="Set up profile details"
+                onPress={onOpenProfile}
+                style={{ paddingVertical: 10 }}
+              />
+            )}
+          </Card>
+        )}
+
         <Card style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
           <ScoreRing score={Math.round(summary?.mydriver_score ?? 0)} />
           <View style={{ flex: 1, gap: space.sm }}>
@@ -119,40 +161,15 @@ export default function DriverHomeScreen({ onLogout }) {
                 <Text numberOfLines={1} style={{ ...type.bodyBold, color: colors.text }}>
                   {formatINR(Math.round(summary?.earnings_today ?? 0))}
                 </Text>
-                <Text style={{ ...type.micro, color: colors.textMuted }}>Today&apos;s earnings</Text>
+                <Text style={{ ...type.micro, color: colors.textMuted }}>Today&apos;s net earnings</Text>
               </View>
             </View>
             <View style={{ flexDirection: 'row', gap: space.sm }}>
               <MiniStat value={String(summary?.trips_today ?? 0)} label="Trips today" />
-              <MiniStat
-                value={summary?.rating != null ? summary.rating.toFixed(1) : '—'}
-                label="Harsh events"
-                alert={false}
-              />
+              <MiniStat value={String(summary?.total_trips ?? 0)} label="Total trips" />
             </View>
           </View>
         </Card>
-
-        <View style={{ flexDirection: 'row', gap: space.sm }}>
-          <Card style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md }}>
-            <Zap size={16} color={colors.red} />
-            <View style={{ flex: 1 }}>
-              <Text numberOfLines={1} style={{ ...type.caption, color: colors.text }}>
-                Telematics live
-              </Text>
-              <Text style={{ ...type.micro, color: colors.textMuted }}>50 Hz sampling</Text>
-            </View>
-          </Card>
-          <Card style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md }}>
-            <TrendingUp size={16} color={colors.graphite} />
-            <View style={{ flex: 1 }}>
-              <Text numberOfLines={1} style={{ ...type.caption, color: colors.text }}>
-                +0.4 this week
-              </Text>
-              <Text style={{ ...type.micro, color: colors.textMuted }}>Score trend</Text>
-            </View>
-          </Card>
-        </View>
 
         <Card>
           <Toggle
@@ -213,24 +230,11 @@ export default function DriverHomeScreen({ onLogout }) {
               </View>
             </View>
 
-            {(request.vehicleSpecs || request.requirement || request.stops?.length > 0) && (
+            {tags.length > 0 && (
               <View style={{ flexDirection: 'row', gap: space.xs, marginTop: space.md, flexWrap: 'wrap' }}>
-                {request.vehicleSpecs && (
-                  <>
-                    <Pill label={`${request.vehicleSpecs.company} ${request.vehicleSpecs.model}`} />
-                    <Pill label={request.vehicleSpecs.transmission} />
-                  </>
-                )}
-                {request.requirement === 'airport' && request.flightNumber && (
-                  <Pill label={`Flight ${request.flightNumber}`} tone="brand" />
-                )}
-                {request.tripType === 'two_way' && <Pill label="Round Trip" tone="brand" />}
-                {request.stops?.length > 0 && (
-                  <Pill label={`${request.stops.length} Stop${request.stops.length > 1 ? 's' : ''}`} />
-                )}
-                {request.requirement && (
-                  <Pill label={request.requirement.replace('_', ' ')} style={{ textTransform: 'capitalize' }} />
-                )}
+                {tags.map((tag) => (
+                  <Pill key={tag.label} label={tag.label} tone={tag.tone} />
+                ))}
               </View>
             )}
 
@@ -248,9 +252,14 @@ export default function DriverHomeScreen({ onLogout }) {
               <Pill label={request.skill} />
               <Pill label={`${request.distanceKm} km`} />
               <Pill label={`Ceiling ${request.ceiling}`} />
-              <Text style={{ ...type.title, color: colors.red, marginLeft: 'auto' }}>
-                {formatINR(request.fare)}
-              </Text>
+              <View style={{ marginLeft: 'auto', alignItems: 'flex-end' }}>
+                <Text style={{ ...type.title, color: colors.red }}>
+                  {formatINR(Math.round(request.earnings ?? Math.max(0, request.fare - (platformFee ?? 0))))}
+                </Text>
+                <Text style={{ ...type.micro, color: colors.textMuted }}>
+                  Your net · Fare {formatINR(request.fare)}
+                </Text>
+              </View>
             </View>
 
             <View style={{ flexDirection: 'row', gap: space.sm, marginTop: space.lg }}>

@@ -1,12 +1,25 @@
 import { env } from '../../config/env.js'
+import { haversineMeters } from '../../lib/geo.js'
 import { GooglePlacesProvider } from './google.js'
+import { PhotonMapsProvider } from './photon.js'
 
 export type Place = { id: string; name: string; address: string; lat: number; lng: number }
 
 export interface MapsProvider {
-  readonly name: 'mock' | 'google'
+  readonly name: 'mock' | 'google' | 'photon'
   search(query: string, near?: { lat: number; lng: number }): Promise<Place[]>
+  /** The address at a point the customer dropped a pin on. */
+  reverse(at: { lat: number; lng: number }): Promise<Place>
 }
+
+/** What a pin is called when nothing better is known. */
+export const pinnedPlace = (at: { lat: number; lng: number }): Place => ({
+  id: `pin:${at.lat.toFixed(5)},${at.lng.toFixed(5)}`,
+  name: 'Pinned location',
+  address: `${at.lat.toFixed(5)}, ${at.lng.toFixed(5)}`,
+  lat: at.lat,
+  lng: at.lng,
+})
 
 /** Well-known Hyderabad places, so search works locally with no API key. */
 const PLACES: Place[] = [
@@ -33,12 +46,24 @@ export class MockMapsProvider implements MapsProvider {
     const q = query.toLowerCase()
     return PLACES.filter((p) => `${p.name} ${p.address}`.toLowerCase().includes(q)).slice(0, 8)
   }
+
+  /** Names a pin after a built-in place within ~300 m, at the pin's own spot. */
+  async reverse(at: { lat: number; lng: number }): Promise<Place> {
+    this.calls++
+    const near = PLACES.find((p) => haversineMeters(p, at) <= 300)
+    return near ? { ...pinnedPlace(at), name: `Near ${near.name}`, address: near.address } : pinnedPlace(at)
+  }
 }
 
 let instance: MapsProvider | undefined
 
 export function getMapsProvider(): MapsProvider {
-  if (!instance) instance = env.MAPS_PROVIDER === 'google' ? new GooglePlacesProvider() : new MockMapsProvider()
+  if (!instance) {
+    instance =
+      env.MAPS_PROVIDER === 'google' ? new GooglePlacesProvider()
+        : env.MAPS_PROVIDER === 'photon' ? new PhotonMapsProvider()
+          : new MockMapsProvider()
+  }
   return instance
 }
 

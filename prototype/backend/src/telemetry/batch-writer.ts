@@ -1,5 +1,5 @@
 import { pool } from '../db/client.js'
-import type { LatLng } from '../lib/geo.js'
+import type { TrackPoint } from '../lib/geo.js'
 
 export const FLUSH_INTERVAL_MS = 2_000
 export const FLUSH_ROW_COUNT = 100
@@ -31,7 +31,7 @@ export type TelemetryRow = {
 export class TelemetryBatchWriter {
   private buffer: TelemetryRow[] = []
   private timer: NodeJS.Timeout | undefined
-  private flushing = false
+  private inFlight: Promise<number> | null = null
 
   private droppedCount = 0
   private writtenCount = 0
@@ -56,10 +56,23 @@ export class TelemetryBatchWriter {
     if (this.buffer.length >= FLUSH_ROW_COUNT) void this.flush().catch(() => undefined)
   }
 
+  /**
+   * Resolves once every row buffered before the call is in the database. A
+   * flush already running is waited for, not skipped: trip completion reads
+   * the track straight after, and rows still in flight would go unbilled.
+   */
   async flush(): Promise<number> {
-    if (this.flushing || this.buffer.length === 0) return 0
-    this.flushing = true
+    while (this.inFlight) await this.inFlight.catch(() => undefined)
+    if (this.buffer.length === 0) return 0
+    this.inFlight = this.write()
+    try {
+      return await this.inFlight
+    } finally {
+      this.inFlight = null
+    }
+  }
 
+  private async write(): Promise<number> {
     const batch = this.buffer
     this.buffer = []
 
@@ -94,8 +107,6 @@ export class TelemetryBatchWriter {
       // Put the rows back so a transient database blip does not lose data.
       this.buffer = batch.concat(this.buffer).slice(-MAX_BUFFER_ROWS)
       throw err
-    } finally {
-      this.flushing = false
     }
   }
 
@@ -127,12 +138,13 @@ export function getTelemetryWriter(): TelemetryBatchWriter {
   return writer
 }
 
-export async function readTripTrack(tripId: string): Promise<LatLng[]> {
-  const { rows } = await pool.query<LatLng>(
-    `SELECT lat, lng FROM telematics_logs
-      WHERE trip_id = $1 AND source = 'DRIVER'
+/** The driver's fixes since the trip started: the drive to the pickup is not billed. */
+export async function readTripTrack(tripId: string, since: Date): Promise<TrackPoint[]> {
+  const { rows } = await pool.query<TrackPoint>(
+    `SELECT lat, lng, time FROM telematics_logs
+      WHERE trip_id = $1 AND source = 'DRIVER' AND time >= $2
       ORDER BY time ASC`,
-    [tripId],
+    [tripId, since],
   )
   return rows
 }

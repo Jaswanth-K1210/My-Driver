@@ -1,0 +1,29 @@
+appId: ${APP_ID || 'com.mydriver.user.dev'}
+env:
+  PHONE: ${PHONE || '9876543210'}
+  BRIDGE_URL: ${BRIDGE_URL || 'http://127.0.0.1:4099'}
+---
+# Layer 3 · Flow 03: See Driver Matched & Arrived (docs/testing-plan.md §6 #3)
+# Screens: MatchingScreen.jsx -> LiveTripScreen.jsx (HANDSHAKE_PENDING -> DRIVER_ARRIVED)
+
+- assertVisible: "Matching a certified driver…"
+
+# Simulated driver accepts the pending trip offer
+- runScript: scripts/driver-accept.js
+
+# LiveTripScreen.jsx: pre-arrival matched state
+- extendedWaitUntil:
+    visible: "PICKUP CODE"
+    timeout: 20000
+- assertVisible: "Tell your driver this code at the car, not before. It starts the trip."
+- assertVisible: "Cancel trip"
+
+# Simulated driver sends GPS telemetry at pickup; integrity engine sets arrived_at
+- runScript: scripts/driver-arrive.js
+
+# LiveTripScreen.jsx: driver arrived state
+- extendedWaitUntil:
+    visible: "YOUR DRIVER HAS ARRIVED"
+    timeout: 20000
+- assertVisible: "Your driver is at the pickup. Meet them at the car and tell them this code."
+- assertVisible: "Driver at pickup"

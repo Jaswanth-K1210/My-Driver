@@ -81,7 +81,7 @@ describe('user app upgrade APIs', () => {
       expect(res.statusCode).toBe(200)
       const body = res.json()
       expect(body.requirements.map((r: { id: string }) => r.id)).toEqual(['within_city', 'inter_city', 'airport', 'full_time'])
-      expect(body.hour_packages[0]).toMatchObject({ id: 'h1', hours: 1, included_km: 10 })
+      expect(body.hour_packages[0]).toMatchObject({ id: 'h2', hours: 2, included_km: 20 })
       expect(body.pickup_times.length).toBeGreaterThan(0)
       // VisionCam is listed but unavailable: nothing behind it exists yet.
       expect(body.vision_modes.every((m: { available: boolean }) => m.available === false)).toBe(true)
@@ -107,6 +107,21 @@ describe('user app upgrade APIs', () => {
       const second = await call('GET', '/v1/locations/search?q=%20cyber%20%20towers&lat=17.441&lng=78.381')
       expect(second.json()).toMatchObject({ cached: true })
       expect(maps.calls).toBe(1)
+      setMapsProvider(undefined)
+    })
+
+    it('leans towards Hyderabad when the app sends no position (D-4)', async () => {
+      const seen: Array<{ lat: number; lng: number } | undefined> = []
+      setMapsProvider({
+        name: 'google',
+        search: async (_q: string, near?: { lat: number; lng: number }) => {
+          seen.push(near)
+          return []
+        },
+      } as never)
+      await call('GET', '/v1/locations/search?q=metro%20station')
+      await call('GET', '/v1/locations/search?q=metro%20station&lat=17.24&lng=78.43')
+      expect(seen).toEqual([{ lat: 17.385, lng: 78.4867 }, { lat: 17.24, lng: 78.43 }])
       setMapsProvider(undefined)
     })
 
@@ -163,6 +178,20 @@ describe('user app upgrade APIs', () => {
       const last = JSON.parse((await redis.get(`trip:{${tripId}}:last:driver`))!)
       // ~2 s old on the server clock, not 10 minutes stale.
       expect(Date.now() - last.at).toBeLessThan(10_000)
+    })
+
+    it('keeps accepting location while a silent SOS has the trip ESCALATED', async () => {
+      const { tripId, driver } = await activeTrip()
+      const sos = await call('POST', `/v1/trips/${tripId}/sos`, { silent: true })
+      expect(sos.statusCode).toBe(200)
+      const { rows } = await pool.query(`SELECT status FROM trips WHERE id = $1`, [tripId])
+      expect(rows[0].status).toBe('ESCALATED')
+
+      const now = Date.now()
+      const res = await call('POST', `/v1/trips/${tripId}/telemetry`, { sent_at: now, points: [fix(now - 1000, 17.446)] }, driver.accessToken)
+      expect(res.statusCode).toBe(202)
+      const last = JSON.parse((await redis.get(`trip:{${tripId}}:last:driver`))!)
+      expect(last.lat).toBe(17.446)
     })
 
     it('refuses non-participants and trips that are not active', async () => {

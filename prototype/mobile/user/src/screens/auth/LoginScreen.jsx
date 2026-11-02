@@ -97,6 +97,7 @@ export default function LoginScreen({ navigation }) {
 
           <View style={styles.tabContainer}>
             <TouchableOpacity
+              accessibilityRole="button"
               style={[styles.tab, activeTab === 'google' && styles.tabActive]}
               onPress={() => setActiveTab('google')}
               activeOpacity={0.7}
@@ -106,6 +107,7 @@ export default function LoginScreen({ navigation }) {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
+              accessibilityRole="button"
               style={[styles.tab, activeTab === 'phone' && styles.tabActive]}
               onPress={() => setActiveTab('phone')}
               activeOpacity={0.7}
@@ -119,6 +121,7 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.methodSection}>
             {activeTab === 'google' ? (
               <TouchableOpacity
+                accessibilityRole="button"
                 style={styles.googleButton}
                 onPress={handleGoogleLogin}
                 activeOpacity={0.7}
@@ -138,9 +141,10 @@ export default function LoginScreen({ navigation }) {
                         <Text style={styles.countryCodeText}>+91</Text>
                       </View>
                       <TextInput
+                        accessibilityLabel="Mobile number, 10 digits"
                         style={[styles.input, styles.phoneInput]}
                         placeholder="98765 43210"
-                        placeholderTextColor={colors.textFaint}
+                        placeholderTextColor={colors.textMuted}
                         value={phone}
                         onChangeText={setPhone}
                         keyboardType="phone-pad"
@@ -148,6 +152,7 @@ export default function LoginScreen({ navigation }) {
                       />
                     </View>
                     <TouchableOpacity
+                      accessibilityRole="button"
                       style={styles.primaryButton}
                       onPress={handleSendOtp}
                       activeOpacity={0.8}
@@ -169,6 +174,7 @@ export default function LoginScreen({ navigation }) {
                       {otp.map((digit, index) => (
                         <TextInput
                           key={index}
+                          accessibilityLabel={`Code digit ${index + 1}`}
                           style={styles.otpInput}
                           value={digit}
                           onChangeText={(text) => handleOtpChange(text, index)}
@@ -179,6 +185,7 @@ export default function LoginScreen({ navigation }) {
                       ))}
                     </View>
                     <TouchableOpacity
+                      accessibilityRole="button"
                       style={styles.primaryButton}
                       onPress={handleVerifyOtp}
                       activeOpacity={0.8}
@@ -191,6 +198,7 @@ export default function LoginScreen({ navigation }) {
                       )}
                     </TouchableOpacity>
                     <TouchableOpacity
+                      accessibilityRole="button"
                       style={styles.resendButton}
                       onPress={() => {
                         setOtpSent(false);
@@ -207,6 +215,7 @@ export default function LoginScreen({ navigation }) {
           </View>
 
           <TouchableOpacity
+            accessibilityRole="button"
             style={styles.footerLink}
             onPress={() => navigation.navigate('Signup')}
             activeOpacity={0.6}

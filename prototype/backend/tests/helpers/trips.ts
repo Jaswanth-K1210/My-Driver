@@ -42,18 +42,19 @@ export async function makeOnlineDriver(
 ): Promise<Actor> {
   const { userId, accessToken } = await loginAs(app, phone, 'DRIVER')
 
+  await pool.query(
+    `INSERT INTO driver_profiles (user_id, certifications, onboarding_status, onboarded_at, night_shield_certified)
+     VALUES ($1, $2, 'APPROVED', now(), true)
+     ON CONFLICT (user_id) DO UPDATE
+       SET certifications = $2,
+           onboarding_status = 'APPROVED',
+           night_shield_certified = true`,
+    [userId, certifications],
+  )
   await app.inject({
     method: 'POST', url: '/v1/driver/availability',
     headers: bearer(accessToken), payload: { availability: 'ONLINE' },
   })
-  await pool.query(
-    `UPDATE driver_profiles
-        SET certifications = $2,
-            onboarding_status = 'APPROVED',
-            night_shield_certified = true
-      WHERE user_id = $1`,
-    [userId, certifications],
-  )
   await upsertDriverLocation(userId, at, { force: true })
 
   return { userId, accessToken }

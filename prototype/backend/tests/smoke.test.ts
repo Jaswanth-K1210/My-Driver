@@ -6,7 +6,8 @@ import { seed } from '../src/db/seed.js'
 import { bearer, loginAs } from './helpers/auth.js'
 import { resetDb } from './helpers/db.js'
 import { resetRedis } from './helpers/redis.js'
-import { BOOK_BODY, GACHIBOWLI, HITEC_CITY } from './helpers/trips.js'
+import { awaitDispatchIdle } from '../src/modules/trips/dispatch-tracker.js'
+import { BOOK_BODY, GACHIBOWLI, HITEC_CITY, makeOnlineDriver } from './helpers/trips.js'
 
 describe('🔥 MYDRIVER COMPREHENSIVE SMOKE TEST SUITE', () => {
   let app: FastifyInstance
@@ -157,6 +158,10 @@ describe('🔥 MYDRIVER COMPREHENSIVE SMOKE TEST SUITE', () => {
    * ────────────────────────────────────────────────────────────────────────── */
   describe('5. Trip Booking, Idempotency & Lifecycle Actions', () => {
     it('[BOOK-01] Successfully books a trip and moves to REQUESTED state', async () => {
+      // With nobody online, dispatch ends the trip as NO_DRIVERS_FOUND (not
+      // cancellable) in the background, racing the cancel below. An online
+      // driver and awaiting dispatch make the cancel start from MATCHED.
+      await makeOnlineDriver(app, '+919848099999')
       const idempotencyKey = `smoke-${Date.now()}`
       const res = await app.inject({
         method: 'POST',
@@ -170,6 +175,7 @@ describe('🔥 MYDRIVER COMPREHENSIVE SMOKE TEST SUITE', () => {
       expect(trip.customer_id).toBe(customerId)
       expect(trip.speed_ceiling_kmh).toBe(60)
       expect(trip.estimated_fare).toBeGreaterThan(0)
+      await awaitDispatchIdle()
 
       // Cancel the booked trip
       const cancelRes = await app.inject({

@@ -3,9 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 /**
  * Polls an API call on an interval.
  *
- * The Safety Desk cannot use the WebSocket feed: the gateway rejects any
- * SUBSCRIBE from someone who is not the customer or driver on that trip, which
- * is a privacy boundary worth keeping. So the board polls.
+ * The live board and map get pushes over the console feed (useOpsFeed) and
+ * poll only as a backstop; other console screens just poll.
  *
  * Three things this handles that a bare setInterval does not:
  *   - aborts the in-flight request on unmount, so a slow response cannot set

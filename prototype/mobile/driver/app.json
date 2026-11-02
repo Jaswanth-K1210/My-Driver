@@ -2,27 +2,62 @@
   "expo": {
     "name": "MyDriver Partner",
     "slug": "mydriver-driver",
+    "scheme": "mydriver-driver",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "backgroundColor": "#FFFFFF",
     "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.mydriver.driver"
+      "supportsTablet": false,
+      "bundleIdentifier": "com.mydriver.driver",
+      "infoPlist": {
+        "UIBackgroundModes": ["location", "remote-notification"],
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.mydriver.driver",
       "adaptiveIcon": {
-        "backgroundColor": "#FFFFFF"
-      }
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "monochromeImage": "./assets/adaptive-icon-monochrome.png",
+        "backgroundColor": "#E01E26"
+      },
+      "permissions": [
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "POST_NOTIFICATIONS",
+        "VIBRATE"
+      ]
     },
     "plugins": [
       "expo-secure-store",
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "MyDriver uses your location to match you with nearby trips and to share live trip progress with the customer and the Safety Desk."
+          "locationWhenInUsePermission": "MyDriver uses your location to match you with nearby trips and to share live trip progress with the customer and the Safety Desk.",
+          "locationAlwaysAndWhenInUsePermission": "MyDriver keeps sharing your location during a trip when the screen is off or the app is in the background, so the customer and the Safety Desk can follow the trip. Location is not collected between trips.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#E01E26",
+          "defaultChannel": "offers"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
         }
       ],
       [
@@ -38,6 +73,7 @@
           "motionPermission": "MyDriver measures braking and cornering to keep trips safe."
         }
       ],
+      "expo-task-manager",
       "expo-status-bar",
       "expo-web-browser"
     ]

@@ -36,6 +36,9 @@ function Person({ title, name, phone, to, extra }) {
   )
 }
 
+/** A flag's distance, or a dash when the flag did not record one (CR-5). */
+const km = (v) => (v == null || !Number.isFinite(Number(v)) ? '—' : `${Number(v).toFixed(1)} km`)
+
 export default function TripDetail() {
   const { id } = useParams()
   const [data, setData] = useState(null)
@@ -49,7 +52,7 @@ export default function TripDetail() {
   if (error) return <Empty icon={MapPin} title="Trip not available" hint={error} />
   if (!data) return <p className="py-12 text-center text-sm text-slate-500">Loading trip…</p>
 
-  const { trip, events, payment, escalations, rating, inspections, guardian, checkin } = data
+  const { trip, events, payment, escalations, rating, inspections, guardian, checkin, anomalies = [] } = data
 
   return (
     <div className="space-y-6">
@@ -132,6 +135,25 @@ export default function TripDetail() {
               </ul>
             </SectionCard>
           )}
+
+          {anomalies.length > 0 && (
+            <SectionCard title="Automated flags" icon={ShieldAlert}>
+              <ul className="space-y-2">
+                {anomalies.map((a) => (
+                  <li key={`${a.reason}-${a.created_at}`} className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 p-3">
+                    <LevelBadge level={a.level} />
+                    <span className="flex-1 text-sm font-semibold text-slate-900">{reasonLabel(a.reason)}</span>
+                    {a.reason === 'FARE_DISTANCE_REVIEW' && (
+                      <span className="text-xs text-slate-500">
+                        tracked {km(a.details?.tracked_km)} · billed {km(a.details?.billed_km)}
+                      </span>
+                    )}
+                    <span className="text-xs text-slate-500">{dateTime(a.created_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            </SectionCard>
+          )}
         </div>
 
         <div className="space-y-6">
@@ -141,6 +163,7 @@ export default function TripDetail() {
               <Row label="Final fare">{rupees(trip.fare_amount)}</Row>
               {trip.platform_fee != null && <Row label="Platform fee">{rupees(trip.platform_fee)}</Row>}
               {trip.night_fee > 0 && <Row label="Night fee">{rupees(trip.night_fee)}</Row>}
+              {trip.urgent_fee > 0 && <Row label="Urgent fee">{rupees(trip.urgent_fee)}</Row>}
               {trip.driver_earnings != null && <Row label="Driver earns">{rupees(trip.driver_earnings)}</Row>}
             </dl>
             {payment ? (

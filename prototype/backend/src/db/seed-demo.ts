@@ -19,6 +19,8 @@ import { createHash, randomBytes } from 'node:crypto'
 import type { PoolClient } from 'pg'
 import { env } from '../config/env.js'
 import { closeDb, pool } from './client.js'
+import { closeRedis } from '../redis/client.js'
+import { upsertDriverLocation } from '../modules/trips/geo-index.js'
 import { seed } from './seed.js'
 
 if (env.NODE_ENV === 'production') {
@@ -84,11 +86,40 @@ async function event(c: PoolClient, tripId: string, type: string, at: Date, acto
   )
 }
 
+/**
+ * Driver positions live only in Redis, so they are (re)placed on every run:
+ * drivers on a live demo trip sit between its pickup and drop, and a dozen
+ * approved demo drivers go ONLINE around the city. Dispatch ignores demo
+ * drivers, so real test bookings are never offered to them.
+ */
+async function placeOnMap() {
+  const { rows: onTrip } = await pool.query<{ driver_id: string; lat: number; lng: number }>(
+    `SELECT t.driver_id, (t.pickup_lat + t.drop_lat) / 2 AS lat, (t.pickup_lng + t.drop_lng) / 2 AS lng
+       FROM trips t JOIN users u ON u.id = t.driver_id
+      WHERE u.is_demo AND t.status IN ('MATCHED', 'HANDSHAKE_PENDING', 'IN_TRIP', 'ESCALATED')`,
+  )
+  for (const d of onTrip) await upsertDriverLocation(d.driver_id, { lat: Number(d.lat), lng: Number(d.lng) }, { force: true })
+
+  const { rows: idle } = await pool.query<{ user_id: string }>(
+    `UPDATE driver_profiles SET availability = 'ONLINE'
+      WHERE user_id IN (SELECT dp.user_id FROM driver_profiles dp JOIN users u ON u.id = dp.user_id
+                         WHERE u.is_demo AND dp.onboarding_status = 'APPROVED' AND dp.availability <> 'ON_TRIP'
+                         ORDER BY dp.user_id LIMIT 12)
+      RETURNING user_id`,
+  )
+  for (const [i, d] of idle.entries()) {
+    const [, lat, lng] = PLACES[i % PLACES.length]!
+    await upsertDriverLocation(d.user_id, { lat: lat + between(-0.008, 0.008), lng: lng + between(-0.008, 0.008) }, { force: true })
+  }
+  console.log(`demo map: ${onTrip.length} drivers on trips, ${idle.length} online`)
+}
+
 async function main() {
   await seed()
   const { rows: existing } = await pool.query(`SELECT count(*)::int AS n FROM users WHERE is_demo`)
   if (existing[0].n > 0) {
-    console.log(`demo data already present (${existing[0].n} demo accounts); nothing to do`)
+    console.log(`demo data already present (${existing[0].n} demo accounts)`)
+    await placeOnMap()
     return
   }
 
@@ -236,15 +267,26 @@ async function main() {
             [id, customer, order, fare, at],
           )
         }
+        // Automated warnings the integrity evaluator would have logged.
+        if (status === 'COMPLETED' && chance(0.08)) {
+          const speeding = chance(0.7)
+          await c.query(
+            `INSERT INTO anomalies (trip_id, reason, level, window_start, details, created_at)
+             VALUES ($1, $2, 'L1', $3, $4::jsonb, $3)`,
+            [id, speeding ? 'SPEED_CEILING_BREACH' : 'ROUTE_DEVIATION_EXCEEDED', new Date(at.getTime() + 15 * 60_000),
+             JSON.stringify(speeding ? { speed_kmh: Math.round(between(64, 88)), ceiling_kmh: 60 } : { off_route_m: Math.round(between(400, 1500)) })],
+          )
+        }
         // Past incidents, all resolved.
         if (status === 'COMPLETED' && chance(0.025)) {
-          const level = pick(['L1', 'L1', 'L2', 'L3', 'L4'])
+          const reason = pick(['SPEED_CEILING_BREACH', 'ROUTE_DEVIATION_EXCEEDED', 'UNUSUAL_STOP', 'SILENT_SOS'])
+          const level = reason === 'SILENT_SOS' ? 'L4' : pick(['L1', 'L1', 'L2', 'L3'])
           const opened = new Date(at.getTime() + 20 * 60_000)
           await c.query(
             `INSERT INTO escalations (trip_id, level, status, reason, opened_at, sla_deadline, acknowledged_at, resolved_at, resolution)
              VALUES ($1, $2, 'RESOLVED', $3, $4::timestamptz, $4::timestamptz + interval '3 minutes',
                      $4::timestamptz + ($5 || ' seconds')::interval, $4::timestamptz + interval '25 minutes', $6)`,
-            [id, level, pick(['SPEED_CEILING_BREACH', 'ROUTE_DEVIATION', 'UNUSUAL_STOP', 'SOS']), opened, String(Math.round(between(40, 260))),
+            [id, level, reason, opened, String(Math.round(between(40, 260))),
              pick(['Called customer, all safe', 'Driver confirmed traffic diversion', 'False alarm, customer pressed SOS by mistake'])],
           )
         }
@@ -279,6 +321,12 @@ async function main() {
          VALUES ($1, $2, 'mock', $3, $4, $5, 'AUTHORIZED')`,
         [id, customer, `order_demo_${id.slice(0, 12)}`, `pay_demo_${id.slice(0, 12)}`, Number((dist * 16 + 19).toFixed(2))],
       )
+      if (incident === 'L2') {
+        await c.query(
+          `INSERT INTO anomalies (trip_id, reason, level, window_start, details) VALUES ($1, 'SPEED_CEILING_BREACH', 'L2', now() - interval '2 minutes', $2::jsonb)`,
+          [id, JSON.stringify({ speed_kmh: 84, ceiling_kmh: 60 })],
+        )
+      }
       if (incident) {
         await c.query(
           `INSERT INTO escalations (trip_id, level, status, reason, opened_at, sla_deadline, acknowledged_at, details)
@@ -325,6 +373,7 @@ async function main() {
 
     await c.query('COMMIT')
     console.log(`demo data seeded: 40 customers, ${states.length} drivers, ${trips} trips (3 live, 2 open incidents)`)
+    await placeOnMap()
     console.log(`visible in the console while ADMIN_DEMO_DATA=show (current: ${env.ADMIN_DEMO_DATA})`)
   } catch (err) {
     await c.query('ROLLBACK')
@@ -336,3 +385,4 @@ async function main() {
 
 await main()
 await closeDb()
+await closeRedis()

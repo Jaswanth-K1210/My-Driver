@@ -19,6 +19,14 @@ const MeSchema = z.object({
   email: z.string().nullable(),
   full_name: z.string().nullable(),
   created_at: z.coerce.string(),
+  // Booking defaults. `set: false` means the customer has never chosen them,
+  // so the booking form asks once.
+  safety: z.object({
+    set: z.boolean(),
+    speed_limit_kmh: z.number().int(),
+    share_with_guardians: z.boolean(),
+    prefer_female_driver: z.boolean(),
+  }),
 })
 
 const GuardianSchema = z.object({
@@ -62,6 +70,14 @@ export function registerUserRoutes(app: FastifyInstance): void {
           .object({
             full_name: z.string().min(1).max(120).optional(),
             email: z.string().email().max(254).optional(),
+            safety: z
+              .object({
+                speed_limit_kmh: z.number().int().min(20).max(120),
+                share_with_guardians: z.boolean(),
+                prefer_female_driver: z.boolean(),
+              })
+              .strict()
+              .optional(),
           })
           .strict(),
         response: { 200: MeSchema },

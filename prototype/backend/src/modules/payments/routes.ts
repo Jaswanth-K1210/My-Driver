@@ -7,6 +7,7 @@ import { badRequest, conflict, unauthorized } from '../../lib/errors.js'
 import { getPaymentProvider, MockPaymentProvider } from '../../providers/payments/index.js'
 import { requireAuth, requireRole } from '../auth/rbac.js'
 import {
+  ensureDueOrder,
   getPayment,
   getPaymentForTrip,
   handleWebhookEvent,
@@ -27,6 +28,7 @@ export const PaymentSchema = z.object({
   amount_captured: z.number(),
   amount_refunded: z.number(),
   amount_due: z.number(),
+  amount_due_paid: z.number(),
   failure_reason: z.string().nullable(),
   checkout_url: z.string(),
   created_at: z.coerce.string(),
@@ -53,7 +55,7 @@ function safeReturn(url: string | undefined): string | null {
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 
-function checkoutPage(p: { id: string; order: string; amount: number; status: string; key: string; mock: boolean; ret: string | null }): string {
+function checkoutPage(p: { id: string; order: string; amount: number; status: string; key: string; mock: boolean; ret: string | null; due: boolean }): string {
   const amount = `₹${p.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
   const done = p.status !== 'CREATED' && p.status !== 'FAILED'
   const data = JSON.stringify({ id: p.id, order: p.order, paise: Math.round(p.amount * 100), key: p.key, ret: p.ret })
@@ -71,9 +73,14 @@ button{width:100%;padding:14px;border-radius:12px;border:0;font:inherit;font-wei
 .msg{margin-top:16px;padding:12px;border-radius:12px;background:#0f2a1a;color:#86efac;font-size:14px;display:none}
 .err{background:#2a0f0f;color:#fca5a5}.tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--mut);margin-top:16px}
 </style></head><body><main class="card">
-<div class="brand">MYDRIVER</div><h1>Confirm your trip</h1>
+<div class="brand">MYDRIVER</div>
+${p.due
+  ? `<h1>Pay the amount due</h1>
+<p class="mut">Your trip's final fare was more than the amount held at booking. This pays the difference.</p>
+<div class="amt">${amount}</div><div class="mut">Amount due</div>`
+  : `<h1>Confirm your trip</h1>
 <p class="mut">We place a hold for the quoted fare now. You are charged the final fare when the trip ends, and the hold is released if it is cancelled.</p>
-<div class="amt">${amount}</div><div class="mut">Hold amount</div>
+<div class="amt">${amount}</div><div class="mut">Hold amount</div>`}
 <div id="actions" ${done ? 'hidden' : ''}>
 ${p.mock
   ? '<button class="pri" id="ok">Approve test payment</button><button class="sec" id="no">Decline</button><span class="tag">Test mode · no money moves</span>'
@@ -90,7 +97,7 @@ const post=(u,b)=>fetch(u,{method:'POST',headers:{'content-type':'application/js
 const ok=document.getElementById('ok'),no=document.getElementById('no'),pay=document.getElementById('pay');
 if(ok)ok.onclick=()=>post('/v1/payments/'+D.id+'/mock/approve').then(finish).catch(e=>msg(e.message||'Payment failed',1));
 if(no)no.onclick=()=>post('/v1/payments/'+D.id+'/mock/decline').then(()=>msg('Payment declined. You can try again.',1));
-if(pay)pay.onclick=()=>new Razorpay({key:D.key,order_id:D.order,amount:D.paise,currency:'INR',name:'MyDriver',description:'Trip fare hold',theme:{color:'#f59e0b'},
+if(pay)pay.onclick=()=>new Razorpay({key:D.key,order_id:D.order,amount:D.paise,currency:'INR',name:'MyDriver',description:${p.due ? "'Trip fare balance'" : "'Trip fare hold'"},theme:{color:'#f59e0b'},
  handler:r=>post('/v1/payments/verify',{order_id:r.razorpay_order_id,payment_id:r.razorpay_payment_id,signature:r.razorpay_signature}).then(finish).catch(e=>msg(e.message||'Verification failed',1)),
  modal:{ondismiss:()=>msg('Payment not completed. You can try again.',1)}}).open();
 </script></body></html>`
@@ -110,11 +117,14 @@ export function registerPaymentRoutes(app: FastifyInstance): void {
       const provider = getPaymentProvider()
       if (!provider) throw conflict('PAYMENTS_DISABLED', 'Payments are not enabled on this server')
       const p = await getPayment(request.params.id)
+      // A captured payment with money still owed is paid off on this same page.
+      const due = p.status === 'CAPTURED' && p.amount_due > 0 ? await ensureDueOrder(p.id) : null
       const html = checkoutPage({
         id: p.id,
-        order: esc(p.provider_order_id),
-        amount: p.amount_authorized,
-        status: p.status,
+        order: esc(due?.orderId ?? p.provider_order_id),
+        amount: due?.amount ?? p.amount_authorized,
+        status: due ? 'CREATED' : p.status,
+        due: due !== null,
         key: esc(provider.publicKey),
         mock: provider.name === 'mock',
         ret: safeReturn(request.query.return),
@@ -147,8 +157,9 @@ export function registerPaymentRoutes(app: FastifyInstance): void {
   r.post('/v1/payments/:id/mock/approve', { schema: { params: z.object({ id: z.string().uuid() }) } }, async (request) => {
     const mock = mockOnly()
     const p = await getPayment(request.params.id)
-    const { paymentId, signature } = mock.approve(p.provider_order_id)
-    return verifyCheckout(p.provider_order_id, paymentId, signature)
+    const order = p.amount_due > 0 && p.due_order_id ? p.due_order_id : p.provider_order_id
+    const { paymentId, signature } = mock.approve(order)
+    return verifyCheckout(order, paymentId, signature)
   })
   r.post('/v1/payments/:id/mock/decline', { schema: { params: z.object({ id: z.string().uuid() }) } }, async (request) => {
     mockOnly()

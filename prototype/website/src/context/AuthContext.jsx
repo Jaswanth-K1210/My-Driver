@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AuthContext } from './authStore.js'
 import { api } from '../lib/apiClient.js'
+import { setTester } from '../lib/sentry.js'
 import { formatPhone, initialsOf } from '../lib/utils.js'
 
 /**
@@ -27,6 +28,8 @@ function toViewUser(me) {
     // Only a real name: greeting someone by their phone number reads as a bug.
     firstName: me.full_name ? me.full_name.trim().split(/\s+/)[0] : null,
     initials: me.full_name ? initialsOf(me.full_name) : '',
+    // Booking safety defaults; `set: false` until the customer first chooses.
+    safety: me.safety ?? null,
     memberSince: me.created_at
       ? new Date(me.created_at).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
       : null,
@@ -40,9 +43,11 @@ export function AuthProvider({ children }) {
   const refreshMe = useCallback(async () => {
     try {
       const me = await api.me.get()
+      setTester(me?.id)
       setUser(toViewUser(me))
       return me
     } catch {
+      setTester(null)
       setUser(null)
       return null
     }
@@ -106,6 +111,7 @@ export function AuthProvider({ children }) {
 
   const signOut = useCallback(async () => {
     await api.auth.logout()
+    setTester(null)
     setUser(null)
   }, [])
 

@@ -127,11 +127,23 @@ export async function rotateRefreshToken(
     throw unauthorized('REFRESH_TOKEN_EXPIRED', 'Refresh token has expired')
   }
 
-  const replacement = await insertToken(row.user_id, row.role, row.chain_id)
-  await pool.query(
-    `UPDATE refresh_tokens SET revoked_at = now(), replaced_by = $2 WHERE id = $1`,
-    [row.id, replacement.id],
+  // Consume the token in one compare-and-set before minting its successor.
+  // Two refreshes racing on the same token both passed the check above; only
+  // one wins here, and the loser is treated exactly as a replayed token.
+  const claimed = await pool.query(
+    `UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`,
+    [row.id],
   )
+  if (!claimed.rowCount) {
+    await revokeChain(row.chain_id)
+    throw unauthorized('REFRESH_TOKEN_REUSED', 'Refresh token has already been used')
+  }
+
+  const replacement = await insertToken(row.user_id, row.role, row.chain_id)
+  await pool.query(`UPDATE refresh_tokens SET replaced_by = $2 WHERE id = $1`, [
+    row.id,
+    replacement.id,
+  ])
 
   const access_token = app.jwt.sign(
     { sub: row.user_id, role: row.role, jti: newId() },
